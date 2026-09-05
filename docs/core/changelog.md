@@ -14,6 +14,32 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-12-8"></a>
+## [0.12.8] - 2026-09-05
+- Added: **an ambulance does not wail like a police car.** Owner, 2026-09-05: "the ambulance should
+  have a different sounding siren to the police." A police wail is 760 over 560 at rate 0.055 through
+  a 2600 filter and is **unchanged**; the ambulance yelps at 980 over 700, rate 0.098, through 3200.
+  Three differences rather than one, because changing pitch alone reads as the same siren on a
+  different car ([RLG-114](../fragments/RLG-114.md)).
+- Changed: **the siren lives in `BAR_SCHEME` beside the colours.** "What kind of emergency vehicle is
+  this" is one question, so one record answers it - the lens colours, the wash, and now the voice
+  ([RLG-114](../fragments/RLG-114.md)).
+- Fixed: **a siren belongs to the vehicle sounding it, not to who is driving.** Owner, 2026-09-05,
+  correcting the first build: "it has nothing to do with the player driving or not. The ambulance
+  just has to have a different sounding siren no matter what." The lookup was framed around the
+  player and is keyed on the BODY now, which is the same rule three earlier rulings set for stats,
+  colour and class. An NPC ambulance would get the right voice for free the day one exists
+  ([RLG-114](../fragments/RLG-114.md)).
+- Note: **there is one siren oscillator, so when two sirens sound at once the louder one is heard.**
+  That is a mixing limit and not a rule about the player - every car in `cops` is a cruiser by
+  construction, so a pursuit sounds like police because of what is chasing you rather than because of
+  what you are in ([RLG-114](../fragments/RLG-114.md)).
+- Added: **`tools/siren-test.py`**, which reads the live oscillator and filter rather than the table
+  they were set from - RLG-065's lesson, which cost three attempts before. It changes ONLY the body
+  between samples, so a difference in sound can only have come from the vehicle. Watched failing on
+  all three checks with the ambulance given the police siren
+  ([RLG-065](../fragments/RLG-065.md), [RLG-114](../fragments/RLG-114.md)).
+
 <a id="v0-12-7"></a>
 ## [0.12.7] - 2026-09-05
 - Changed: **the cross on the rear doors is centred on the handles.** Owner, 2026-09-05: "lower the

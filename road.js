@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.12.7';
+window.ROAD_BUILD = '0.12.8';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1042,9 +1042,12 @@ var snd = {
     /* nothing on a circuit has a siren, and nothing on it is being chased */
     var wail = snd.noSiren ? 0 : Math.max(copNear, mine);
     if (wail > 0){
-      snd.sirenPhase += 0.055;
-      var two = Math.sin(snd.sirenPhase) > 0 ? 760 : 560;
-      snd.siren.set(two, 0.048 * wail, 2600, 0.02);
+      /* the two tones, the rate and the brightness all come from whichever
+         vehicle's siren is actually sounding - see `sirenVoice` */
+      var SV = sirenVoice(copNear, mine);
+      snd.sirenPhase += SV.rate;
+      var two = Math.sin(snd.sirenPhase) > 0 ? SV.hi : SV.lo;
+      snd.siren.set(two, 0.048 * wail, SV.cutoff, 0.02);
     } else {
       snd.siren.set(undefined, 0, undefined, 0.15);
     }
@@ -2343,11 +2346,58 @@ const BAR_SCHEME = {
      rgb triples, because the light the bar throws is drawn with alpha over the
      road rather than as a fill. Two forms of one colour, and they must agree -
      they were one hardcoded pair each before this. */
+  /* AND THE SIREN, because "what kind of emergency vehicle is this" is one
+     question and the answer should be in one record. `hi`/`lo` are the two
+     tones, `rate` is how fast it alternates, `cutoff` is how bright it is.
+
+     THE POLICE NUMBERS ARE THE OLD HARDCODED ONES, UNCHANGED - 760 over 560 at
+     0.055 through a 2600 filter. A police car must sound exactly as it did.
+
+     THE AMBULANCE IS HIGHER, FASTER AND BRIGHTER. Owner, 2026-09-05: "the
+     ambulance should have a different sounding siren to the police." Those
+     three together are what separates a yelp from a wail, and they are three
+     rather than one because changing pitch alone reads as the same siren on a
+     different car. */
   police:  { a:['#8fb6ff','#2f6bff'], b:['#ff8fa4','#ff2b4a'],
-             wash:['90,140,255','255,70,80'] },
+             wash:['90,140,255','255,70,80'],
+             siren:{ hi:760, lo:560, rate:0.055, cutoff:2600 } },
   medical: { a:['#ff8fa4','#ff2b4a'], b:['#ff8fa4','#ff2b4a'],
-             wash:['255,70,80','255,70,80'] }
+             wash:['255,70,80','255,70,80'],
+             siren:{ hi:980, lo:700, rate:0.098, cutoff:3200 } }
 };
+
+/* ---- A SIREN BELONGS TO THE VEHICLE SOUNDING IT ---------------------------
+   Owner, 2026-09-05: "the ambulance just has to have a different sounding siren
+   no matter what" - it "has nothing to do with the player driving or not".
+
+   SO THE VOICE IS KEYED ON THE BODY AND NOTHING ELSE. `sirenVoiceFor` takes a
+   vehicle and returns the siren its own `bar` scheme declares. It never asks who
+   is holding the wheel, which is the same rule three earlier rulings already set
+   for stats, colour and class - a class describes the VEHICLE. An ambulance
+   driven by the player and an ambulance driven by anyone else are one vehicle
+   and make one sound, and an NPC ambulance would get the right voice for free
+   the day one exists.
+
+   THE TIEBREAK BELOW IS A MIXING LIMIT, NOT A RULE ABOUT THE PLAYER. There is
+   one siren oscillator and two things can feed it: the bar on your own roof, and
+   police closing on you. Only one can be heard, so the LOUDER of the two is the
+   one whose voice plays - and every car in `cops` is a cruiser by construction,
+   so a pursuit is a police siren because of what is chasing you rather than
+   because of what you are driving.
+
+   These are functions rather than expressions because the audio tick lives ABOVE
+   these declarations in the file. A function is hoisted; a `const` is not, and
+   reaching `BAR_SCHEME` from up there would throw on the first siren.
+   ------------------------------------------------------------------------- */
+function sirenVoiceFor(bodyKey){
+  const B = BODY[bodyKey];
+  const sc = B && B.bar && BAR_SCHEME[B.bar];
+  return (sc && sc.siren) || BAR_SCHEME.police.siren;
+}
+function sirenVoice(copNear, mine){
+  /* whichever of the two sirens is actually the louder is the one being heard */
+  return mine < copNear ? sirenVoiceFor('CRUISER') : sirenVoiceFor(optBody);
+}
 function barScheme(k){ return BAR_SCHEME[(BODY[k] && BODY[k].bar) || ''] || null; }
 
 const BODY = {
@@ -23267,6 +23317,20 @@ requestAnimationFrame(frameLoop);
      check whether a press got through - it is hardcoded on that branch. A
      harness watching the label alone passed with BOTH locks removed. */
   API.mode = function(){ return mode; };
+  /* WHAT THE SIREN IS SET TO RIGHT NOW, read off the live node rather than
+     recomputed - RLG-065's lesson is that a check which reimplements the thing
+     it is checking agrees with itself and proves nothing. */
+  API.sirenNow = function(){
+    /* THE OSCILLATOR AND THE FILTER THEMSELVES. `hold()` returns the nodes, and
+       `set()` ramps them with setTargetAtTime - so these values are what the ear
+       would actually get, not what the code intended. RLG-065: a check that
+       recomputes the thing it is checking agrees with itself and proves
+       nothing. */
+    if(!snd.siren) return null;
+    return { freq:   snd.siren.osc ? snd.siren.osc.frequency.value : null,
+             cutoff: snd.siren.filter ? snd.siren.filter.frequency.value : null,
+             gain:   snd.siren.gain ? snd.siren.gain.gain.value : null };
+  };
   /* opens the traffic classes in the garage WITHOUT writing an unlock flag,
      which is what the DEBUG menu's own switch does */
   API.dbgTraffic = function(v){ dbgTraffic = !!v; return dbgTraffic; };
