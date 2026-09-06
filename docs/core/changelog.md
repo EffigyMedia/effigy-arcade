@@ -14,6 +14,36 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-12-9"></a>
+## [0.12.9] - 2026-09-06
+- Added: **a rival holds a gear, and you hear it shift.** Owner, 2026-09-06: "the AI racers should
+  have shift events all the same no matter what... I should hear them hit the red line and shift up
+  or shift down if they slam on the brakes next to me", and clarifying: "I don't mean I actually hear
+  the shifter. I just hear what their engine does as an effect." **Nothing new is played.** A rival's
+  revs simply stop being a smooth function of its speed - they climb to the redline, the gear
+  changes, and they drop into the new band ([RLG-038](../fragments/RLG-038.md)).
+- Fixed: **a rival was voiced as a generic engine, not as its own car.** The traffic mixer resolved a
+  body through `rigBody()[c.type]` - a TRAFFIC TYPE. A racer has no `type`; it carries `body`, a BODY
+  key. So every rival fell through to a null body and was played at pitch 1.0 against a shared 0.9
+  ceiling: eleven cars of three different models all sounding like one engine. It reads `c.body`
+  first now.
+- Changed: **a shift costs time, so it is an event rather than a relabelling.** `AI_SHIFT_TIME` is
+  0.11s during which the car is between gears and makes no torque. **Measured: rivals are about 1.2%
+  slower** - 6694 units of mean speed before against 6612 after, two trials each on one seed - which
+  is the price of gearchanges they never used to pay.
+- Note: **the gear bands already overlapped "so a shift has somewhere to happen".** That hysteresis
+  was built long before anything needed it, so shifting up past the band top and down below its floor
+  cannot chatter.
+- Note: **what a rival always had, against what it lacked.** It already used this car's ratio table,
+  this car's redline and the SAME torque curve as the player - RLG-038 enforced one physics for every
+  car. What it had not got was a HELD gear: the band was recomputed from speed every frame, so it was
+  always in exactly the right gear, instantly, and there was no shift to hear
+  ([RLG-038](../fragments/RLG-038.md)).
+- Added: **`tools/shift-test.py`**, which checks the mechanism and then the consequence - that revs
+  BREAK while the car is still accelerating, which a gearbox-less car can never do. It waits for the
+  grid to be released rather than measuring the count-in, where all eleven cars sit at one speed with
+  no gear picked and the answer is a meaningless "0 of 11".
+
 <a id="v0-12-8"></a>
 ## [0.12.8] - 2026-09-05
 - Added: **an ambulance does not wail like a police car.** Owner, 2026-09-05: "the ambulance should

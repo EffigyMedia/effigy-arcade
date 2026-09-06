@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.12.8';
+window.ROAD_BUILD = '0.12.9';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -709,13 +709,36 @@ var snd = {
       if(fall <= 0.01){ vo.a.set(90, 0, 400, 0.12); continue; }
       /* its own revs: speed against ITS top, through the same gearing */
       /* the same BODY the driveable version uses */
-      var bk = snd.rigBody()[c.type];
+      /* ---- A RIVAL IS ITS OWN CAR, NOT A GENERIC ONE ------------------
+         `rigBody()[c.type]` maps a TRAFFIC TYPE (a rig name) to a body. A
+         RACER has no `type` at all - it carries `body`, a BODY key - so every
+         rival fell through to `B2 = null` and was voiced at pitch 1.0 against
+         a shared 0.9 ceiling. Eleven cars of three different models all sounded
+         like the same engine. `c.body` is preferred where it exists. */
+      var bk = c.body || snd.rigBody()[c.type];
       var B2 = bk ? BODY[bk] : null;
       var pitch = B2 ? (B2.pitch || 1) : 1;
       var ceil  = B2 ? B2.vmax : 0.9;
       /* its revs against ITS OWN top speed, not a shared one — a lorry at
          60mph is near its limit where a coupe at 60 is barely off idle */
       var rr = Math.min(1, (c.spd || c.cruise || 0) / (MAX_SPD * ceil));
+      /* ---- AND IF IT HOLDS A GEAR, THE REVS FOLLOW THE GEAR ------------
+         Owner, 2026-09-06: you should hear a rival hit the redline and shift,
+         and hear it drop a gear when it brakes beside you - "not the shifter,
+         just what their engine does as an effect".
+
+         SO NOTHING NEW IS PLAYED. This is the same voice; it is the INPUT that
+         changes. Against raw speed the note climbs in one unbroken sweep from
+         a standstill to the car's top end, which is the sound of a car with no
+         gearbox. Against revs-in-gear it climbs to the redline, the gear
+         changes, and it drops into the new band - and that fall is the shift.
+
+         Traffic keeps the speed-based note: a delivery van is not racing you
+         and has no gearbox modelled. */
+      if(c.gear && bk){
+        var tb = gearTableFor(bk), Gv = tb[c.gear - 1] || tb[tb.length - 1];
+        rr = clamp(rr / Math.max(0.01, Gv.to), 0, 1);
+      }
       var hz = (54 + rr*rr*250 + rr*95) * pitch;
       /* ---- DOPPLER ------------------------------------------------------
          Approaching traffic should sit sharp and drop as it passes. The shift
@@ -9061,14 +9084,75 @@ const AI_TOP = MAX_SPD * (180/200);
    flat AI_TOP, never the car's own. The player's `gearRpm` has always measured
    against `MAX_SPD * vmax`, so the two disagreed about what a gear even is.
    Now they agree. RLG-042. */
-function aiGearFactor(v, key){
+/* ---- WHICH GEAR A CAR IS IN WHEN NOBODY IS HOLDING ONE ------------------
+   The band that contains this speed. It is what a rival used before it held a
+   gear of its own, and it is still how one PICKS its starting gear and how any
+   car without a gearbox of its own is treated.
+   ------------------------------------------------------------------------ */
+function gearBandAt(r, table){
+  for(const g2 of table) if(r <= g2.to) return g2;
+  return table[table.length-1];
+}
+/* the revs a car is turning in a given band, as this engine measures them:
+   speed against the TOP of the band, so the top of any gear is the redline */
+function rpmInBand(r, G, rl){
+  return IDLE + (r / Math.max(0.01, G.to)) * (rl - IDLE);
+}
+
+/* ---- A RIVAL HOLDS ITS GEAR AND SHIFTS OUT OF IT (owner, 2026-09-06) -----
+   "The AI racers should have shift events all the same no matter what... I
+   should hear them hit the red line and shift up or shift down if they slam on
+   the brakes next to me." And, clarifying: "I don't mean I actually hear the
+   shifter. I just hear what their engine does as an effect of them shifting."
+
+   SO THIS IS NOT A SOUND EFFECT. Nothing new is played. The rival's revs simply
+   stop being a smooth function of speed: they climb to the redline, the gear
+   changes, and they drop into the new band. The ear gets a shift because the
+   engine does one, which is the same reason the player's car sounds like it
+   has a gearbox.
+
+   WHY IT WAS NOT ALREADY LIKE THIS, and it is a smaller gap than it looks. A
+   rival always had this car's ratio table, this car's redline and the SAME
+   torque curve as the player - RLG-038 enforced that. What it had not got was a
+   HELD gear: the band was recomputed from speed every frame, so the car was
+   always in exactly the right gear, instantly, and its revs rose in one
+   unbroken sweep from a standstill to its top speed. There was no shift to
+   hear because there was no shift.
+
+   THE BANDS ALREADY OVERLAP. `gearTableFor` widens each band by `lap` so that
+   "a shift has somewhere to happen" - so the hysteresis this needs was built
+   years before anything needed it. Shifting up at the top of the band and down
+   below its floor cannot therefore chatter.
+
+   AND A SHIFT COSTS TIME, which is what makes it an event rather than a
+   relabelling. `shiftT` runs the interruption; while it is live the car is
+   between gears and makes no torque. That is a real cost and it is the same
+   cost the player pays for being slow through the gate.
+   ------------------------------------------------------------------------ */
+const AI_SHIFT_TIME = 0.11;      /* seconds between gears - a quick, tidy change */
+function stepAiGearbox(r, dt, braking){
+  const table = gearTableFor(r.body);
+  const rr = clamp(r.spd / vmaxOf(r.body), 0, 1);
+  if(!r.gear){ r.gear = gearBandAt(rr, table).g; r.shiftT = 0; }
+  if(r.shiftT > 0){ r.shiftT = Math.max(0, r.shiftT - dt); return; }
+  const G = table[r.gear - 1] || table[table.length - 1];
+  /* PAST THE TOP OF THE BAND IS THE REDLINE, so that is the upshift */
+  if(rr > G.to && r.gear < table.length){
+    r.gear++; r.shiftT = AI_SHIFT_TIME * (r.shiftSlop || 1); return;
+  }
+  /* and below the floor the engine is lugging - which is what happens when a
+     rival slams on the brakes beside you */
+  if(rr < G.from && r.gear > 1){
+    r.gear--; r.shiftT = AI_SHIFT_TIME * (r.shiftSlop || 1); return;
+  }
+}
+
+function aiGearFactor(v, key, held){
   const table = gearTableFor(key);
   const r = clamp(v / vmaxOf(key), 0, 1);
-  let G = table[table.length-1];
-  for(const g2 of table) if(r <= g2.to){ G = g2; break; }
+  const G = (held && table[held - 1]) || gearBandAt(r, table);
   const rl = redlineFor(key);
-  const rpm = IDLE + (r / Math.max(0.01, G.to)) * (rl - IDLE);
-  return torqueAt(Math.min(rl, rpm), rl) * (G.ratio / 2.0);
+  return torqueAt(Math.min(rl, rpmInBand(r, G, rl)), rl) * (G.ratio / 2.0);
 }
 /* ---- HOW HARD ANY AI CAR ACCELERATES ------------------------------------
    The same expression the player gets. It was `2850 * aiGearFactor(v, top)`
@@ -9081,9 +9165,13 @@ function aiGearFactor(v, key){
    still belongs to the caller and is untouched here - the band is the one
    named exception to the shared-physics rule (RLG-038).
    ------------------------------------------------------------------------- */
-function aiAccel(v, want, dt, key){
+function aiAccel(v, want, dt, key, held, shifting){
   if(want <= v) return Math.max(-5200*dt, want - v);
-  return Math.min(want - v, 1000 * aiGearFactor(v, key) * pullOf(key) * dt);
+  /* between gears there is no drive. This is the shift's COST, and it is why
+     an imperfect shift can be made to matter later without inventing a
+     penalty for it - the penalty is already here. */
+  if(shifting) return 0;
+  return Math.min(want - v, 1000 * aiGearFactor(v, key, held) * pullOf(key) * dt);
 }
 
 /* `rl` is the redline to measure against; it defaults to the player's car so
@@ -12216,7 +12304,8 @@ function stepRacers(dt){
        the rubber band is the one exception to shared physics (RLG-038). */
     /* the first seconds off the line are the rival's own launch, and it
        cannot be used to overshoot the speed it was heading for anyway */
-    let drive = aiAccel(r.spd, want, dt, r.body);
+    stepAiGearbox(r, dt, r.braking);
+    let drive = aiAccel(r.spd, want, dt, r.body, r.gear, r.shiftT > 0);
     if((r.launchT || 0) > 0){
       r.launchT = Math.max(0, r.launchT - dt);
       if(drive > 0) drive = Math.min(want - r.spd, drive * (r.launchQ || 1));
@@ -24043,6 +24132,16 @@ requestAnimationFrame(frameLoop);
   /* who on the grid is wearing stripes, and what body they are in. A check that
      only counted them could not tell "some are striped" from "the formula cars
      got stripes", which is the one thing that must not happen (RLG-117). */
+  /* ---- WHAT THE RIVALS' GEARBOXES ARE DOING ----------------------------
+     Read off the racers themselves, so a check can watch a shift happen rather
+     than infer one from a speed curve. `shifting` is how many are between gears
+     at this instant - the event the owner asked to be able to hear. */
+  API.rivalGears = function(){
+    return racers.map(function(r){
+      return { body:r.body, gear:r.gear || 0, shifting:(r.shiftT || 0) > 0,
+               spd:+(r.spd || 0).toFixed(1) };
+    });
+  };
   API.gridStripes = function(){
     const out = { seen:0, striped:0, bodies:{}, badBody:[] };
     for(const r of racers){
