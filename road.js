@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.0';
+window.ROAD_BUILD = '0.13.1';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12180,6 +12180,7 @@ function buildField(){
     r.paint = pool[i % pool.length];
     r.body  = deck[i];
     /* the bottle is the CAR's (by class) and the nerve is the DRIVER's */
+    r.dmg   = 0; r.iframe = 0;
     r.nos   = hasNosFor(r.body) ? 40 : 0;
     r.nosOn = false;
     /* 0.6 to 1.4: a cautious driver holds a bigger reserve, a bold one spends
@@ -12296,9 +12297,41 @@ function rollField(dt){
     r.z  += v * dt;
   }
 }
+/* ---- A RIVAL TAKES DAMAGE TOO (owner, 2026-09-06) -----------------------
+   "Now we need it so they can get damaged too and incite the same 2sec
+   penalty."
+
+   The note beside the player-versus-rival contact said it in as many words:
+   "only you take damage, because you are the only one keeping a health bar."
+   That is what changes. A rival now carries `dmg` exactly as the player carries
+   `dmg`, and at a hundred it is wrecked for `WRECK_SECS` - THE SAME CONSTANT
+   the player serves, so the penalty cannot drift apart between them.
+
+   IT NEEDED AN INVULNERABILITY WINDOW, for the same reason the player has one.
+   The collision tests run every frame while two cars overlap, so damage applied
+   straight from them would take a rival from nothing to wrecked in a handful of
+   frames of contact. `r.iframe` mirrors the player's `iframe`.
+
+   HITS COST WHAT THEY COST THE PLAYER, roughly: a cruiser is the heaviest, a
+   traffic car next, and a rub against another racer the lightest - because
+   leaning on each other is the sport and spinning a rival on every touch would
+   empty the field in the first mile.
+   ------------------------------------------------------------------------ */
+function hurtRival(r, n){
+  if(!r || r.wreck > 0 || (r.iframe || 0) > 0) return;
+  r.dmg = Math.min(100, (r.dmg || 0) + n);
+  r.iframe = 0.7;
+  if(r.dmg >= 100){
+    r.dmg = 0;
+    r.wreck = WRECK_SECS;        /* the same two seconds the player serves */
+    r.spd *= 0.35;
+  }
+}
+
 function stepRacers(dt){
   const k = Math.min(2.4, dt*60);
   for(const r of racers){
+    if((r.iframe || 0) > 0) r.iframe -= dt;
     if(r.wreck > 0){
       r.wreck -= dt; r.spd *= (1 - 1.6*dt); r.ang += dt*6; r.z += r.spd*dt;
       continue;
@@ -12448,14 +12481,14 @@ function stepRacers(dt){
         if(c.wreck > 0) continue;
         if(Math.abs(c.z - r.z) < 260 && Math.abs(c.x - r.x) < 0.22){
           if(Math.random() < 0.5){ c.wreck = 1.2; c.spd *= 0.5; snd.copDown(); }
-          else { r.wreck = 1.1; r.spd *= 0.6; }
+          else { hurtRival(r, 34); r.spd *= 0.6; }   /* three cruiser hits */
         }
       }
     }
     /* and they crash into traffic if they misjudge it */
     for(const c of traffic){
       if(Math.abs(c.z - r.z) < 220 && Math.abs(c.x - r.x) < 0.20){
-        r.wreck = 1.0; r.spd *= 0.55;
+        hurtRival(r, 26); r.spd *= 0.55;   /* four traffic hits */
       }
     }
 
@@ -12487,6 +12520,10 @@ function stepRacers(dt){
          ------------------------------------------------------------- */
       const rsev = impactWith(r);
       hurt(8 * rsev, 'racer');
+      /* and it hurts them now, on the same severity the same impact gives you.
+         The rub is still the lightest hit on the road - it takes a lot of
+         leaning to wreck a rival - but it is no longer free. */
+      hurtRival(r, 8 * rsev);
       iframe = 0.7;
       burst(r, '#ffd27a');
     }
@@ -14183,13 +14220,38 @@ function step(dt){
     if(k.z > pos - 400) scatter(0.90, k.z, k.x);
   }
 
-  /* serving a wreck penalty: the world stops, the clock does not */
-  if(wreckWait > 0){
+  /* ---- SERVING A PENALTY, AND THE WORLD KEEPS GOING (owner, 2026-09-06) ---
+     "When the player gets the 2 seconds penalty, the world shouldn't freeze.
+     The world should continue."
+
+     THIS USED TO `return`, and the comment above it said so plainly: "the world
+     stops, the clock does not". Everything below was skipped - the biome, the
+     weather, the traffic, the police, and `stepRacers`. So two seconds of
+     penalty cost you the clock and NOTHING ELSE: the field you were racing sat
+     frozen exactly where it was and you lost no ground at all, which is the
+     opposite of a penalty.
+
+     Now only the PLAYER is out of the race. The car is being put back on the
+     road, so it does not move, cannot be driven and cannot be hit while it is
+     not really there - and everything else in the world carries on around it.
+     The field drives away from you, which is what the two seconds are meant to
+     cost.
+
+     THE CLOCK IS NOT TOUCHED HERE. It was decremented in this block because the
+     early `return` skipped the clock's own code below; now that the frame runs
+     to the end, the block at "the clock" owns it. Decrementing in both places
+     would run the countdown at double speed for exactly two seconds, which is
+     the sort of thing nobody would notice until a run ended early.
+     ------------------------------------------------------------------------ */
+  const serving = wreckWait > 0;
+  if(serving){
     wreckWait -= dt;
-    clock -= dt;
-    if(clock <= 0){ clock = 0; }
     if(wreckWait <= 0) hasMoved = false;
-    return;
+    spd = 0; nosOn = false;
+    playerX = 0; targetX = 0; camX = 0;
+    /* untouchable while it is being replaced, or the traffic you stopped in
+       front of wrecks you again the moment you come back */
+    iframe = Math.max(iframe, 0.25);
   }
 
   /* `runSeconds` was removed with the TEST DRIVE unlock triggers (RLG-049): the 180mph average was its only reader. */
@@ -24314,7 +24376,10 @@ requestAnimationFrame(frameLoop);
                /* the bottle: whether the CAR has one, how much is in it, and
                   whether this DRIVER currently has it open */
                hasNos:hasNosFor(r.body), nos:+(r.nos || 0).toFixed(1),
-               nosOn:!!r.nosOn, nerve:+(r.nosNerve || 0).toFixed(2) };
+               nosOn:!!r.nosOn, nerve:+(r.nosNerve || 0).toFixed(2),
+               /* the health bar a rival now keeps, and the penalty it serves */
+               dmg:+(r.dmg || 0).toFixed(1), wreck:+(r.wreck || 0).toFixed(2),
+               z:Math.round(r.z || 0) };
     });
   };
   /* drop a crate right in front of a named rival, so a check can watch one be
@@ -24329,6 +24394,22 @@ requestAnimationFrame(frameLoop);
                return { z:Math.round(c.z), x:+(c.x||0).toFixed(3), got:!!c.got }; }),
              rival:{ z:Math.round(r.z||0), x:+(r.x||0).toFixed(3), wreck:r.wreck||0 },
              playerZ:Math.round(pos) };
+  };
+  /* the player's own penalty state, so a check can watch what the world does
+     while it is being served */
+  API.penalty = function(){
+    return { wreckWait:+(wreckWait || 0).toFixed(2), clock:+(clock || 0).toFixed(2),
+             pos:Math.round(pos), spd:Math.round(spd) };
+  };
+  /* wreck the player on demand - the harness cannot reliably crash on cue, and
+     what is under test is what the WORLD does during the penalty, not how the
+     crash was caused */
+  API.forceWreck = function(){ wreck('TEST'); return wreckWait; };
+  /* and damage a named rival, for the same reason */
+  API.hurtRival = function(i, n){
+    const r = racers[i]; if(!r) return null;
+    r.iframe = 0; hurtRival(r, n === undefined ? 50 : n);
+    return { dmg:r.dmg, wreck:r.wreck };
   };
   API.crateAt = function(i, ahead){
     const r = racers[i];

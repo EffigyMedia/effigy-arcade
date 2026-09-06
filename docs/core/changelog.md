@@ -14,6 +14,33 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-1"></a>
+## [0.13.1] - 2026-09-06
+- Fixed: **a wreck penalty no longer freezes the world.** Owner, 2026-09-06: "when the player gets
+  the 2 seconds penalty, the world shouldn't freeze. The world should continue." The step used to
+  `return` early, skipping the biome, the weather, the traffic, the police and `stepRacers` - and its
+  own comment said so: *"the world stops, the clock does not"*. **So two seconds of penalty cost the
+  clock and nothing else: the field sat frozen exactly where it was and you lost no ground at all**,
+  which is the opposite of a penalty. Measured after: rivals cover about 7,700 units while the player
+  covers zero.
+- Added: **a rival keeps a health bar and serves the same two seconds.** Owner: "we need it so they
+  can get damaged too and incite the same 2sec penalty." Damage accumulates on a rival as it does on
+  the player, and at a hundred it wrecks for `WRECK_SECS` - the same constant, so the two penalties
+  cannot drift apart.
+- Changed: **a rival gets an invulnerability window, because the player has one.** The collision
+  tests run every frame while two cars overlap, so damage taken straight from them would wreck a
+  rival in a handful of frames of contact. `r.iframe` mirrors the player's.
+- Changed: **leaning on you is no longer free.** The note beside the player-versus-rival contact said
+  *"only you take damage, because you are the only one keeping a health bar"* - a rival now takes the
+  same severity from the same impact. It is still the lightest hit on the road, because a rub between
+  two racing cars is the sport.
+- Note: **the clock has one owner again.** It was decremented inside the penalty branch precisely
+  because the early return skipped the clock's own code. With the frame running to the end, both
+  would have ticked it and the countdown would have run at DOUBLE SPEED for exactly two seconds.
+  Measured at 1.00/s through a penalty against 1.00/s driving normally.
+- Added: **`tools/penalty-test.py`**, which asks whether the FIELD MOVED while the player did not,
+  rather than whether time passed. Watched failing with the freeze restored: rivals move 0 units.
+
 <a id="v0-13-0"></a>
 ## [0.13.0] - 2026-09-06
 
