@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.12.9';
+window.ROAD_BUILD = '0.13.0';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -660,6 +660,20 @@ var snd = {
       for(var i=0;i<16;i++){
         snd.voices.push({
           a: AR.sfx.hold({ freq:90, type:'sawtooth', cutoff:600, q:2.4, pan:0 }),
+          /* ---- THE BOTTLE, ON THE SAME VOICE (owner, 2026-09-06) --------
+             "The blue flame effect and the sound are seen/heard by the player
+             with sound location and Doppler just like engines."
+
+             SO IT IS NOT A SEPARATE SOUND SOURCE. It is a second layer on the
+             SAME voice slot, which means it inherits that slot's panning and
+             its Doppler for free rather than reimplementing them - and it can
+             never drift out of step with the engine it belongs to, which two
+             independently placed sources eventually would.
+
+             Noise rather than a tone, and the same shape the PLAYER's own
+             `thrust` uses, so a rival's bottle and yours are one effect heard
+             from two places. */
+          n: AR.sfx.holdNoise({ freq:1800, q:0.35, pan:0 }),
           busy: null
         });
       }
@@ -692,7 +706,9 @@ var snd = {
     for(var v=0; v<snd.voices.length; v++){
       var vo = snd.voices[v], c = near[v];
       if(!vo.a) continue;
-      if(!c){ vo.a.set(90, 0, 400, 0.12); continue; }
+      if(!c){ vo.a.set(90, 0, 400, 0.12);
+              if(vo.n) vo.n.set(1800, 0, 0.12);
+              continue; }
       var d = c.z - pos;
       var dist = Math.abs(d);
       /* fades out by about a hundred metres either way */
@@ -706,7 +722,9 @@ var snd = {
          36,000 is roughly the visible road, so a car appearing at the horizon
          fades in and is loudest as it draws alongside. */
       var fall = Math.max(0, 1 - dist / (c.earshot || ENG_FALLOFF));
-      if(fall <= 0.01){ vo.a.set(90, 0, 400, 0.12); continue; }
+      if(fall <= 0.01){ vo.a.set(90, 0, 400, 0.12);
+                        if(vo.n) vo.n.set(1800, 0, 0.12);
+                        continue; }
       /* its own revs: speed against ITS top, through the same gearing */
       /* the same BODY the driveable version uses */
       /* ---- A RIVAL IS ITS OWN CAR, NOT A GENERIC ONE ------------------
@@ -753,7 +771,17 @@ var snd = {
       var lateral = ((c.x || 0) - playerX);
       /* same correction: "close" is thousands of units, not hundreds */
       var closeness = 1 - Math.min(1, dist / 14000);
-      vo.a.place(clamp(lateral * (0.9 + closeness*1.9), -1, 1), 0.07);
+      var pan = clamp(lateral * (0.9 + closeness*1.9), -1, 1);
+      vo.a.place(pan, 0.07);
+      /* the hiss is placed with the engine, so it arrives from where the car
+         is and sweeps across as it goes by - the owner's "sound location and
+         Doppler just like engines", got by sharing the mechanism rather than
+         by copying it. The Doppler rides `hz` above; noise has no pitch to
+         shift, so what sells the pass is the placement and the level. */
+      if(vo.n){
+        vo.n.place(pan, 0.07);
+        vo.n.set(1500 + rr*1900, c.nosOn ? 0.075 * fall * snd.tScale : 0, 0.06);  /* freq, level, glide */
+      }
       /* ---- LOUD ENOUGH TO HEAR IT MOVE ---------------------------------
          0.058 with a SQUARED falloff meant a car at half distance was at a
          quarter level and a car at the horizon was inaudible — so the panning
@@ -2717,15 +2745,25 @@ function awardNos(n){
    never a thing you drive over for nothing.
    ------------------------------------------------------------------------ */
 const CRATE_SECS = 10;
-function hasNos(){
-  const B = BODY[optBody];
+/* ---- WHICH CARS CARRY A BOTTLE, ASKED OF A CAR RATHER THAN OF THE PLAYER --
+   This read `optBody` throughout, so it could only ever answer for whoever was
+   holding the wheel. The owner's ruling that rival sports, super and formula
+   cars carry nitrous needs the same question asked of a RIVAL, and the answer
+   must be the same one - a class describes the vehicle, not the driver.
+
+   The list is unchanged. `B.nos` still overrides it per body, which is how a
+   car can be given or denied a bottle without touching the classes.
+   ------------------------------------------------------------------------ */
+function hasNosFor(k){
+  const B = BODY[k];
   if(!B) return false;
   if(B.nos !== undefined) return !!B.nos;
-  return SPORTS_BODIES.indexOf(optBody) >= 0
-      || SUPER_BODIES.indexOf(optBody) >= 0
-      || isFormula(optBody)
-      || !!B.force && optBody === 'SUPERCRUISER';
+  return SPORTS_BODIES.indexOf(k) >= 0
+      || SUPER_BODIES.indexOf(k) >= 0
+      || isFormula(k)
+      || !!B.force && k === 'SUPERCRUISER';
 }
+function hasNos(){ return hasNosFor(optBody); }
 
 function bodyMass(){
   const B = BODY[optBody];
@@ -8621,6 +8659,19 @@ let FLEET_TOP = 1.0;
    you reach and keep.
    ------------------------------------------------------------------------ */
 const NOS_REV = 1.10;
+/* ---- ONE BOTTLE FOR THE WHOLE FLEET (owner, 2026-09-06) ------------------
+   "Rival sports cars, supercars, a formula cars should all have nitrous too...
+   They should also get the trickle fill of NOS as well."
+
+   These three were inline numbers inside the player's own step, which was fine
+   while the player was the only car with a bottle. A rival that refilled at its
+   own rate or spent at its own rate would be a second bottle, and the standing
+   ruling is ONE PHYSICS FOR EVERY CAR - so they are named here and both the
+   player and the AI read them.
+   ------------------------------------------------------------------------ */
+const NOS_DRAIN   = 26;    /* units a second while the bottle is open */
+const NOS_TRICKLE = 1.1;   /* units a second it refills on its own */
+const NOS_MIN     = 8;     /* below this there is not enough left to be worth opening */
 /* how much the engine is allowed to overspeed right now: a tenth on the
    bottle, and nothing at all otherwise */
 function nosStretch(){ return nosOn ? NOS_REV : 1; }
@@ -9129,6 +9180,61 @@ function rpmInBand(r, G, rl){
    between gears and makes no torque. That is a real cost and it is the same
    cost the player pays for being slow through the gate.
    ------------------------------------------------------------------------ */
+/* ---- A RIVAL'S BOTTLE, AND WHEN A DRIVER OPENS IT ------------------------
+   Owner, 2026-09-06: "rival sports cars, supercars, a formula cars should all
+   have nitrous too. So they need to have the AI behavior to use it
+   appropriately."
+
+   THE CAR IS CAPABLE AND THE DRIVER DECIDES - three earlier rulings and the
+   pickup correction all say it, so the two halves are kept apart here.
+   `hasNosFor` answers whether the CAR has a bottle, by class, exactly as it
+   does for the player. Everything below is the DRIVER: when it is worth
+   spending, and how willing this particular driver is to spend it.
+
+   WHEN IT IS WORTH SPENDING. A boost is only worth anything where the car can
+   use the extra ceiling, so:
+     - there has to be something to chase or something to hold off. A car alone
+       on an empty road gains nothing from arriving at its top speed sooner.
+     - it must be near its current ceiling already. Boosting out of a corner at
+       half speed spends the bottle on acceleration the engine was going to
+       give anyway.
+     - and it keeps a reserve, because a bottle emptied on a straight is a
+       bottle you have not got when somebody comes past.
+
+   AND `nerve` IS WHY ELEVEN CARS DO NOT ALL BOOST AT ONCE. It is set per DRIVER
+   at the grid, not per body, so two identical cars spend differently - which is
+   the whole point of RLG-054's personalities and the reason a class must never
+   be the thing that decides a behaviour.
+   ------------------------------------------------------------------------ */
+const AI_NOS_RESERVE = 22;     /* keep this much back for defending */
+const AI_NOS_NEAR    = 5200;   /* a car this close is worth spending on */
+function stepAiNos(r, dt, want){
+  if(!hasNosFor(r.body)){ r.nos = 0; r.nosOn = false; return; }
+  if(r.nos === undefined){ r.nos = 40; r.nosOn = false; }
+  /* the same trickle the player's bottle gets, from the same constant */
+  if(!r.nosOn && r.nos < 100) r.nos = Math.min(100, r.nos + dt * NOS_TRICKLE);
+  if(r.nosOn){
+    r.nos = Math.max(0, r.nos - NOS_DRAIN * dt);
+    /* let go when it is spent, or when there is no longer anything to gain */
+    if(r.nos <= 0 || r.spd < want * 0.90){ r.nosOn = false; }
+    return;
+  }
+  const floor = NOS_MIN + AI_NOS_RESERVE * (r.nosNerve === undefined ? 1 : (2 - r.nosNerve));
+  if(r.nos < floor) return;
+  /* is anybody worth chasing or holding off, within earshot of a boost? */
+  let rival = false;
+  const dPlayer = Math.abs(r.z - pos);
+  if(dPlayer < AI_NOS_NEAR) rival = true;
+  if(!rival) for(const o of racers){
+    if(o === r) continue;
+    if(Math.abs(o.z - r.z) < AI_NOS_NEAR){ rival = true; break; }
+  }
+  if(!rival) return;
+  /* and only where the extra ceiling is reachable - see the note above */
+  if(r.spd < want * 0.93) return;
+  if(r.shiftT > 0) return;                    /* not mid-gearchange */
+  r.nosOn = true;
+}
 const AI_SHIFT_TIME = 0.11;      /* seconds between gears - a quick, tidy change */
 function stepAiGearbox(r, dt, braking){
   const table = gearTableFor(r.body);
@@ -12073,6 +12179,12 @@ function buildField(){
     r.x = LANE_X[r.lane];
     r.paint = pool[i % pool.length];
     r.body  = deck[i];
+    /* the bottle is the CAR's (by class) and the nerve is the DRIVER's */
+    r.nos   = hasNosFor(r.body) ? 40 : 0;
+    r.nosOn = false;
+    /* 0.6 to 1.4: a cautious driver holds a bigger reserve, a bold one spends
+       down to almost nothing. Per driver, never per body. */
+    r.nosNerve = rnd(0.6, 1.4);
     /* ---- SOME OF THEM ARE STRIPED (RLG-117) --------------------------
        A chance, not a rule, so a grid is a mix rather than a livery. Rolled
        here with the paint and the body because it is part of what this car IS
@@ -12299,6 +12411,15 @@ function stepRacers(dt){
        ---------------------------------------------------------------------- */
     const ceiling = AI_TOP * (1 + Math.max(0, band));
     want = Math.min(want, ceiling);
+    /* ---- THE BOTTLE, AND IT LIFTS THE SAME CEILING THE PLAYER'S DOES ----
+       `NOS_REV` is the player's own stretch, read from the same constant, so a
+       boosting rival gains exactly what a boosting player gains. It is applied
+       AFTER the rubber band's clamp deliberately: the band decides how fast
+       this car is trying to go, and the bottle is the driver briefly exceeding
+       that - which is what makes a boost visible as an overtake rather than
+       disappearing into the band. */
+    stepAiNos(r, dt, want);
+    if(r.nosOn) want *= NOS_REV;
     const rWas = r.spd;
     /* its OWN gearbox and its OWN torque. `ceiling` still clamps `want` above:
        the rubber band is the one exception to shared physics (RLG-038). */
@@ -13842,7 +13963,7 @@ function step(dt){
   // --- speed ---
   const prevSpd = spd;
   const offRoad = Math.abs(playerX) > 1.0;
-  if(nosOn && nos>0){ nos = Math.max(0, nos - 26*dt); if(nos<=0) nosOn=false; }
+  if(nosOn && nos>0){ nos = Math.max(0, nos - NOS_DRAIN*dt); if(nos<=0) nosOn=false; }
   else nosOn=false;
   /* Off the gas the car is in neutral: it does not hold a speed, it rolls.
      Engine braking and rolling resistance bleed it off slowly — much gentler
@@ -14251,7 +14372,7 @@ function step(dt){
      A full bottle from empty takes a little over a minute and a half.
      -------------------------------------------------------------------------- */
   /* and it only trickles into a bottle that exists (RLG-107) */
-  if(!nosOn && hasNos() && nos < 100) nos = Math.min(100, nos + dt * 1.1);
+  if(!nosOn && hasNos() && nos < 100) nos = Math.min(100, nos + dt * NOS_TRICKLE);
 
   if(hornCool > 0) hornCool -= dt;
   /* ---- traffic coming up behind ------------------------------------------
@@ -14959,6 +15080,31 @@ function step(dt){
     const c = crates[i];
     if(c.z < pos - 1500){ crates.splice(i,1); continue; }
     if(c.got) continue;
+    /* ---- A RIVAL CAN TAKE IT FIRST (owner, 2026-09-06) ------------------
+       "They will also compete with you over the pickups, which will award NOS
+       to them the same way it does you."
+
+       SO THE CRATE IS FIRST COME, FIRST SERVED, and this runs BEFORE the
+       player's test rather than after it: a crate the player has already taken
+       is marked `got` and skipped, so checking the rivals second would mean the
+       player always won a tie. Whoever reaches it takes it, and that is what
+       makes it a contest rather than a decoration.
+
+       IT PAYS ONLY WHAT THAT CAR CAN USE, exactly as it does for the player. A
+       rival with no bottle gets nothing from the NOS - `hasNosFor` decides,
+       by class, the same function the player's award asks. There is no flash
+       and no label because a rival taking a crate is something you SEE happen
+       to the crate, not something the HUD announces. */
+    let taken = false;
+    for(const r2 of racers){
+      if(r2.wreck > 0) continue;
+      if(Math.abs(c.z - r2.z) >= 460) continue;
+      if(Math.abs(c.x - r2.x) >= carW(0.30)) continue;
+      c.got = true; taken = true;
+      if(hasNosFor(r2.body)) r2.nos = Math.min(100, (r2.nos || 0) + 25);
+      break;
+    }
+    if(taken) continue;
     /* held: a crate cannot be collected by a car nobody is driving */
     if(!held && Math.abs(c.z - pz) < 460 && Math.abs(c.x - playerX) < carW(0.30)){
       c.got = true;
@@ -18352,6 +18498,16 @@ function paintBucket(list, onRoad){
                           || RIVAL_SP[(r.body||'MATADOR')+'|'+r.paint] || SP.player,
                              r.x, r.z, r.w, r.wreck>0?0.85:1);
       noteSprite(r);
+      /* a boosting rival wears the same flame the player does, drawn additively
+         over its sprite. Small cars far up the road are skipped: below about
+         ten pixels the glow is bigger than the car and reads as a smudge on the
+         road rather than as a jet. */
+      if(box && r.nosOn && box.w > 10){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        nosFlame(box.x, box.y, box.w, box.h);
+        ctx.restore();
+      }
       if(box){
         /* 26px of car is a long way up the road — the place vanished exactly
            when you most wanted it, on the cars you are chasing. 14 shows it
@@ -18734,17 +18890,32 @@ function drawPlayer(){
     ctx.beginPath(); ctx.arc(p.x+ox*w, p.y-h*0.34, w*0.30, 0, 6.2832); ctx.fill();
   }
   }
-  if(nosOn){
-    for(const ox of [-0.13,0.13]){
-      const g = ctx.createRadialGradient(p.x+ox*w, p.y-h*0.12, 0, p.x+ox*w, p.y-h*0.12, w*0.36);
-      g.addColorStop(0,'rgba(150,240,255,.8)');
-      g.addColorStop(0.5,'rgba(80,180,255,.35)');
-      g.addColorStop(1,'rgba(80,180,255,0)');
-      ctx.fillStyle=g;
-      ctx.beginPath(); ctx.arc(p.x+ox*w, p.y-h*0.12, w*0.36, 0, 6.2832); ctx.fill();
-    }
-  }
+  if(nosOn) nosFlame(p.x, p.y, w, h);
   ctx.globalCompositeOperation='source-over';
+}
+
+/* ---- THE BLUE FLAME, WHEREVER THE CAR IS (owner, 2026-09-06) -------------
+   "When a rival does use NOS the blue flame effect and the sound are seen/heard
+   by the player."
+
+   The flame already existed and was drawn INSIDE the player's own painter, so
+   it could only ever appear on the player's car. Lifting it out changes nothing
+   about how it looks - the same twin cores, the same three stops - and lets a
+   rival wear the identical effect rather than an imitation of it.
+
+   IT EXPECTS `lighter` TO BE SET by the caller, because the player's painter
+   draws it inside an additive block along with the damage glow, and a flame
+   that composites differently on a rival would read as a different effect.
+   ------------------------------------------------------------------------ */
+function nosFlame(px, py, w, h){
+  for(const ox of [-0.13,0.13]){
+    const g = ctx.createRadialGradient(px+ox*w, py-h*0.12, 0, px+ox*w, py-h*0.12, w*0.36);
+    g.addColorStop(0,'rgba(150,240,255,.8)');
+    g.addColorStop(0.5,'rgba(80,180,255,.35)');
+    g.addColorStop(1,'rgba(80,180,255,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(px+ox*w, py-h*0.12, w*0.36, 0, 6.2832); ctx.fill();
+  }
 }
 
 /* ---- YOU HAVE TO SEE IT ------------------------------------------------
@@ -24139,8 +24310,31 @@ requestAnimationFrame(frameLoop);
   API.rivalGears = function(){
     return racers.map(function(r){
       return { body:r.body, gear:r.gear || 0, shifting:(r.shiftT || 0) > 0,
-               spd:+(r.spd || 0).toFixed(1) };
+               spd:+(r.spd || 0).toFixed(1),
+               /* the bottle: whether the CAR has one, how much is in it, and
+                  whether this DRIVER currently has it open */
+               hasNos:hasNosFor(r.body), nos:+(r.nos || 0).toFixed(1),
+               nosOn:!!r.nosOn, nerve:+(r.nosNerve || 0).toFixed(2) };
     });
+  };
+  /* drop a crate right in front of a named rival, so a check can watch one be
+     contested instead of waiting for the road to deal one */
+  /* asked of a BODY, so a check can put the negative case - the cars that must
+     NOT have a bottle - which a grid of sports cars can never exercise */
+  API.hasNosFor = function(k){ return hasNosFor(k); };
+  /* what crates exist and where, against the car they were dropped on */
+  API.crateState = function(i){
+    const r = racers[i] || {};
+    return { crates:crates.map(function(c){
+               return { z:Math.round(c.z), x:+(c.x||0).toFixed(3), got:!!c.got }; }),
+             rival:{ z:Math.round(r.z||0), x:+(r.x||0).toFixed(3), wreck:r.wreck||0 },
+             playerZ:Math.round(pos) };
+  };
+  API.crateAt = function(i, ahead){
+    const r = racers[i];
+    if(!r) return false;
+    crates.push({ z:r.z + (ahead === undefined ? 900 : ahead), x:r.x, got:false });
+    return true;
   };
   API.gridStripes = function(){
     const out = { seen:0, striped:0, bodies:{}, badBody:[] };

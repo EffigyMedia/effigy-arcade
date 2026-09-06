@@ -554,7 +554,26 @@ A.sfx = {
     f.frequency.value = o.freq || 800;
     f.Q.value = o.q === undefined ? 0.7 : o.q;
     var g = ctx.createGain(); g.gain.value = 0;
-    src.connect(f); f.connect(g); g.connect(A.audio.bus(o.bus || 'sfx'));
+    /* ---- A NOISE VOICE CAN BE PLACED TOO --------------------------------
+       `hold` has had a stereo panner since sounds needed to exist at a
+       POSITION in the world; `holdNoise` never did, so anything noise-based
+       was always dead centre however far to the side it was happening. That
+       was invisible while noise was only used for wind and tyre roar, which
+       are not anywhere in particular - and it became a real gap the moment a
+       nitrous hiss had to come from the car that was using it.
+
+       Same option and same shape as `hold`: opt in with `pan`, and get a
+       `place()` that moves it. A voice that does not ask for one is wired
+       exactly as before. */
+    var pan = null;
+    if (o.pan !== undefined && ctx.createStereoPanner){
+      pan = ctx.createStereoPanner();
+      pan.pan.value = o.pan;
+      src.connect(f); f.connect(g); g.connect(pan);
+      pan.connect(A.audio.bus(o.bus || 'sfx'));
+    } else {
+      src.connect(f); f.connect(g); g.connect(A.audio.bus(o.bus || 'sfx'));
+    }
     src.start();
     return {
       gain:g, filter:f,
@@ -563,6 +582,12 @@ A.sfx = {
         var n = ctx.currentTime, k = glide || 0.08;
         if (freq !== undefined)  f.frequency.setTargetAtTime(Math.max(40, freq), n, k);
         if (level !== undefined) g.gain.setTargetAtTime(level, n, k);
+      },
+      /* -1 hard left, 0 centre, +1 hard right - the same contract `hold` has */
+      place: function(x, glide){
+        if (!ctx || !pan) return;
+        pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, x)),
+                                ctx.currentTime, glide || 0.06);
       },
       stop: function(){ if (!ctx) return; try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); src.stop(ctx.currentTime + 0.4); } catch(e){} }
     };

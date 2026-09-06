@@ -14,6 +14,47 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-0"></a>
+## [0.13.0] - 2026-09-06
+
+**Slice checkpoint. The rivals slice closes.** 0.12 ran nine patches and they divide cleanly in
+two: the ambulance and the class gate that made it coherent, then the rivals gaining a gearbox and a
+bottle. The queue now turns to the tyre screech, so the minor moves and the patch count resets.
+
+- Added: **rival sports, super and formula cars carry nitrous.** Owner, 2026-09-06: "rival sports
+  cars, supercars, a formula cars should all have nitrous too. So they need to have the AI behavior
+  to use it appropriately. They will also compete with you over the pickups, which will award NOS to
+  them the same way it does you. They should also get the trickle fill of NOS as well." All four
+  parts are built ([RLG-038](../fragments/RLG-038.md)).
+- Changed: **`hasNos()` stopped being a question about the player.** It read `optBody` throughout, so
+  it could only answer for whoever held the wheel. It is `hasNosFor(body)` now, and the class list is
+  unchanged - a rival and a player in the same model can never disagree about whether that car has a
+  bottle.
+- Changed: **the bottle's three numbers are named and shared.** The drain, the trickle and the
+  minimum to open were inline constants inside the player's own step. A rival refilling at its own
+  rate would have been a second bottle, and the ruling is one physics for every car
+  ([RLG-038](../fragments/RLG-038.md)).
+- Added: **the AI decides when to spend it, and each driver decides differently.** A boost is only
+  taken when there is something to chase or hold off, when the car is already near its ceiling, and
+  while keeping a reserve. `nerve` is set per DRIVER at the grid, never per body - **measured at 7.7%
+  of the time with the bottle open, max 9% across the field**.
+- Added: **a crate is first come, first served.** The rival test runs BEFORE the player's, because a
+  crate the player has taken is already marked and skipped - checking rivals second would mean the
+  player always won a tie. It pays only what that car can use, exactly as it does for you.
+- Added: **the blue flame is on rivals too, and it is the same flame.** It already existed but was
+  written inside the player's own painter, so only the player could ever wear it. Lifted into one
+  `nosFlame` both call, with the geometry byte-identical.
+- Added: **you hear a rival's bottle, from where the car is.** Owner: "with sound location and
+  Doppler just like engines." It is a second layer on the SAME voice slot as that car's engine, so it
+  inherits that slot's panning and Doppler rather than reimplementing them, and can never drift out
+  of step with the engine it belongs to.
+- Changed: **`holdNoise` can be placed.** `hold` has had a stereo panner since sounds needed to exist
+  at a position; the noise voice never did, so anything noise-based was dead centre however far to the
+  side it was happening. Same option and same contract as `hold`.
+- Note: **rivals are about 6% faster overall** - mean speed 6612 before against 7023 after. That is a
+  real balance change and it is the owner's to judge on a device: the field is harder to beat than it
+  was, and the lever is the reserve and the trigger rather than the boost itself.
+
 <a id="v0-12-9"></a>
 ## [0.12.9] - 2026-09-06
 - Added: **a rival holds a gear, and you hear it shift.** Owner, 2026-09-06: "the AI racers should
