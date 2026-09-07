@@ -14,6 +14,26 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-10"></a>
+## [0.13.10] - 2026-09-07
+- Changed: **the barrier holds you against it, and it no longer steers for you.** Owner,
+  2026-09-07: "I don't want the player car to bounce back into the roadway. If you hit the playable
+  edge right now it pushes you back in." One line inside the off-road block, `targetX = playerX*0.7`,
+  parked the steering target three tenths of the way back toward the middle - so the car drove itself
+  off the barrier. Worse, it wrote that target on **every frame the wall was touched**, which threw
+  away whatever the thumb had just asked for: against the edge, the player was not the one steering.
+  Measured, it kept the car from ever reaching the wall at all (it pinned at 0.94 of the 1.13) and
+  then carried it 0.16 back toward the middle once the wheel was released.
+- The aim now follows the car - `targetX = playerX`, the same idiom this engine already uses after a
+  shunt. You rest against the barrier until you steer off it yourself.
+- **Nothing was relaxed about what the verge costs.** `offRoad` still caps the whole thing at
+  OFF_SPD for as long as you are outside the tarmac, and the hard scrub still runs for every frame
+  you press *into* the wall rather than along it. What went is the shove, not the punishment - and
+  the new check asserts the ceiling as well as the hold, because deleting the off-road block would
+  otherwise satisfy the first two assertions while giving the verge away for free.
+- Added `tools/wall-test.py`, watched failing against the old line. See
+  [UNT-182](../fragments/UNT-182.md).
+
 <a id="v0-13-9"></a>
 ## [0.13.9] - 2026-09-07
 - Fixed: **the scenery half of the report, and the traffic was never the thing painted wrongly.**

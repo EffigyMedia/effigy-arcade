@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.9';
+window.ROAD_BUILD = '0.13.10';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14678,7 +14678,29 @@ function step(dt){
        ---------------------------------------------------------------------- */
     if(Math.abs(playerX) > 1.15){
       playerX = Math.sign(playerX)*1.13;
-      targetX = playerX*0.7;
+      /* ---- THE WALL HOLDS YOU, IT DOES NOT STEER YOU BACK ---------------
+         Owner, 2026-09-07: "I don't want the player car to bounce back into
+         the roadway. If you hit the playable edge right now it pushes you back
+         in."
+
+         THIS LINE READ `targetX = playerX*0.7`, and it did two things at once.
+         It parked the steering target three tenths of the way back toward the
+         middle, so the car drove itself off the barrier - the bounce. And it
+         did that EVERY FRAME the wall was touched, which threw away whatever
+         the thumb had just asked for: while you were against the edge you were
+         not the one steering.
+
+         `targetX = playerX` is the idiom this file already uses after a shunt
+         (see the rub in the collision code) and it means the same thing here -
+         the aim follows the car rather than fighting it. You rest against the
+         barrier until you steer off it yourself.
+
+         IT STILL COSTS, and nothing about that was relaxed. `offRoad` caps the
+         whole verge at OFF_SPD for as long as you are outside the tarmac, and
+         the scrub below still runs for every frame you press INTO the wall
+         rather than along it. What went is the shove, not the punishment.
+         ---------------------------------------------------------------- */
+      targetX = playerX;
       /* scrubbed hard and continuously, rather than in one hit - a barrier is
          something you drag along, and dragging along it should feel expensive
          every moment it lasts */
