@@ -14,6 +14,19 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-5"></a>
+## [0.13.5] - 2026-09-07
+- Fixed: **police hardiness follows the car they are a variant OF, not their own mass.** Owner,
+  2026-09-07: "I always saw the cab and cruiser as a variant of the saloon." The ruling was 1.5x
+  "their standard car counterpart" and the counterpart is now declared rather than guessed:
+  **cruiser 155** from the saloon's 103, **super cruiser 159** from the Matador's 106, where taking
+  1.5x their own mass had given 171 and 169 ([RLG-131](../fragments/RLG-131.md)).
+- Added: **`kin` on the BODY record - what a car is a variant of.** The codebase already half-said
+  this: `rigBody` maps `sedan2` onto the saloon's numbers with the note "the variant borrows the
+  saloon's numbers", and the super cruiser's own comment has called it a MATADOR the force took since
+  it was built. `kin` writes it down instead of leaving it implied by a rig name. CAB declares SALOON
+  too, though its own hardiness is still mass-derived - it is not police, so the 1.5x does not apply.
+
 <a id="v0-13-4"></a>
 ## [0.13.4] - 2026-09-07
 - Added: **wrecked traffic slides aside and stays as a hazard until it is culled.** Owner, 2026-09-07,

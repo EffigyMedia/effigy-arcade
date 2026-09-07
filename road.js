@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.4';
+window.ROAD_BUILD = '0.13.5';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2608,7 +2608,7 @@ const BODY = {
 
      `npc:true` keeps it out of the garage — it is not yours.
      ---------------------------------------------------------------------- */
-  'SUPERCRUISER': { npc:true, force:true, bar:'police', barY:0.304,
+  'SUPERCRUISER': { kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ npc:true, force:true, bar:'police', barY:0.304,
               bodyTop:0.52, cabinTop:0.24, cabW:0.52, cabOff:0, roofR:0.10,
               wide:0.030, arch:1.00, gears:6, redline:12000, pitch:1.02,
               horn:1.02, rear:'CRUISER', spoiler:'low',
@@ -2624,7 +2624,7 @@ const BODY = {
                  car of the class it polices and the best-braked. */
               note:'INTERCEPTOR \u00B7 A MATADOR WITH A CAGE IN IT' },
 
-  'CRUISER': { force:true, bar:'police', barY:0.122, rig:'cop', gears:5, wide:0.045, arch:1.00,
+  'CRUISER': { kin:'SALOON', /* a patrol car is a saloon in force colours */ force:true, bar:'police', barY:0.122, rig:'cop', gears:5, wide:0.045, arch:1.00,
               horn:0.80, redline:11000, pitch:0.72, rear:'CRUISER',
               mass:1810, hp:370, grip:0.96, launch:1.16, mech:1.15, vmax:0.71, note:'INTERCEPTOR \u00B7 HEAVY, AND FAST' },
   /* ---- THE TRAFFIC, DRIVEABLE ---------------------------------------------
@@ -2641,7 +2641,7 @@ const BODY = {
   'SALOON': { rig:'sedan',  gears:4, wide:0.020, arch:0.92, horn:0.96,
                redline:8500, pitch:0.92, rear:'GENERIC', mass:1480, hp:160, grip:0.66, launch:0.92, mech:1.03, vmax:0.56,
                note:'SALOON \u00B7 ENTIRELY UNREMARKABLE' },
-  'CAB': { rig:'taxi',   gears:4, wide:0.020, arch:0.92, horn:0.90,
+  'CAB': { kin:'SALOON', /* a cab is a saloon with a light on the roof */ rig:'taxi',   gears:4, wide:0.020, arch:0.92, horn:0.90,
                redline:7500, pitch:0.80, rear:'GENERIC', mass:1620, hp:130, grip:0.60, launch:0.91, mech:1.02, vmax:0.5,
                note:'CAB \u00B7 THREE HUNDRED THOUSAND MILES' },
   'PICKUP': { rig:'pickup', gears:4, wide:0.045, arch:1.05, horn:0.84,
@@ -12364,12 +12364,32 @@ function rollField(dt){
    ------------------------------------------------------------------------ */
 const HARDY_REF = 1400;      /* an ordinary saloon: the 100-point car */
 const HARDY_POLICE = 1.5;    /* the owner's exception, applied to the two force cars */
+/* ---- WHAT A CAR IS A VARIANT OF ------------------------------------------
+   Owner, 2026-09-07: "I always saw the cab and cruiser as a variant of the
+   saloon." That settles a question this stat had left open, and the codebase
+   already half-agreed - `rigBody` maps `sedan2` onto the saloon's numbers with
+   the note "the variant borrows the saloon's numbers", and the super cruiser
+   has been described in its own comment as a MATADOR the force took since it
+   was built. `kin` writes the relationship down instead of leaving it implied
+   by a rig name.
+   ------------------------------------------------------------------------ */
 function hardinessOf(k){
   const B = BODY[k];
-  const m = (B && B.mass) || HARDY_REF;
-  const base = 100 * Math.sqrt(m / HARDY_REF);
-  const police = !!(B && B.force);
-  return Math.round(base * (police ? HARDY_POLICE : 1));
+  if(!B) return 100;
+  /* ---- POLICE ARE 1.5x THEIR COUNTERPART, NOT 1.5x THEMSELVES -----------
+     The owner's words were "1.5 times the health of their standard car
+     counterpart", and the counterpart is now declared rather than guessed at.
+     Taking 1.5x the police car's OWN mass gave 171 and 169; taking it from the
+     car each is a variant OF gives 155 and 159, which is what was asked for.
+     A patrol car is a strengthened saloon, not a heavier thing that happens to
+     be strong.
+     ------------------------------------------------------------------- */
+  const own = Math.round(100 * Math.sqrt((B.mass || HARDY_REF) / HARDY_REF));
+  if(!B.force) return own;
+  /* the counterpart must exist and must NOT itself be a force car, or a missing
+     `kin` would send this round in a circle */
+  const kin = B.kin && BODY[B.kin] && !BODY[B.kin].force ? B.kin : null;
+  return Math.round((kin ? hardinessOf(kin) : own) * HARDY_POLICE);
 }
 const TRAFFIC_HP = 100;
 function hurtTraffic(c, n){
