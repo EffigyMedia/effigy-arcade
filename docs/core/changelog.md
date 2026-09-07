@@ -14,6 +14,37 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-13"></a>
+## [0.13.13] - 2026-09-07
+- Fixed: **a car that signals a lane change can now finish it.** The merge decision re-ran on every
+  frame a car was held up - *including* the frames where it had already announced a move and was
+  waiting out its own indicator - and rewrote the wait with a fresh 1.1 to 1.8 seconds. The countdown
+  then took one frame off a number that had just been reset, so **it could never reach zero.** Only
+  the roughly one driver in five who does not signal ever merged at all. This is why the road silted
+  up behind slow cars in a way [RLG-032](../fragments/RLG-032.md) was supposed to have ended: the
+  merge logic was right and could not run.
+- Fixed: **the commit-time re-check was given a lane index where it wanted a road position.**
+  `laneClear` and `wouldBlock` compare against `o.x` and `playerX`; this passed `want`, a lane number
+  from 0 to 3. It is the same confusion `scatter` carries two long notes about, and it survived
+  because the branch it sits in could not be reached - **one defect was hiding the other.**
+- Changed: **a Racer does not queue.** Owner, 2026-09-07: "it shouldn't queue up behind anybody, it
+  should always work to get around obstacles and continue as fast as it can." Three numbers, all the
+  same impatience: how far below its own pace it tolerates before looking for a lane (99% against
+  86%), how much faster that lane must be to be worth taking (40 against 200), and how soon it looks
+  again after being turned down (under a second against several). **Nothing makes a Racer's car
+  quicker** - the vehicle still caps the driver, which is the rule the whole fleet is built on.
+- **The check that would have caught this could not have.** `merge-test` passed the entire time: both
+  kinds of merge landed in one counter, so the total merely fell from 30 completed moves to 18,
+  comfortably over the 12 it asks for. It now counts **indicators started** against **moves
+  completed**, and the two states are three orders of magnitude apart - 42 started with 26 completed
+  after the fix, against **13,786 started with 5 completed** with the defect put back.
+- The ambulance's siren check is an assertion again, and it now also asserts that it works its way
+  **past** you. See [UNT-185](../fragments/UNT-185.md).
+- Known flaky, measured on both sides and **not caused by this**: `traffic-test`'s corridor check
+  fails about one run in three on the unchanged engine too (1/180 samples, 0.332 against this
+  change's 0.327), its amber count varies with the hour and the place, and `drive-test`'s nitrous
+  check passes vacuously whenever the button does not take. Written up separately.
+
 <a id="v0-13-12"></a>
 ## [0.13.12] - 2026-09-07
 - Added: **an ambulance comes through on a call.** Owner, 2026-09-07: "there's a chance for it to

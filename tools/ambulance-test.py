@@ -140,14 +140,13 @@ def main():
         # not cars that were asked - so this is the siren doing its job rather than the
         # call being made. Read as a delta, because your own horn adds to the same counter.
         #
-        # REPORTED, NOT ASSERTED, AND THE REASON IS A DEFECT THIS FOUND. The ambulance
-        # cannot get past the player: it comes up behind, decides to change lane, sets its
-        # indicator - and the merge decision re-runs every frame and resets the signalling
-        # wait before it can elapse, so a car that SIGNALS never actually moves. It sits
-        # behind you at your speed for ever, and with nothing ahead of it in its own line
-        # there is nobody for the siren to move. That is a fault in the traffic AI which
-        # every signalling car has, not one in the ambulance, and it is fixed in its own
-        # unit. This becomes an assertion there.
+        # THIS WAS REPORTED AND NOT ASSERTED FOR ONE BUILD. The ambulance could not get past
+        # the player: it came up behind, decided to change lane, put its indicator on - and
+        # the merge decision re-ran every frame and reset the signalling wait before it could
+        # elapse, so a car that SIGNALS never actually moved. It sat behind you at your speed
+        # for ever, and with nothing ahead of it in its own line there was nobody for the
+        # siren to move. That was a fault every signalling car had, not one in the ambulance.
+        # Fixed, and this is an assertion again.
         before = page.evaluate("() => window.__road.scattered()")
         for _ in range(24):
             page.wait_for_timeout(250)
@@ -156,8 +155,16 @@ def main():
         moved = page.evaluate("() => window.__road.emergency()")
         print(f'  ..    cars that moved over while it came through: {after - before}')
         print(f"  ..    where it got to: {moved['cars']}")
-        ok(True, 'reported, not asserted: the merge defect this exposed is fixed separately',
+        ok(after - before > 0, 'the siren actually moves traffic out of the way',
            f'{after - before} cars changed lane')
+        # AND IT GOT PAST YOU, which is the owner's Racer ruling in one number: "it shouldn't
+        # queue up behind anybody, it should always work to get around obstacles and continue
+        # as fast as it can". It starts about 3,000 behind; if it is still behind you after
+        # six seconds it is queueing.
+        z = moved['cars'][0]['z'] if moved['cars'] else None
+        ok(z is not None and z > 0,
+           'and it worked its way PAST you rather than queueing behind you',
+           f'{z} ahead' if z is not None else 'it is no longer on the road')
 
         # AND THE POLICE LEAVE IT ALONE. A cruiser retargets onto the nearest thing over
         # 0.44 of MAX_SPD and an emergency ambulance is faster than that BY DESIGN, so

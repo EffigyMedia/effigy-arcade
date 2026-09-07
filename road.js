@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.12';
+window.ROAD_BUILD = '0.13.13';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7827,6 +7827,33 @@ function laneSpeed(c, tx){
    ------------------------------------------------------------------------ */
 let blockedAhead = 0;               /* windows with no way through, last pass */
 let mergesMade = 0;                 /* lane changes traffic has decided on, this run */
+/* ---- AND HOW MANY OF THEM WERE ANNOUNCED FIRST -------------------------
+   Split out because `mergesMade` could not see the defect that made it
+   necessary. A car either moves at once (`signals` false, about one driver in
+   five) or announces the move and waits - and the announced path was DEAD: the
+   decision re-ran every frame and reset the wait before it could elapse. Both
+   kinds landed in one counter, so the total merely dropped from 30 to 18 and
+   `merge-test` went on passing with four fifths of the traffic unable to change
+   lane at all.
+
+   This counts only the merges that came out of a completed SIGNAL. Reintroduce
+   the defect and it is exactly zero, which is a thing a check can state.
+   ---------------------------------------------------------------------- */
+let signalledMerges = 0;
+/* ---- AND HOW MANY WERE STARTED, WHICH IS THE DISCRIMINATING HALF -------
+   Completions alone were not enough to catch the defect. With it present the
+   decision is only re-entered on frames where `mergeCool` happens to be zero, so
+   some waits survive by luck and the count fell from 28 to 9 rather than to
+   nothing - a difference two runs of ordinary traffic could produce on their own.
+
+   COUNTING THE SIGNALS THAT WERE STARTED SEPARATES THEM ABSOLUTELY. A working
+   engine announces a move once and completes it: started and completed are
+   within a few of each other. A broken one announces the SAME move again on
+   every frame the car is held up, so started runs into the thousands while
+   completed stays where it was. The RATIO is the check, and the two states are
+   three orders of magnitude apart rather than a factor of three.
+   ---------------------------------------------------------------------- */
+let signalsStarted = 0;
 /* ---- THE TIGHTEST THE ROAD GOT, not just whether it closed -----------------
    A boolean "was it ever blocked" cannot tell a working guarantee from a road
    that never crowds in the first place - and the first version of the traffic
@@ -8255,6 +8282,39 @@ function mindFor(v){
   return v >= 0.55 * MAX_SPD ? RACER
        : v >  SPEED_LIMIT * MAX_SPD ? SPEEDER : CIVILIAN;
 }
+/* ---- A RACER DOES NOT QUEUE (owner, 2026-09-07) -------------------------
+   "As a racer personality, it shouldn't queue up behind anybody, it should
+   always work to get around obstacles and continue as fast as it can."
+
+   THE PERSONALITY STILL ONLY CHOOSES DECISIONS, WHICH IS THE RULE IT WAS BUILT
+   ON. Nothing here makes a Racer's car quicker - `mindCruise` and `TYPE_VMAX`
+   are untouched and the vehicle still caps the driver. What changes is how
+   readily the driver looks for a way past, and how soon they look again after
+   being turned down. A Racer in a lorry is still a lorry; it simply spends the
+   whole time trying to get round the thing in front of it.
+
+   THREE NUMBERS, AND EACH ONE IS THE SAME IMPATIENCE READ DIFFERENTLY:
+
+     mergeUrge   how far below its own pace a driver tolerates before looking
+                 for a lane. A Civilian settles for 86% of it; a Racer is held
+                 up the moment it is held up at all.
+     mergeEdge   how much faster the next lane has to be to be worth taking.
+                 200 stops an ordinary car pulling out to sit beside the car it
+                 was already following; a Racer takes any gain it can get.
+     lookAgain   how long it waits before looking again when there was nothing
+                 doing. Seconds for everyone else - a Racer is back at it in
+                 under one, which is what "always work to get around" means in
+                 a loop that only asks intermittently.
+
+   THE POPULATION IS SMALL BY DESIGN and this does not turn the road aggressive:
+   one traffic car in a hundred, five in a hundred among the sporty bodies, plus
+   an ambulance on a call. RLG-054 set those rates and they are untouched.
+   ---------------------------------------------------------------------- */
+function mergeUrge(c){ return c.mind === RACER ? 0.99 : 0.86; }
+function mergeEdge(c){ return c.mind === RACER ? 40 : 200; }
+function lookAgain(c, lo, hi){
+  return c.mind === RACER ? rnd(0.25, 0.5) : rnd(lo, hi);
+}
 /* the cruise a vehicle of this type ends up with, given who is driving it */
 function cruiseFor(t, mind){
   return Math.min(mindCruise(mind), (TYPE_VMAX[t] || 0.58) * MAX_SPD);
@@ -8491,7 +8551,7 @@ function reset(){
   /* You start PARKED, in first, with the engine idling. A run that begins at
      60mph gives away the launch, and now that first gear pulls properly off
      the line the launch is worth having. */
-  pos=0; playerX=0; camX=0; targetX=0; spd=0;
+  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0;
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
@@ -15087,14 +15147,34 @@ function step(dt){
            guessed the index from it, which is how a car ended up standing off a
            centre with its own idea of which lane it was in. */
         c.x = tx; c.lane = c.mergeLane; c.mergeT = 0;
-        c.mergeCool = rnd(2.2, 4.5);
+        /* and a Racer is ready to move again almost at once, because getting
+           round one car is rarely the whole of getting past */
+        c.mergeCool = lookAgain(c, 2.2, 4.5);
         c.drift = Math.abs(c.drift || 0.0004) * (Math.random() < 0.5 ? -1 : 1);
       }
       /* `!(x > 0)` rather than `x <= 0`: a freshly spawned car has no
          `mergeCool` at all, and `undefined <= 0` is FALSE - which would have
          meant no car ever merged until something had set the field, and
          nothing ever would. */
-    } else if(!(c.mergeCool > 0) && !c.yielding && want < c.cruise * 0.86){
+    /* ---- AND NOT WHILE IT IS ALREADY SIGNALLING ONE (owner report, 2026-09-07)
+       `!(c.mergeWait > 0)` is the whole fix and it was the whole bug. This branch
+       ran on EVERY frame the car was held up, including the frames where it had
+       already announced a move and was waiting out its indicator - so it decided
+       again, and wrote `c.mergeWait` a fresh 1.1 to 1.8 seconds. The countdown
+       below then subtracted one frame from a number that had just been reset.
+
+       IT COULD NEVER REACH ZERO, so a car that SIGNALS never completes a lane
+       change. Only the roughly one driver in five with `signals` false ever
+       merged at all, because that path sets the wait to 0 and moves in the same
+       frame. Measured on an ambulance held behind the player: `mergeWait`
+       oscillated between 1.13 and 1.74 for ten seconds without ever counting
+       down, `mergeWant` stayed 0, and the car sat at the player's speed rather
+       than its own 8433.
+
+       This is why the road silted up behind slow cars in a way RLG-032 was
+       supposed to have ended: the merge logic was right and could not run.
+       ------------------------------------------------------------------- */
+    } else if(!(c.mergeCool > 0) && !(c.mergeWait > 0) && !c.yielding && want < c.cruise * mergeUrge(c)){
       /* held up by something. Look for a LANE worth taking - one that is both
          clear AND actually faster, because pulling out to sit beside the car
          you were following is worse than staying put.
@@ -15113,7 +15193,7 @@ function step(dt){
         if(!laneClear(c, tx)) continue;
         if(wouldBlock(c, tx)) continue;          /* never take the last gap */
         const gain = laneSpeed(c, tx) - laneSpeed(c, LANE_X[here]);
-        if(gain > bestGain + 200){ bestGain = gain; best = l; }
+        if(gain > bestGain + mergeEdge(c)){ bestGain = gain; best = l; }
       }
       if(best >= 0){
         /* ---- IT SIGNALS FIRST, THEN IT MOVES (RLG-052) ------------------
@@ -15136,13 +15216,14 @@ function step(dt){
         if(c.signals === undefined) c.signals = Math.random() > 0.22;
         c.mergeWant = best;
         c.mergeWait = c.signals ? rnd(1.1, 1.8) : 0;
+        if(c.mergeWait > 0) signalsStarted++;
         c.blink = c.signals ? c.mergeWait + 1.1 : 0;
         if(!c.mergeWait){
           c.fromLane = here; c.mergeLane = best; c.mergeT = TRAF_HOLD;
           mergesMade++;
         }
       } else {
-        c.mergeCool = rnd(0.8, 1.6);      /* nothing doing; look again shortly */
+        c.mergeCool = lookAgain(c, 0.8, 1.6);   /* nothing doing; look again shortly */
       }
     }
     /* ---- THE ANNOUNCED MOVE, WHEN THE WAIT IS UP ----------------------
@@ -15156,11 +15237,24 @@ function step(dt){
       c.mergeWait -= dt;
       if(c.mergeWait <= 0){
         const want = c.mergeWant;
-        if(want !== undefined && laneClear(c, want, 0.45) && !wouldBlock(c, want)){
+        /* ---- A LANE INDEX IS NOT A ROAD POSITION -------------------------
+           `laneClear` and `wouldBlock` both take a lateral POSITION - they
+           compare it against `o.x` and `playerX`. This passed `want`, which is
+           a lane INDEX from 0 to 3, so the re-check at the moment of committing
+           was asking whether lane number 2 was clear of cars at position 2.
+           Every other caller in the file passes `LANE_X[...]`.
+
+           It is the same confusion `scatter` carries two long notes about, and
+           it survived here because the branch it sits in could not be reached:
+           the wait never elapsed, so this line never ran. One defect was hiding
+           the other.
+           ------------------------------------------------------------- */
+        const tw = (want === undefined) ? undefined : LANE_X[want];
+        if(tw !== undefined && laneClear(c, tw, 0.45) && !wouldBlock(c, tw)){
           c.fromLane = c.lane; c.mergeLane = want; c.mergeT = TRAF_HOLD;
-          mergesMade++;
+          mergesMade++; signalledMerges++;
         } else {
-          c.mergeCool = rnd(0.6, 1.2);
+          c.mergeCool = lookAgain(c, 0.6, 1.2);
         }
         c.mergeWait = 0; c.mergeWant = undefined;
       }
@@ -24557,6 +24651,10 @@ requestAnimationFrame(frameLoop);
   API.setBar = function(v){ barOn = v; };
   API.blockedAhead = function(){ return blockedAhead; };
   API.mergesMade = function(){ return mergesMade; };
+  /* of those, the ones a car ANNOUNCED before making - see `signalledMerges` */
+  API.signalledMerges = function(){ return signalledMerges; };
+  /* and how many indicators were STARTED to get them - see `signalsStarted` */
+  API.signalsStarted = function(){ return signalsStarted; };
   /* RLG-052's instrument: how many cars are announcing a move right now, how
      many have announced one at all, and how many drivers never signal. A check
      that only counted blinking cars could not tell "nobody signals" from

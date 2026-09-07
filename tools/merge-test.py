@@ -223,6 +223,10 @@ def run(browser, base_url, seconds, settle, pace):
         page.wait_for_timeout(int(settle * 1000))
 
         before = page.evaluate('() => window.__probe.road.mergesMade()')
+        beforeSig = page.evaluate(
+            '() => window.__probe.road.signalledMerges ? window.__probe.road.signalledMerges() : 0')
+        beforeStart = page.evaluate(
+            '() => window.__probe.road.signalsStarted ? window.__probe.road.signalsStarted() : 0')
         page.evaluate(SAMPLER + '()')
         # Hold a real pace, the way traffic-test does: waves keep arriving, the field keeps
         # bunching, and cars keep finding reasons to go round each other.
@@ -232,6 +236,12 @@ def run(browser, base_url, seconds, settle, pace):
             page.wait_for_timeout(250)
         out = page.evaluate('() => window.__probe.merge.collect()')
         out['decided'] = page.evaluate('() => window.__probe.road.mergesMade()') - before
+        out['signalled'] = page.evaluate(
+            '() => window.__probe.road.signalledMerges ? window.__probe.road.signalledMerges() : 0'
+        ) - beforeSig
+        out['started'] = page.evaluate(
+            '() => window.__probe.road.signalsStarted ? window.__probe.road.signalsStarted() : 0'
+        ) - beforeStart
         page.evaluate('() => { clearInterval(window.__probe.merge.timer); }')
         out['errors'] = errors + page.evaluate('() => window.__probe.errors')
         return out
@@ -337,6 +347,31 @@ def main():
     ok(out['restN'] > 500, 'cars were seen at rest often enough to say', '%d samples' % out['restN'])
     ok(parked <= 0.03, 'no car is left parked between two lanes',
        '%.1f%% of at-rest samples' % (100 * parked))
+    # ---- AND THE ANNOUNCED ONES COMPLETE (owner report, 2026-09-07) ------------
+    # A car either moves at once - `signals` false, about one driver in five - or puts its
+    # indicator on, waits, and then moves. THE SECOND PATH WAS DEAD. The merge decision
+    # re-ran on every frame the car was held up, including the frames where it was already
+    # waiting out its own indicator, and rewrote the wait with a fresh 1.1 to 1.8 seconds.
+    # The countdown then took one frame off a number that had just been reset, so it could
+    # never reach zero and four fifths of the traffic could not change lane at all.
+    #
+    # THIS FILE PASSED THE WHOLE TIME. The total merely fell from 30 completed moves to 18,
+    # comfortably over the 12 this harness asks for, because both kinds of merge landed in
+    # one counter. Splitting them out is what makes the defect visible: with it present this
+    # number is EXACTLY ZERO, and no amount of ordinary traffic changes that.
+    # COMPLETIONS ALONE DO NOT DISCRIMINATE. With the defect present the decision is only
+    # re-entered on frames where `mergeCool` happens to be zero, so some waits survive by
+    # luck: measured, 28 completions became 9 rather than 0, which two runs of ordinary
+    # traffic could produce between them. The number of indicators STARTED is what separates
+    # the two states absolutely - a working engine announces a move once, a broken one
+    # announces the same move on every frame the car is held up.
+    started, done = out['started'], out['signalled']
+    rate = done / max(1, started)
+    print('    indicators started  %d      of those, moves completed  %d   (%.0f%%)'
+          % (started, done, 100 * rate))
+    ok(done > 0 and rate > 0.25,
+       'an announced lane change is announced ONCE and then made',
+       '%d of %d signals completed (%.0f%%)' % (done, started, 100 * rate))
     ok(out['errors'] == [], 'no page errors', out['errors'][0][:100] if out['errors'] else '')
 
     print()
