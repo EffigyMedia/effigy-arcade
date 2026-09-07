@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.8';
+window.ROAD_BUILD = '0.13.9';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -17839,11 +17839,30 @@ function tarmacTone(dark, fade, onDeck){
   return rainDark > 0 ? mixRGB(wetRoad, rainDark * 0.30 * (1 - fade), WET_SHEEN) : wetRoad;
 }
 
+/* ---- WHAT A DROPPED SLICE STILL OWES THE FRAME ------------------------
+   The three guards at the top of the road walk drop a slice's GROUND. They must
+   not drop what is standing on it: the cars go out through `emitBucket`, and the
+   roadside goes out through `drawScenery`, because in both cases the only thing
+   allowed to hide a thing behind terrain is `crestGate`.
+
+   `p1` is the near end of the slice and it is what sizes and places everything.
+   With no valid `p1` there is no answer to where a tree is, so that one case
+   draws nothing - and that is a real absence rather than a hidden object.
+   ---------------------------------------------------------------------- */
+function skipSlice(n, idx, p1){
+  emitBucket(n);
+  if(p1 && p1.ok){
+    if(drawWatch) walkTrace.scen.push(n);
+    drawScenery(idx, p1, p1.y, idx*SEG, clamp(1 - n/DRAW, 0, 1));
+  } else if(drawWatch) walkTrace.noScen.push(n);
+}
+
 function drawRoad(){
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
   if(drawWatch) skipBy = {};
+  if(drawWatch) walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
   let groundMax = -1e9;
   const lamp = lampsOn();
   const base = Math.floor(pos/SEG);
@@ -17858,13 +17877,35 @@ function drawRoad(){
        they ran before `emitBucket`, so any car standing on such a slice simply
        vanished for that frame, and as a car crossed between segments it
        flickered. Only the crest test may hide a sprite; everything else has to
-       let it through. */
-    if(!p1.ok || !p2.ok){ emitBucket(n); continue; }
-    if(p2.y >= H){ emitBucket(n); continue; }
+       let it through.
+
+       AND THE ROADSIDE IS A SPRITE TOO (owner report, 2026-09-07). The same
+       three guards also `continue`d past `drawScenery`, so a slice they dropped
+       lost every tree standing on it while the CARS on it were emitted anyway.
+       That is the whole of the owner's report: "in the jungle and the road
+       curving up and away hard so that the incoming traffic were behind the
+       scenery, but rendered on top". The traffic was not painted over the
+       trees. The trees were never painted.
+
+       MEASURED BEFORE IT WAS BELIEVED, because the same reasoning was wrong
+       once already. `walkTrace` counted the slices each guard took on three
+       fresh jungle roads: `y1 < y2` fired on 70 to 79 slices of 151 in a frame,
+       the whole far half of the draw, and EVERY ONE of them was inverted by
+       LESS THAN ONE PIXEL - median 0.28 to 0.42, largest 0.71. That is the road
+       flattening toward the horizon, not a hill. It is the identical sub-pixel
+       failure RLG-041 found and fixed for the cars, still live for the scenery
+       because only the emit was moved out.
+
+       So the roadside goes through `skipSlice` with the cars, and `crestGate` -
+       which `drawScenery` already calls, per object - stays the only thing that
+       hides it behind terrain. A slice with no valid near projection still
+       draws nothing, because there is nowhere to put it. */
+    if(!p1.ok || !p2.ok){ if(drawWatch) walkTrace.proj.push(n); skipSlice(n, idx, p1); continue; }
+    if(p2.y >= H){ if(drawWatch) walkTrace.below.push(n); skipSlice(n, idx, p1); continue; }
     const dark = ((idx/RUMBLE)|0) % 2 === 0;
     const fade = clamp(1 - n/DRAW, 0, 1);
     const y1 = p1.y, y2 = p2.y;
-    if(y1 < y2){ emitBucket(n); continue; }
+    if(y1 < y2){ if(drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]); skipSlice(n, idx, p1); continue; }
 
     /* ---- THE GROUND, not just the verge ---------------------------------
        The strip either side of the tarmac was being drawn only as tall as the
@@ -18112,6 +18153,7 @@ function drawRoad(){
        lamp post stands between you and the trees behind it. Its own biome
        decides what it is, so a transition changes the roadside where it changes
        the ground rather than under the car. */
+    if(drawWatch) walkTrace.scen.push(n);
     drawScenery(idx, p1, y1, z1, fade);
 
     /* every eighth segment carries a lamp, alternating sides, throwing an
@@ -18398,6 +18440,25 @@ let spriteStats = { drawn:0, culled:0, clipped:0 };
    Off - which is always, in the product - it costs one boolean test per sprite.
    -------------------------------------------------------------------------- */
 let drawWatch = 0, drawWhy = '', drawSeen = [], drawFrameNo = 0, drawVid = 0;
+/* ---- WHAT THE ROAD WALK DID WITH EACH SLICE ---------------------------
+   The ledger behind the fix for the owner's 2026-09-07 report. `drawRoad` walks
+   151 slices and three guards can drop one; this records WHICH slices each guard
+   took, which slices drew their roadside, and which buckets held a vehicle. It
+   is written only while `watchDraw` is on, so it costs nothing in play.
+
+     proj    no valid projection at one end or the other
+     below   the far end is under the bottom of the frame
+     inv     the slice projects inverted - `[n, y2-y1]`, and THE MARGIN IS THE
+             POINT: measured on jungle roads it is always under one pixel, which
+             is the road flattening to the horizon rather than a hill
+     scen    drew its roadside
+     noScen  drew none, which only a slice with no valid near end may do
+     cars    held a vehicle
+
+   `occlusion-test` reads it to assert that a slice the inversion guard took
+   still drew its roadside. Before the fix that intersection was empty.
+   ---------------------------------------------------------------------- */
+let walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
 /* BY HOW MUCH a slice missed being painted, per segment, this frame. A slice is
    skipped when its top has gone back UP relative to the nearest ground already
    painted - it is behind a crest - and its sprites go with it. A slice that
@@ -18752,6 +18813,7 @@ function emitBucket(n){
   const list = spriteBuckets[n];
   if(!list || emitted[n]) return;
   emitted[n] = 1;
+  if(drawWatch){ for(const it of list) if(ON_ROAD[it.kind]){ walkTrace.cars.push(n); break; } }
   if(spriteDefer){
     paintBucket(list, false);            /* the scenery, in its own place */
     for(const it of list) if(ON_ROAD[it.kind]){ spriteDefer.push(n); break; }
@@ -24576,6 +24638,7 @@ requestAnimationFrame(frameLoop);
      sample taken on a timer. */
   API.watchDraw = function(on){ drawWatch = on ? 1 : 0; drawSeen = []; return drawWatch; };
   API.drawFrame = function(){ return { n:drawFrameNo, seen:drawSeen }; };
+  API.walkTrace = function(){ return walkTrace; };
   API.scattered = function(){ return scattered; };
   API.nearestSpawn = function(){ return Math.round(nearestSpawn); };
   API.drawDistance = function(){ return DRAW * SEG; };

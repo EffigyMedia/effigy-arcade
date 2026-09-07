@@ -94,11 +94,29 @@ def stint(browser, secs):
         page.evaluate("() => { window.__road.setBiomePair && window.__road.setBiomePair('CITY','CITY'); }")
         page.evaluate("() => { window.__road.setSpd && window.__road.setSpd(9000); }")
         page.evaluate("() => { window.__road.resetCrestStats && window.__road.resetCrestStats(); }")
+        page.evaluate("() => { window.__road.watchDraw && window.__road.watchDraw(true); }")
         tot = {'drawn': 0, 'clipped': 0, 'culled': 0}
+        # ---- AND WHAT THE WALK DID WITH THE ROADSIDE (owner report, 2026-09-07) ----
+        # `invFrames` counts frames where the inversion guard took at least one slice;
+        # `invLost` counts slices it took that then drew NO roadside. Before the fix
+        # invLost equalled every inverted slice - 70 to 94 of 151 in a jungle frame -
+        # and the trees on the whole far half of the draw were simply absent while the
+        # cars standing among them were painted. That is the owner's report.
+        walk = {'invFrames': 0, 'invSlices': 0, 'invLost': 0, 'noScen': set()}
         frames = 0
         for _ in range(int(secs * 4)):
             page.wait_for_timeout(250)
             st = page.evaluate("() => window.__road.spriteStats()")
+            w = page.evaluate("() => window.__road.walkTrace"
+                              " ? JSON.parse(JSON.stringify(window.__road.walkTrace())) : null")
+            if w:
+                drew = set(w['scen'])
+                invn = [a[0] for a in w['inv']]
+                if invn:
+                    walk['invFrames'] += 1
+                    walk['invSlices'] += len(invn)
+                    walk['invLost'] += sum(1 for n in invn if n not in drew)
+                walk['noScen'].update(w['noScen'])
             if st and (st['drawn'] or st['clipped'] or st['culled']):
                 frames += 1
                 for k in tot:
@@ -107,7 +125,7 @@ def stint(browser, secs):
         # accumulates over the whole stint rather than being reset per frame, so it is read
         # once at the end.
         crest = page.evaluate("() => window.__road.crestStats ? window.__road.crestStats() : null")
-        return tot, frames, errs, crest
+        return tot, frames, errs, crest, walk
     finally:
         ctx.close()
 
@@ -127,9 +145,13 @@ def main():
         tot = {'drawn': 0, 'clipped': 0, 'culled': 0}
         frames, errs, per = 0, [], []
         crest_tot = {}
+        walk_tot = {'invFrames': 0, 'invSlices': 0, 'invLost': 0, 'noScen': set()}
         for i in range(STINTS):
-            st, f, e, crest = stint(b, SECONDS)
+            st, f, e, crest, w = stint(b, SECONDS)
             errs += e
+            for k in ('invFrames', 'invSlices', 'invLost'):
+                walk_tot[k] += w[k]
+            walk_tot['noScen'].update(w['noScen'])
             for who, row in (crest or {}).items():
                 acc = crest_tot.setdefault(who, {'asked': 0, 'hidden': 0, 'clipped': 0})
                 for k in acc:
@@ -190,6 +212,31 @@ def main():
         # this harness switched off, which is the failure mode the file was written against.
         print(f"  ..    hidden this run: car={crest_tot.get('car', {}).get('hidden', 0)} "
               f"lamp={lamp.get('hidden', 0)} - the road, not the code. Not asserted on")
+        # ---- A SLICE THE WALK DROPPED STILL OWES ITS ROADSIDE --------------------
+        # Owner report, 2026-09-07: traffic "behind the scenery, but rendered on top".
+        # The traffic was not painted over the trees; the trees were never painted. The
+        # three guards at the top of `drawRoad` also skipped `drawScenery`, and the
+        # inversion guard alone took 70 to 94 slices of 151 in a jungle frame - every one
+        # of them inverted by UNDER ONE PIXEL, which is the road flattening toward the
+        # horizon and not a hill.
+        #
+        # THE CHECK IS NOT VACUOUS AND IT SAYS SO WHEN IT IS. It can only speak about a
+        # road that actually inverted, and about half of the roads generated here do not.
+        # The frame count is printed for exactly that reason: at zero this run proved
+        # nothing, and it is still not turned into a failure, because a gate that goes red
+        # on the terrain is a gate that gets switched off.
+        print(f"  ..    the walk: {walk_tot['invFrames']} frame(s) had an inverted slice, "
+              f"{walk_tot['invSlices']} slices in all")
+        ok(walk_tot['invLost'] == 0,
+           'a slice the inversion guard dropped still drew its roadside',
+           f"{walk_tot['invLost']} of {walk_tot['invSlices']} drew none"
+           if walk_tot['invSlices'] else
+           'NO ROAD INVERTED THIS RUN - this check proved nothing')
+        # The only slice allowed to draw no roadside is one with no valid near end, which
+        # is where the camera itself is. Anything further out is a thing gone missing.
+        far = sorted(n for n in walk_tot['noScen'] if n > 2)
+        ok(not far, 'only the slices under the camera draw no roadside at all',
+           f"also missing on {far[:12]}" if far else f"none beyond {sorted(walk_tot['noScen'])}")
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         b.close()
 

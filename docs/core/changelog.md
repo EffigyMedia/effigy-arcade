@@ -14,6 +14,34 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-9"></a>
+## [0.13.9] - 2026-09-07
+- Fixed: **the scenery half of the report, and the traffic was never the thing painted wrongly.**
+  Owner, 2026-09-07: "in the jungle and the road curving up and away hard so that the incoming
+  traffic were behind the scenery, but rendered on top." The trees were not painted over. **They
+  were never painted at all.** Three guards at the top of the road walk drop a slice whose geometry
+  is degenerate, and each one also skipped that slice's roadside while still emitting the CARS
+  standing on it - so a distant car appeared in a gap where the jungle should have stood in front
+  of it.
+- Measured before it was believed: on three fresh jungle roads the inversion guard took **70 to 94
+  slices of 151 in a single frame**, the whole far half of the draw, and **every one of them was
+  inverted by less than one pixel** (median 0.28 to 0.42, largest 0.71). That is the road flattening
+  toward the horizon, not a hill. It is the same sub-pixel failure [RLG-041](../fragments/RLG-041.md)
+  found for the cars, still live for the scenery because only the emit was moved out of the guards.
+- The roadside now leaves those guards with the cars, and `crestGate` - which `drawScenery` already
+  calls, once per object - is the only thing that hides it behind terrain. Slices drawing their
+  roadside went from about 55 of 151 to **149 of 151**; the two that draw none are under the camera
+  and have no valid projection to place anything with.
+- **It costs frames, and that is the owner's call rather than this unit's.** The picture now holds
+  scenery it was dropping, and drawing it is real work: the swamp fell from 60.0-60.4 fps to
+  48.0-55.2, ranges that do not overlap, and the forest sits at or below its old floor. Measured in
+  headless desktop Chromium, so **a phone will be worse.** Nothing is tuned here to claw it back -
+  what to cull at distance is [RLG-073](../fragments/RLG-073.md), which is still open.
+- `occlusion-test` gained the check that would have caught this, and it was watched failing with the
+  defect put back: **331 of 331 inverted slices drew no roadside.** It prints how many frames
+  actually inverted, and says plainly when a run proved nothing, because about half of the roads
+  generated here never invert at all. See [UNT-181](../fragments/UNT-181.md).
+
 <a id="v0-13-8"></a>
 ## [0.13.8] - 2026-09-07
 - Fixed: **everything on one segment is painted far to near, not in the order the arrays were
