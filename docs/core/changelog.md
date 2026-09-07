@@ -14,6 +14,24 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-7"></a>
+## [0.13.7] - 2026-09-07
+- Changed: **hardiness is the material; health is what comes out of it.** Owner, 2026-09-07: "I can't
+  imagine a standard sedan having less hardiness than a supercar. There might have to be a second
+  variable other than mass." Then: "instead of hardiness being health itself, we just have the final
+  output of that formula being health, and hardiness could be that variable that represents light
+  shell versus steel box." **`health = 100 * sqrt(mass / 1400) * hardy`**
+  ([RLG-131](../fragments/RLG-131.md)).
+- Note: **the old table proved the point.** On mass alone a SALOON came out at 103 and a STALLION at
+  104 - a family saloon out-toughed by a supercar because the supercar weighs forty kilos more. Mass
+  says how much car there is; it cannot say what the car is made of.
+- Note: **the values.** Carbon formula tub 0.70, supercar shell 0.85, roadster 0.95, ordinary car
+  1.00, coupe 1.10, saloon and cab 1.15, muscle car and vans 1.20, pickup on its ladder frame 1.25,
+  artic 1.30. Resulting health runs formula 49-52, supercars 87-90, saloon 118, muscle 133, cruiser
+  177, lorry 411 - and a saloon now sits comfortably above every supercar, which is what the owner
+  said it should.
+- Note: **both numbers stay hidden.** Neither is drawn, and neither is in the fleet sheet.
+
 <a id="v0-13-6"></a>
 ## [0.13.6] - 2026-09-07
 - Fixed: **a police car wore two badges on the nose.** Owner, from the saved fleet renders,

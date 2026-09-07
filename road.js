@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.6';
+window.ROAD_BUILD = '0.13.7';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2460,7 +2460,7 @@ const BODY = {
        L  narrow cabin, tall deck, the BIGGEST arches, hard-edged
        P  narrowest overall, tall domed roof, arches that dominate the flanks
   */
-  'STALLION': { bodyTop:0.44, cabinTop:0.19, cabW:0.62, cabOff:0, roofR:0.06,
+  'STALLION': { hardy:0.85, bodyTop:0.44, cabinTop:0.19, cabW:0.62, cabOff:0, roofR:0.06,
               /* cabOff shifts the cabin SIDEWAYS, not backwards — 0.04 was putting the
                  greenhouse visibly off centre on the body. The long-nose look
                  comes from the deck height, not from moving the roof. */
@@ -2484,7 +2484,7 @@ const BODY = {
                  in the sports class it polices, not a car that runs down
                  supercars (RLG-055). */
               mass:1520, hp:710, grip:1.34, launch:0.88, mech:0.97, vmax:1.03, note:'SLOWER OFF THE LINE \u00B7 HIGHEST TOP END' },
-  'MATADOR': { bodyTop:0.52, cabinTop:0.24, cabW:0.44, cabOff:0.00, roofR:0.02,
+  'MATADOR': { hardy:0.85, bodyTop:0.52, cabinTop:0.24, cabW:0.44, cabOff:0.00, roofR:0.02,
               hip:0.105, wing:'high',  nose:0.16, spoiler:true, rear:'MATADOR', wide:0.045, arch:1.30, horn:1.06,
               mass:1580, hp:690, grip:1.38, launch:1.20, mech:0.93, vmax:0.97, note:'FASTEST OFF THE LINE \u00B7 LOWEST TOP END' },
   /* ---- THE PRIZE IS A CLASS, NOT A CAR ------------------------------------
@@ -2516,17 +2516,17 @@ const BODY = {
      separates them is the name, the badge and the numbers. Each wears its own
      marque, and that is the whole of the visual difference.
      ------------------------------------------------------------------------ */
-  'VECTOR': { bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
+  'VECTOR': { hardy:0.70, bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
               hip:0.135, wing:'high', nose:0.10, spoiler:true,
               wide:0.145, arch:1.45, horn:1.46, rear:'VECTOR', redline:15500, pitch:1.62,
               mass:690, hp:980, grip:2.05, launch:1.00, mech:0.95, vmax:1.24,
               note:'VECTOR \u00B7 LEAVES THE LINE LIKE A LAUNCHED THING' },
-  'APEX': { bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
+  'APEX': { hardy:0.70, bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
               hip:0.135, wing:'high', nose:0.10, spoiler:true,
               wide:0.145, arch:1.45, horn:1.42, rear:'FORMULA', redline:15000, pitch:1.55,
               mass:720, hp:1020, grip:2.00, launch:0.92, mech:0.95, vmax:1.3,
               note:'APEX \u00B7 NO COMPROMISE' },
-  'COMET': { bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
+  'COMET': { hardy:0.70, bodyTop:0.52, cabinTop:0.30, cabW:0.30, cabOff:0, roofR:0.02,
               hip:0.135, wing:'high', nose:0.10, spoiler:true,
               wide:0.145, arch:1.45, horn:1.38, rear:'COMET', redline:14500, pitch:1.48,
               mass:760, hp:1080, grip:1.92, launch:0.84, mech:0.95, vmax:1.38,
@@ -2580,13 +2580,13 @@ const BODY = {
      corner neither of the others can touch. On a twisty procgen circuit it
      wins; on a fast one it is nowhere. That is the whole point of a league.
      -------------------------------------------------------------------- */
-  'ROADSTER': { rig:'roadster', gears:5, wide:0.005, arch:0.88,
+  'ROADSTER': { hardy:0.95, rig:'roadster', gears:5, wide:0.005, arch:0.88,
                 horn:1.04, redline:9500, pitch:0.96, rear:'ROADSTER', launch:0.95, mech:0.88, vmax:0.765, mass:1010, hp:240, grip:1.20,
                 note:'ROADSTER \u00B7 LIGHT \u00B7 CARRIES SPEED THROUGH ANYTHING' },
-  'TUNER': { rig:'tuner',  gears:5, wide:0.030, arch:0.95,
+  'TUNER': { hardy:1.00, rig:'tuner',  gears:5, wide:0.030, arch:0.95,
               horn:0.86, redline:10000, pitch:0.78, rear:'TUNER', launch:1.18, mech:1.02, vmax:0.73, mass:1290, hp:320, grip:0.90,
               note:'TUNED \u00B7 FIVE SPEED \u00B7 QUICK, THEN DONE' },
-  'MUSCLE': { rig:'muscle', gears:4, wide:0.050, arch:1.05,
+  'MUSCLE': { hardy:1.20, rig:'muscle', gears:4, wide:0.050, arch:1.05,
               horn:0.72, redline:10000, pitch:0.66, rear:'MUSCLE', launch:1.02, mech:1.04, vmax:0.8, mass:1720, hp:480, grip:0.74,
               note:'MUSCLE \u00B7 FOUR SPEED \u00B7 LONG LEGS' },
   /* ---- THE CRUISER -------------------------------------------------------
@@ -2608,7 +2608,7 @@ const BODY = {
 
      `npc:true` keeps it out of the garage — it is not yours.
      ---------------------------------------------------------------------- */
-  'SUPERCRUISER': { kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ npc:true, force:true, bar:'police', barY:0.304,
+  'SUPERCRUISER': { hardy:0.85, kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ npc:true, force:true, bar:'police', barY:0.304,
               bodyTop:0.52, cabinTop:0.24, cabW:0.52, cabOff:0, roofR:0.10,
               wide:0.030, arch:1.00, gears:6, redline:12000, pitch:1.02,
               horn:1.02, rear:'CRUISER', spoiler:'low',
@@ -2624,7 +2624,7 @@ const BODY = {
                  car of the class it polices and the best-braked. */
               note:'INTERCEPTOR \u00B7 A MATADOR WITH A CAGE IN IT' },
 
-  'CRUISER': { kin:'SALOON', /* a patrol car is a saloon in force colours */ force:true, bar:'police', barY:0.122, rig:'cop', gears:5, wide:0.045, arch:1.00,
+  'CRUISER': { hardy:1.15, kin:'SALOON', /* a patrol car is a saloon in force colours */ force:true, bar:'police', barY:0.122, rig:'cop', gears:5, wide:0.045, arch:1.00,
               horn:0.80, redline:11000, pitch:0.72, rear:'CRUISER',
               mass:1810, hp:370, grip:0.96, launch:1.16, mech:1.15, vmax:0.71, note:'INTERCEPTOR \u00B7 HEAVY, AND FAST' },
   /* ---- THE TRAFFIC, DRIVEABLE ---------------------------------------------
@@ -2635,16 +2635,16 @@ const BODY = {
      They keep the engine character their NPC versions already have — same
      pitch, same rev band — so a lorry sounds like a lorry whoever is in it.
      ------------------------------------------------------------------------ */
-  'COUPE': { rig:'coupe',  gears:4, wide:0.010, arch:0.90, horn:1.02,
+  'COUPE': { hardy:1.10, rig:'coupe',  gears:4, wide:0.010, arch:0.90, horn:1.02,
                redline:9000, pitch:1.05, rear:'GENERIC', mass:1340, hp:210, grip:0.73, launch:0.87, mech:1.03, vmax:0.6,
                note:'COUPE \u00B7 THE QUICKEST THING THAT IS NOT A RACER' },
-  'SALOON': { rig:'sedan',  gears:4, wide:0.020, arch:0.92, horn:0.96,
+  'SALOON': { hardy:1.15, rig:'sedan',  gears:4, wide:0.020, arch:0.92, horn:0.96,
                redline:8500, pitch:0.92, rear:'GENERIC', mass:1480, hp:160, grip:0.66, launch:0.92, mech:1.03, vmax:0.56,
                note:'SALOON \u00B7 ENTIRELY UNREMARKABLE' },
-  'CAB': { kin:'SALOON', /* a cab is a saloon with a light on the roof */ rig:'taxi',   gears:4, wide:0.020, arch:0.92, horn:0.90,
+  'CAB': { hardy:1.15, kin:'SALOON', /* a cab is a saloon with a light on the roof */ rig:'taxi',   gears:4, wide:0.020, arch:0.92, horn:0.90,
                redline:7500, pitch:0.80, rear:'GENERIC', mass:1620, hp:130, grip:0.60, launch:0.91, mech:1.02, vmax:0.5,
                note:'CAB \u00B7 THREE HUNDRED THOUSAND MILES' },
-  'PICKUP': { rig:'pickup', gears:4, wide:0.045, arch:1.05, horn:0.84,
+  'PICKUP': { hardy:1.25, rig:'pickup', gears:4, wide:0.045, arch:1.05, horn:0.84,
                redline:7000, pitch:0.70, rear:'GENERIC', mass:2150, hp:220, grip:0.52, launch:1.04, mech:1.08, vmax:0.47,
                note:'PICKUP \u00B7 CARRIES THINGS, SLOWLY' },
   /* `big` is the garage's word, not the road's: it says this vehicle does not
@@ -2667,11 +2667,11 @@ const BODY = {
      Slightly stronger than the plain van and no faster: an ambulance is built
      to get moving, not to have a higher top end. `vmax` is unchanged at 0.43.
      -------------------------------------------------------------------- */
-  'AMBULANCE': { rig:'ambulance', big:true, bar:'medical', barY:0.074, gears:4,
+  'AMBULANCE': { hardy:1.20, rig:'ambulance', big:true, bar:'medical', barY:0.074, gears:4,
                wide:0.060, arch:1.00, horn:0.78,
                redline:6500, pitch:0.56, rear:'MEDICAL', mass:2600, hp:170, grip:0.50, launch:1.20, mech:1.06, vmax:0.43,
                note:'AMBULANCE \u00B7 EVERYTHING MOVES, AND NOT FOR YOU' },
-  'VAN': { rig:'van', big:true, gears:4, wide:0.060, arch:1.00, horn:0.78,
+  'VAN': { hardy:1.20, rig:'van', big:true, gears:4, wide:0.060, arch:1.00, horn:0.78,
                redline:6500, pitch:0.58, rear:'GENERIC', mass:2400, hp:140, grip:0.48, launch:1.17, mech:1.06, vmax:0.43,
                note:'VAN \u00B7 A BOX WITH A STEERING WHEEL' },
     /* ---- FOUR SPEEDS, AND A LORRY DOES 80 ---------------------------------
@@ -2679,10 +2679,10 @@ const BODY = {
      car and the cruiser get more. And a lorry's ceiling is 80mph, not 104:
      `vmax` is a fraction of 200, so 0.40.
      -------------------------------------------------------------------- */
-  'LORRY': { rig:'truck', big:true, gears:4, wide:0.120, arch:1.10, horn:0.52,
+  'LORRY': { hardy:1.30, rig:'truck', big:true, gears:4, wide:0.120, arch:1.10, horn:0.52,
                redline:5000, pitch:0.42, rear:'GENERIC', mass:14000, hp:420, grip:0.42, launch:1.11, mech:0.95, vmax:0.4,
                note:'LORRY \u00B7 NOTHING GETS OUT OF ITS WAY TWICE' },
-  'CREST': { bodyTop:0.40, cabinTop:0.10, cabW:0.48, cabOff:0, roofR:0.30,
+  'CREST': { hardy:0.85, bodyTop:0.40, cabinTop:0.10, cabW:0.48, cabOff:0, roofR:0.30,
               hip:0.085, wing:'ducktail', nose:0.24, spoiler:true, rear:'CREST', wide:0.010, arch:1.15, dome:true, horn:0.94,
               mass:1450, hp:640, grip:1.42, launch:1.04, mech:0.93, vmax:1, note:'BALANCED' }
 };
@@ -12383,6 +12383,31 @@ function rollField(dt){
    ------------------------------------------------------------------------ */
 const HARDY_REF = 1400;      /* an ordinary saloon: the 100-point car */
 const HARDY_POLICE = 1.5;    /* the owner's exception, applied to the two force cars */
+/* ---- HARDINESS IS THE MATERIAL; HEALTH IS WHAT COMES OUT -----------------
+   Owner, 2026-09-07: "I can't imagine a standard sedan having less hardiness
+   than a supercar. There might have to be a second variable other than mass."
+   Then: "instead of hardiness being health itself, we just have the final
+   output of that formula being health, and hardiness could be that variable
+   that represents light shell versus steel box so to speak."
+
+   THEY WERE RIGHT AND THE TABLE PROVED IT. On mass alone a SALOON came out at
+   103 and a STALLION at 104 - a family saloon out-toughed by a supercar because
+   the supercar weighs forty kilos more. Mass says how much car there is; it
+   cannot say what the car is MADE OF, and those are different questions.
+
+   SO THERE ARE TWO INPUTS AND ONE OUTPUT:
+
+       health = 100 * sqrt(mass / 1400) * hardy
+
+   `hardy` is the material. 1.00 is an ordinary steel car. A carbon formula tub
+   is 0.70 - there is nothing to it and nothing spare. A supercar is 0.85, a
+   light shell over a light frame. A muscle car is 1.20 because it is a steel
+   barge, a pickup 1.25 because it is a body on a ladder frame, an artic 1.30.
+
+   AND IT IS STILL HIDDEN. Neither number is drawn anywhere, neither is in the
+   fleet sheet, and the player learns that a lorry shrugs off what folds a
+   formula car by finding out.
+   ------------------------------------------------------------------------ */
 /* ---- WHAT A CAR IS A VARIANT OF ------------------------------------------
    Owner, 2026-09-07: "I always saw the cab and cruiser as a variant of the
    saloon." That settles a question this stat had left open, and the codebase
@@ -12392,7 +12417,7 @@ const HARDY_POLICE = 1.5;    /* the owner's exception, applied to the two force 
    was built. `kin` writes the relationship down instead of leaving it implied
    by a rig name.
    ------------------------------------------------------------------------ */
-function hardinessOf(k){
+function healthOf(k){
   const B = BODY[k];
   if(!B) return 100;
   /* ---- POLICE ARE 1.5x THEIR COUNTERPART, NOT 1.5x THEMSELVES -----------
@@ -12403,12 +12428,14 @@ function hardinessOf(k){
      A patrol car is a strengthened saloon, not a heavier thing that happens to
      be strong.
      ------------------------------------------------------------------- */
-  const own = Math.round(100 * Math.sqrt((B.mass || HARDY_REF) / HARDY_REF));
+  /* the two inputs: how much car there is, and what it is made of */
+  const own = Math.round(100 * Math.sqrt((B.mass || HARDY_REF) / HARDY_REF)
+                             * (B.hardy === undefined ? 1 : B.hardy));
   if(!B.force) return own;
   /* the counterpart must exist and must NOT itself be a force car, or a missing
      `kin` would send this round in a circle */
   const kin = B.kin && BODY[B.kin] && !BODY[B.kin].force ? B.kin : null;
-  return Math.round((kin ? hardinessOf(kin) : own) * HARDY_POLICE);
+  return Math.round((kin ? healthOf(kin) : own) * HARDY_POLICE);
 }
 const TRAFFIC_HP = 100;
 function hurtTraffic(c, n){
@@ -12416,7 +12443,7 @@ function hurtTraffic(c, n){
   if((c.iframe || 0) > 0) return;
   /* a traffic car is a RIG name, not a BODY key - `rigBody` is the map the
      audio already uses to find the body a traffic type is built from */
-  const hp = hardinessOf((snd.rigBody() || {})[c.type]) || TRAFFIC_HP;
+  const hp = healthOf((snd.rigBody() || {})[c.type]) || TRAFFIC_HP;
   c.dmg = Math.min(hp, (c.dmg || 0) + n);
   c.iframe = 0.6;
   if(c.dmg < hp) return;
@@ -12437,7 +12464,7 @@ function stepDeadTraffic(c, dt){
 
 function hurtRival(r, n){
   if(!r || r.wreck > 0 || (r.iframe || 0) > 0) return;
-  const hp = hardinessOf(r.body);
+  const hp = healthOf(r.body);
   r.dmg = Math.min(hp, (r.dmg || 0) + n);
   r.iframe = 0.7;
   if(r.dmg >= hp){
@@ -15526,9 +15553,9 @@ function step(dt){
    ------------------------------------------------------------------------ */
 function hurtCop(k, n, how){
   if(!k || k.wreck > 0 || (k.iframe || 0) > 0) return false;
-  /* a cruiser is the owner's exception: `hardinessOf` gives the two force cars
+  /* a cruiser is the owner's exception: `healthOf` gives the two force cars
      half again as much as their mass alone would earn */
-  const hp = hardinessOf(k.superc ? 'SUPERCRUISER' : 'CRUISER');
+  const hp = healthOf(k.superc ? 'SUPERCRUISER' : 'CRUISER');
   k.dmg = Math.min(hp, (k.dmg || 0) + n);
   k.iframe = 0.6;
   if(k.dmg < hp) return false;
@@ -15704,7 +15731,7 @@ function hurt(n, src){
   combo = 0; comboTime = 0;
   shake = Math.max(shake, Math.min(1.1, n/22));
   hitFlash = 1;
-  if(dmg >= hardinessOf(optBody)) wreck(src==='cop' ? 'TAKEN OUT' : 'WRECKED');
+  if(dmg >= healthOf(optBody)) wreck(src==='cop' ? 'TAKEN OUT' : 'WRECKED');
 }
 
 /* ---------- rendering ---------- */
@@ -24677,11 +24704,14 @@ requestAnimationFrame(frameLoop);
      testing the spawner instead. It reports the progression and whether the
      takedown fired, without needing one on the road. */
   /* the hidden stat, for the record and for a check - never for the HUD */
-  API.hardiness = function(){
+  API.health = function(){
     const out = {};
-    for(const k in BODY) out[k] = hardinessOf(k);
+    for(const k in BODY) out[k] = healthOf(k);
     return out;
   };
+  /* the material coefficient on its own, for the record - never for the HUD */
+  API.hardyOf = function(k){ const B = BODY[k];
+    return B && B.hardy !== undefined ? B.hardy : 1; };
   API.probeCop = function(hits, each){
     const k = { z:pos + 4000, x:0.5, spd:0, w:0.30, len:380, dmg:0, iframe:0, wreck:0 };
     const out = [];

@@ -148,7 +148,7 @@ with sync_playwright() as p:
     # this check failed on working code. Asking for 45% of ITS OWN health keeps
     # the claim - "worn down over three hits, not dropped by one" - true whatever
     # the number is tuned to.
-    hp = pg.evaluate("() => window.__road.hardiness()['CRUISER']")
+    hp = pg.evaluate("() => window.__road.health()['CRUISER']")
     cop = pg.evaluate("(h) => window.__road.probeCop(3, h * 0.45)", hp)
     check(cop and not cop[0]['downed'] and not cop[1]['downed'] and cop[2]['downed'],
           'a cruiser is worn down rather than dropped',
