@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.18';
+window.ROAD_BUILD = '0.13.19';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -24941,6 +24941,43 @@ requestAnimationFrame(frameLoop);
   API.paintChoices = function(){ return paintChoices(); };
   API.setBar = function(v){ barOn = v; };
   API.blockedAhead = function(){ return blockedAhead; };
+  /* ---- SOMETHING THAT CAN SEE A ROADBLOCK --------------------------------
+     The police audit of 2026-09-07 could not count roadblocks: nothing exposed
+     the array, so the only evidence available was `blockedAhead`, a boolean
+     about the road immediately in front of the car. A stage of the pursuit that
+     cannot be counted cannot be checked, and this one never was.
+
+     `gapX` is the opening, and the opening is the whole design: a roadblock is
+     threadable by construction ([[RLG-037]] is the corridor rule for traffic and
+     this is its equivalent for a wall the police built). A harness has to be
+     able to say the gap exists and that it is wide enough for the car, which
+     means reading the PARTS rather than trusting the number.
+     -------------------------------------------------------------------- */
+  API.roadblocks = function(){
+    return blocks.map(b => ({
+      dz: Math.round(b.z - (pos + PLAYER_Z)),
+      gapX: +b.gapX.toFixed(3),
+      hit: !!b.hit,
+      panels: b.parts.filter(p => !p.cop).length,
+      cops: b.parts.filter(p => p.cop).length,
+      /* the widest run of clear road across the block, in the same units as the
+         car's own width - measured from the panels, not from `gapX` */
+      gap: +(function(){
+        const solid = b.parts.filter(p => !p.cop)
+                             .map(p => [p.x - p.w/2, p.x + p.w/2])
+                             .sort((a, c) => a[0] - c[0]);
+        let widest = 0, edge = -1.12;
+        for(const [lo, hi] of solid){
+          if(lo - edge > widest) widest = lo - edge;
+          edge = Math.max(edge, hi);
+        }
+        if(1.12 - edge > widest) widest = 1.12 - edge;
+        return widest;
+      })().toFixed(3)
+    }));
+  };
+  /* put one where a check needs it, through the REAL spawner */
+  API.forceRoadblock = function(){ const n = blocks.length; spawnRoadblock(); return blocks.length > n; };
   API.mergesMade = function(){ return mergesMade; };
   /* of those, the ones a car ANNOUNCED before making - see `signalledMerges` */
   API.signalledMerges = function(){ return signalledMerges; };

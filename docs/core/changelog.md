@@ -14,6 +14,22 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-19"></a>
+## [0.13.19] - 2026-09-07
+- Added `tools/roadblock-test.py`, and **something that can see a roadblock in the first place.**
+  Nothing exposed the array, so the police audit could only infer one existed from a boolean about
+  the road immediately ahead - a stage of the pursuit nobody could count was a stage nobody could
+  test.
+- It asserts that a roadblock goes up on its own at heat 3, that it spans the road rather than being
+  a chicane, that a cruiser is parked at it, that it appears well ahead rather than on top of you,
+  and that **the opening is wider than the car**.
+- **The opening is measured off the panels, not off the field that says where it should be.** `gapX`
+  records where the gap was meant to go; the panels are where it actually is. A tiling bug that
+  closed the opening would leave `gapX` perfectly correct and the game unplayable, and a check
+  reading `gapX` would never see it. Watched failing with the opening tiled shut: the measured gap
+  read **0.02 against the car's 0.265**, while every other assertion stayed green. See
+  [UNT-191](../fragments/UNT-191.md).
+
 <a id="v0-13-18"></a>
 ## [0.13.18] - 2026-09-07
 - Added `tools/bust-test.py`, closing the first of the three uncovered rows in the police audit's
