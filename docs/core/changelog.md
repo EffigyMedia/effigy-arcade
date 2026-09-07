@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-11"></a>
+## [0.13.11] - 2026-09-07
+- Added: **the ambulance is ordinary traffic now, and you can finally meet one.** Owner,
+  2026-09-07: "It's a standard traffic vehicle in nonemergency mode." It had a body record, a rig,
+  a light bar, a siren and a place in the garage, and **neither traffic table listed it** - so the
+  only way to see an ambulance was to drive one. It takes two per cent out of the van's share in
+  both tables, because it *is* a van; the road gets a more varied set of big slab-sided vehicles
+  rather than more of them. No bar, no siren, no hurry: this one is going back to the station.
+- Changed: **it is a little quicker than the van**, on the owner's word - 0.55 against 0.50 as
+  traffic, 0.47 against 0.43 in your hands. **Both tables moved together.** `TYPE_VMAX` says what a
+  vehicle does as traffic and `BODY.vmax` says what it does when you are driving it, and a vehicle
+  that disagrees with itself about its own top end is the fault [RLG-042](../fragments/RLG-042.md)
+  exists to stop. `API.topOf` now returns both at once so a check can assert the pair.
+- Cleanup: **how big a vehicle is, stated once.** The width and length chains were written out in
+  full in three places - both spawners and `API.parkTraffic`, whose own comment claims it builds a
+  car "with the same fields the spawner gives it". A body added to only one of them would have been
+  the right vehicle ahead of you and a saloon-sized one behind, and nothing in this engine would
+  ever have printed the difference.
+- Added `tools/ambulance-test.py`. See [UNT-183](../fragments/UNT-183.md).
+- Known red, and **not caused by this**: `collide-test.py` fails two of its checks on `main`, and it
+  fails them identically with this change stashed. It is written up rather than folded in here.
+
 <a id="v0-13-10"></a>
 ## [0.13.10] - 2026-09-07
 - Changed: **the barrier holds you against it, and it no longer steers for you.** Owner,

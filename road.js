@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.10';
+window.ROAD_BUILD = '0.13.11';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2664,12 +2664,16 @@ const BODY = {
      Interstate, and Motorsport does not list it at all. That follows from the
      owner's own answers rather than being a decision made here.
 
-     Slightly stronger than the plain van and no faster: an ambulance is built
-     to get moving, not to have a higher top end. `vmax` is unchanged at 0.43.
+     Slightly stronger than the plain van, AND now a little quicker than it:
+     owner, 2026-09-07. It was 0.43, the van's own figure, on the reasoning that
+     an ambulance is built to get moving rather than to have a higher top end.
+     The owner has ruled the other way and the vehicle is faster in both tables.
      -------------------------------------------------------------------- */
   'AMBULANCE': { hardy:1.20, rig:'ambulance', big:true, bar:'medical', barY:0.074, gears:4,
                wide:0.060, arch:1.00, horn:0.78,
-               redline:6500, pitch:0.56, rear:'MEDICAL', mass:2600, hp:170, grip:0.50, launch:1.20, mech:1.06, vmax:0.43,
+               /* quicker than the van, on the owner's word - see TYPE_VMAX, which
+                  carries the reasoning and had to move by the same amount */
+               redline:6500, pitch:0.56, rear:'MEDICAL', mass:2600, hp:170, grip:0.50, launch:1.20, mech:1.06, vmax:0.47,
                note:'AMBULANCE \u00B7 EVERYTHING MOVES, AND NOT FOR YOU' },
   'VAN': { hardy:1.20, rig:'van', big:true, gears:4, wide:0.060, arch:1.00, horn:0.78,
                redline:6500, pitch:0.58, rear:'GENERIC', mass:2400, hp:140, grip:0.48, launch:1.17, mech:1.06, vmax:0.43,
@@ -7943,8 +7947,20 @@ function spawnBehind(){
   /* the same gate as the main spawner. A type added to one table and not the
      other appears in half the traffic and nowhere else - which is precisely what
      the note above this table warns about (RLG-054). */
+  /* ---- AND THE AMBULANCE TAKES ITS SHARE OUT OF THE VAN'S ---------------
+     Owner, 2026-09-07: "It's a standard traffic vehicle in nonemergency mode."
+     It IS a van, so the road does not get more big slab-sided vehicles - it gets
+     a more varied set of them, which is the same reasoning the tuner's slice of
+     the coupe's share was written on. Two per cent: often enough to be a thing
+     you see, rare enough to still be worth looking at.
+
+     THIS IS THE NON-EMERGENCY ONE. No bar, no siren, no hurry - it is going back
+     to the station, and it drives like anything else its size. The one with the
+     lights on is a different spawn entirely.
+     ------------------------------------------------------------------- */
   const t = Math.random() < SUPER_IN_TRAFFIC ? superType()
-          : roll<0.10 ? 'truck'  : roll<0.24 ? 'van'
+          : roll<0.10 ? 'truck'  : roll<0.12 ? 'ambulance'
+          : roll<0.24 ? 'van'
           : roll<0.40 ? 'pickup' : roll<0.52 ? 'coupe'
           : roll<0.58 ? 'tuner'  : roll<0.66 ? 'muscle'
           : roll<0.72 ? 'taxi'
@@ -7966,11 +7982,7 @@ function spawnBehind(){
        carries a personality that contradicts what it is doing */
     mind: mindFor(behindCruise),
     type: t,
-    w: t==='truck' ? 0.32 : t==='van' ? 0.275 : t==='pickup' ? 0.29
-     : (t==='coupe'||t==='tuner') ? 0.26 : t==='muscle' ? 0.285
-     : SUPER_W[t] || 0.275,
-    len: t==='truck' ? 520 : t==='van' ? 410 : t==='pickup' ? 420
-       : SUPER_W[t] ? 360 : 380,
+    w: typeW(t), len: typeLen(t),
     near:false, drift: rnd(-1,1)*0.0002, fromBehind:true, paintN: (Math.random()*10)|0
   });
 }
@@ -8008,7 +8020,11 @@ function spawnWave(z){
     /* the MAIN spawner — the other table is only for cars coming up behind
        you, and a type added to one and not the other appears in half the
        traffic and nowhere else */
-    const t = roll<0.12 ? 'truck'  : roll<0.26 ? 'van'
+    /* the ambulance takes its two per cent out of the VAN's share, for the
+       reason written against the other table - it is a van. Both tables move
+       together or it appears in half the traffic and nowhere else. */
+    const t = roll<0.12 ? 'truck'  : roll<0.14 ? 'ambulance'
+            : roll<0.26 ? 'van'
             : roll<0.42 ? 'pickup' : roll<0.53 ? 'coupe'
             : roll<0.59 ? 'tuner'  : roll<0.67 ? 'muscle'
             : roll<0.73 ? 'taxi'
@@ -8036,11 +8052,7 @@ function spawnWave(z){
       spd: 0, cruise: cruiseFor(t, mind),
       mind: mind,
       type: t,
-      w: t==='truck' ? 0.32 : t==='van' ? 0.275 : t==='pickup' ? 0.29
-       : (t==='coupe'||t==='tuner') ? 0.26 : t==='muscle' ? 0.285
-       : SUPER_W[t] || 0.275,
-      len: t==='truck' ? 520 : t==='van' ? 410 : t==='pickup' ? 420
-         : SUPER_W[t] ? 360 : 380,
+      w: typeW(t), len: typeLen(t),
       near: false, drift: rnd(-1,1)*0.0002, paintN: (Math.random()*10)|0
     });
     traffic[traffic.length-1].spd = traffic[traffic.length-1].cruise;
@@ -8094,6 +8106,19 @@ const CIVILIAN = 0, SPEEDER = 1, RACER = 2;
 /* what each vehicle can actually do, as a fraction of MAX_SPD. This is the CAR,
    and it is the only thing in here that reads the body. */
 const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55,
+                    /* ---- AN AMBULANCE IS A QUICKER VAN (owner, 2026-09-07) ----
+                       "let's make the ambulance a little bit faster than the van."
+                       It is the same box on the same wheels, so it is nowhere near
+                       a car - but it is built to get somewhere, and the van is
+                       built to carry things. A tenth of MAX_SPD between them, which
+                       is 110mph against 100.
+
+                       IT MOVES IN BOTH TABLES AT ONCE. `TYPE_VMAX` is what a
+                       traffic ambulance can do and `BODY.AMBULANCE.vmax` is what
+                       the one in your garage can do, and a vehicle that disagrees
+                       with itself about its own top end is the fault RLG-042 was
+                       written to stop. Both went up together. */
+                    ambulance:0.55,
                     sedan:0.58, sedan2:0.58, coupe:0.66, tuner:0.74, muscle:0.78,
                     /* A SUPERCAR IN TRAFFIC GETS THE SUPERCAR'S STATS (RLG-042).
                        It is slow because the person driving it is going to work,
@@ -8124,6 +8149,32 @@ const SUPER_IN_TRAFFIC = 0.006;
 const SUPER_W = { stallion:0.27, matador:0.285, crest:0.265 };
 function superType(){
   return SUPER_TRAFFIC[(Math.random() * SUPER_TRAFFIC.length) | 0].toLowerCase();
+}
+/* ---- HOW BIG A THING IS, STATED ONCE (owner, 2026-09-07) ----------------
+   This pair of chains was written out in full in THREE places - both spawners
+   and `API.parkTraffic`, whose own comment claims it gives a car "the same
+   fields the spawner gives it". The note above each type table already warns
+   what a second copy costs: "a type added to one table and not the other appears
+   in half the traffic and nowhere else". The sizes had the same exposure and no
+   warning at all, and a new body reaching only one of them would be the right
+   vehicle in front of you and a saloon-sized one behind you - a difference
+   nothing in this engine would ever print.
+
+   An ambulance is a van's box on a van's wheels, so it takes the van's figures.
+   ---------------------------------------------------------------------- */
+function typeW(t){
+  return t === 'truck'  ? 0.32
+       : t === 'van' || t === 'ambulance' ? 0.275
+       : t === 'pickup' ? 0.29
+       : (t === 'coupe' || t === 'tuner') ? 0.26
+       : t === 'muscle' ? 0.285
+       : SUPER_W[t] || 0.275;
+}
+function typeLen(t){
+  return t === 'truck'  ? 520
+       : t === 'van' || t === 'ambulance' ? 410
+       : t === 'pickup' ? 420
+       : SUPER_W[t] ? 360 : 380;
 }
 function rollMind(t){
   const fast = !!SPORTY[t];
@@ -24933,11 +24984,7 @@ requestAnimationFrame(frameLoop);
     traffic.push({
       z: pos + PLAYER_Z + (dz === undefined ? 0 : dz), lane: 1, x: dx || 0,
       spd: 0, cruise: 0, type: t,
-      w: t==='truck' ? 0.32 : t==='van' ? 0.275 : t==='pickup' ? 0.29
-       : (t==='coupe'||t==='tuner') ? 0.26 : t==='muscle' ? 0.285
-       : SUPER_W[t] || 0.275,
-      len: t==='truck' ? 520 : t==='van' ? 410 : t==='pickup' ? 420
-         : SUPER_W[t] ? 360 : 380,
+      w: typeW(t), len: typeLen(t),
       near:false, drift:0, fromBehind:false, paintN:0
     });
     return { x: traffic[0].x, w: traffic[0].w, len: traffic[0].len };
@@ -24950,6 +24997,18 @@ requestAnimationFrame(frameLoop);
     return { playerW: PLAYER_W,
              hitHalf: c ? +carW(c.w + PLAYER_W).toFixed(5)/2 : null,
              trafficW: c ? c.w : null };
+  };
+  /* ---- WHAT A VEHICLE CAN DO, FROM BOTH TABLES AT ONCE -------------------
+     A body's top end is stated twice: `TYPE_VMAX` is what it does as traffic and
+     `BODY[k].vmax` is what it does in your hands. They are separate tables for a
+     real reason - traffic is capped by its driver as well as its engine - but
+     they must never disagree about which of two vehicles is the faster one, and
+     nothing could see both until now. Returns them together so a check can say
+     so in one assertion rather than trusting one table and hoping.
+     -------------------------------------------------------------------- */
+  API.topOf = function(t){
+    const k = String(t || '').toUpperCase();
+    return { traffic: TYPE_VMAX[t], garage: BODY[k] ? BODY[k].vmax : undefined };
   };
   API.damage = function(){ return +dmg.toFixed(2); };
   /* damage is capped at 100, so a harness staging a hundred collisions stops being able to
