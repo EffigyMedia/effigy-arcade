@@ -14,6 +14,19 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-18"></a>
+## [0.13.18] - 2026-09-07
+- Added `tools/bust-test.py`, closing the first of the three uncovered rows in the police audit's
+  Finding 3. Stopping with a cruiser alongside ends the run, and **nothing else does**: it asserts
+  the bust on a stopped car beside a cruiser, no bust on an empty road, and no bust with HOT PURSUIT
+  off. The middle case is the one that matters - a bust that fired on stopping alone would pass the
+  first check and ruin the game.
+- The engine records **why** the last wreck happened. During a run the flash says WRECKED whatever
+  caused it, so from the outside a bust and a head-on collision are the same event - fine for a
+  player, impossible for a check. Recorded, not shown: whether the flash should say BUSTED is the
+  owner's call and is not made here.
+- Watched failing with the bust disabled. See [UNT-190](../fragments/UNT-190.md).
+
 <a id="v0-13-17"></a>
 ## [0.13.17] - 2026-09-07
 - Fixed: **a car parked on the shoulder no longer judders.** Owner, 2026-09-07: "When parked

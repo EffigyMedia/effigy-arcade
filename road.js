@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.17';
+window.ROAD_BUILD = '0.13.18';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8727,7 +8727,7 @@ function reset(){
   if(mode === 'race') buildField();
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
-  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6;
+  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
   coolT=0; supersEarned=false;
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
@@ -8804,7 +8804,20 @@ function start(){
   veil.classList.add('hidden');
 }
 
+/* ---- WHAT ENDED THE LAST RUN, AND WHY A CHECK NEEDS IT -----------------
+   `reason` reaches `showEnd` only when the clock has run out. During a run it is
+   used for nothing: a wreck with time left flashes WRECKED whatever caused it,
+   so from the outside a bust and a head-on collision are the same event. That is
+   fine for the player and impossible for a check - `bust-test` has to be able to
+   say that stopping beside a cruiser is what ended it, rather than that
+   something did.
+
+   Recorded, not shown. Whether the flash should say BUSTED is the owner's call
+   and is not made here.
+   ---------------------------------------------------------------------- */
+let lastWreck = '';
 function wreck(reason){
+  lastWreck = reason || '';
   /* ---- A WRECK COSTS TWO SECONDS, NOT THE RUN -------------------------
      The clock is what ends a run now, so crashing is a penalty against it
      rather than a full stop: you lose the two seconds it takes to put a
@@ -25456,6 +25469,9 @@ requestAnimationFrame(frameLoop);
     k.iframe = 0; const out = hurtCop(k, n === undefined ? 50 : n, 'test');
     return { dmg:k.dmg, wreck:k.wreck, downed:out };
   };
+  /* what ended the last run or cost the last two seconds - see `lastWreck` */
+  API.lastWreck = function(){ return lastWreck; };
+  API.clearWreck = function(){ lastWreck = ''; return true; };
   API.penalty = function(){
     return { wreckWait:+(wreckWait || 0).toFixed(2), clock:+(clock || 0).toFixed(2),
              pos:Math.round(pos), spd:Math.round(spd) };
