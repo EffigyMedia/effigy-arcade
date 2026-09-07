@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-4"></a>
+## [0.13.4] - 2026-09-07
+- Added: **wrecked traffic slides aside and stays as a hazard until it is culled.** Owner, 2026-09-07,
+  answering their own question: "hazard until culled", and "they can't spin out because we can't
+  render that - we only have the rear and the front. So they just slide to the side and come to the
+  rest with the rear view as normal." No respawn: a two-second penalty is a RACING idea and traffic
+  has no position to lose, and a car that vanished and reappeared is the complaint RLG-041 took
+  eleven versions to fix ([RLG-131](../fragments/RLG-131.md)).
+- Note: **the no-spin constraint was already true and never enforced.** `ang` is written on wrecked
+  rivals and cruisers and is **read by nothing** - three writers, no reader - so the spin those two
+  were supposedly doing has never been visible. Nothing here adds a fourth writer.
+- Added: **hardiness, a hidden per-vehicle stat.** Owner: health "possibly based on mass", with the
+  cruiser and super cruiser at 1.5x, and "this hardiness stat should never be exposed to the player."
+  Nothing draws it and it is deliberately absent from the fleet sheet.
+- Note: **mass drives it, but not linearly.** The fleet runs 690kg to 14,000kg - twenty to one -
+  so a straight mapping would make an artic unkillable and a formula car paper. The square root
+  compresses that to about four and a half to one: formula 70, saloon 103, van 131, lorry 316,
+  cruiser 171.
+- Fixed: **a check that hard-coded the old 100-point threshold.** It hit a cruiser three times for 45
+  and expected it down; with 171 health that stopped being true on working code. It asks the engine
+  for the car's own hardiness now.
+
 <a id="v0-13-3"></a>
 ## [0.13.3] - 2026-09-07
 - Added: **police are taken out by the damage system, not by one hit.** Owner, 2026-09-07: "this

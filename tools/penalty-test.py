@@ -142,11 +142,18 @@ with sync_playwright() as p:
     # well." Scored against a throwaway cruiser rather than a real one: making
     # this wait for the spawner to deal a cruiser would be testing the SPAWNER,
     # and the claim is about the damage rule.
-    cop = pg.evaluate("() => window.__road.probeCop(3, 45)")
+    # SIZE THE HITS FROM THE CAR'S OWN HARDINESS. A fixed 45 assumed every
+    # vehicle had 100 points; a cruiser has half again as much by the owner's
+    # ruling, so three 45s stopped being enough the moment hardiness landed and
+    # this check failed on working code. Asking for 45% of ITS OWN health keeps
+    # the claim - "worn down over three hits, not dropped by one" - true whatever
+    # the number is tuned to.
+    hp = pg.evaluate("() => window.__road.hardiness()['CRUISER']")
+    cop = pg.evaluate("(h) => window.__road.probeCop(3, h * 0.45)", hp)
     check(cop and not cop[0]['downed'] and not cop[1]['downed'] and cop[2]['downed'],
           'a cruiser is worn down rather than dropped',
-          f"dmg {cop[0]['dmg']} then {cop[1]['dmg']}, down on the third"
-          if cop else 'no reading')
+          f"{hp} health: dmg {cop[0]['dmg']:.0f} then {cop[1]['dmg']:.0f}, "
+          f"down on the third" if cop else 'no reading')
     check(cop and cop[2]['wreck'] > 1.5,
           'and serves the same two seconds when it goes',
           f"wreck timer {cop[2]['wreck']}s" if cop else 'no reading')

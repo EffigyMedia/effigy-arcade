@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.3';
+window.ROAD_BUILD = '0.13.4';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12317,11 +12317,91 @@ function rollField(dt){
    leaning on each other is the sport and spinning a rival on every touch would
    empty the field in the first mile.
    ------------------------------------------------------------------------ */
+/* ---- WRECKED TRAFFIC SLIDES ASIDE AND STAYS THERE (owner, 2026-09-07) ----
+   Asked and answered by the owner: "hazard until culled", and "they can't spin
+   out because we can't render that - we only have the rear and the front. So
+   they just slide to the side and come to the rest with the rear view as
+   normal."
+
+   NO SPIN, AND THE CONSTRAINT IS REAL. Every vehicle is a billboard with a
+   front sprite and a rear sprite and nothing in between, so a car turned side
+   on has nothing to draw. `ang` is set on wrecked rivals and cruisers and is
+   READ BY NOTHING - three writers, no reader - so the spin those two have
+   supposedly been doing has never been visible. This does not add a fourth
+   writer.
+
+   NO RESPAWN EITHER. A two-second penalty is a RACING idea: it costs you
+   position, and a traffic car has no position to lose. A car that vanished and
+   reappeared would also be the exact complaint RLG-041 took eleven versions to
+   put right. So a wrecked one slides toward the verge, comes to rest, and stays
+   there until the ordinary distance cull takes it - which is the same cull
+   every other traffic car already leaves by.
+
+   AND IT IS STILL SOLID WHILE IT SITS THERE. That is the whole point of calling
+   it a hazard: you caused it, and now it is in the road.
+   ------------------------------------------------------------------------ */
+/* ---- HOW MUCH A VEHICLE CAN TAKE (owner, 2026-09-07) ---------------------
+   "Give the different vehicles different hardiness - their health possibly
+   based on mass? With the exception being the police cruiser and super cruiser,
+   those should artificially be 1.5 times the health of their standard car
+   counterpart." And: "this hardiness STAT should never be exposed to the
+   player."
+
+   SO IT IS A HIDDEN STAT. Nothing draws it, no garage row carries it, and it is
+   deliberately absent from the fleet sheet. The player learns it by finding
+   that a lorry shrugs off what folds a formula car, which is how a vehicle's
+   character should be learned.
+
+   MASS IS THE INPUT, BUT NOT LINEARLY, and the spread is why. The fleet runs
+   from a 690kg formula car to a 14,000kg artic - twenty to one. Mapped
+   straight, an artic would be effectively unkillable and a formula car would be
+   made of paper. THE SQUARE ROOT compresses that to about four and a half to
+   one, which still says plainly that a lorry is a lorry without making the
+   light cars pointless.
+
+   A car with no mass declared falls back to the reference, so a new body is
+   ordinary until somebody gives it a weight rather than accidentally immortal.
+   ------------------------------------------------------------------------ */
+const HARDY_REF = 1400;      /* an ordinary saloon: the 100-point car */
+const HARDY_POLICE = 1.5;    /* the owner's exception, applied to the two force cars */
+function hardinessOf(k){
+  const B = BODY[k];
+  const m = (B && B.mass) || HARDY_REF;
+  const base = 100 * Math.sqrt(m / HARDY_REF);
+  const police = !!(B && B.force);
+  return Math.round(base * (police ? HARDY_POLICE : 1));
+}
+const TRAFFIC_HP = 100;
+function hurtTraffic(c, n){
+  if(!c || c.dead) return;
+  if((c.iframe || 0) > 0) return;
+  /* a traffic car is a RIG name, not a BODY key - `rigBody` is the map the
+     audio already uses to find the body a traffic type is built from */
+  const hp = hardinessOf((snd.rigBody() || {})[c.type]) || TRAFFIC_HP;
+  c.dmg = Math.min(hp, (c.dmg || 0) + n);
+  c.iframe = 0.6;
+  if(c.dmg < hp) return;
+  /* it is out of the running: it slides for the verge it was nearest and rolls
+     to a stop. `slide` is the direction, chosen once, so it does not waver. */
+  c.dead = true;
+  c.slide = c.x >= 0 ? 1 : -1;
+  c.blink = 0;
+}
+/* the wreck coasting to a halt, run every frame for a dead car */
+function stepDeadTraffic(c, dt){
+  c.spd = Math.max(0, (c.spd || 0) * (1 - 1.9 * dt));
+  /* out of the running lane and onto the shoulder, then it stops moving across */
+  const want = c.slide * 0.94;
+  c.x += (want - c.x) * Math.min(1, dt * 1.5);
+  c.z += c.spd * dt;
+}
+
 function hurtRival(r, n){
   if(!r || r.wreck > 0 || (r.iframe || 0) > 0) return;
-  r.dmg = Math.min(100, (r.dmg || 0) + n);
+  const hp = hardinessOf(r.body);
+  r.dmg = Math.min(hp, (r.dmg || 0) + n);
   r.iframe = 0.7;
-  if(r.dmg >= 100){
+  if(r.dmg >= hp){
     r.dmg = 0;
     r.wreck = WRECK_SECS;        /* the same two seconds the player serves */
     r.spd *= 0.35;
@@ -14656,6 +14736,8 @@ function step(dt){
   
   traffic.sort((a,b) => a.z - b.z);
   for(const c of traffic){
+    /* a wreck has no AI: it is not choosing a lane or holding a gap any more, it is sliding to the verge - see `stepDeadTraffic` */
+    if(c.dead) continue;
     const wasSpd = c.spd || 0;
     let want = c.cruise;
 
@@ -14862,6 +14944,9 @@ function step(dt){
 
   for(let i=traffic.length-1;i>=0;i--){
     const c = traffic[i];
+    /* a wrecked car coasts to the verge and stops. It advances HERE like
+       everything else so that it cannot be moved twice in one frame. */
+    if(c.dead){ stepDeadTraffic(c, dt); continue; }
     c.z += c.spd*dt;
     /* the idle wander inside a lane. NOT while a move is in progress: it was
        being added on top of the merge every frame, so a car arrived a little
@@ -14898,12 +14983,16 @@ function step(dt){
        without being re-spawned in front of you anyway.
        -------------------------------------------------------------------- */
     if(c.z > pos + 64000){ traffic.splice(i,1); continue; }
+    if((c.iframe || 0) > 0) c.iframe -= dt;
     const dz = c.z - pz, dx = Math.abs(c.x - playerX);
     const overlap = carW(c.w + PLAYER_W)/2;
     if(iframe<=0 && Math.abs(dz) < (c.len+380)/2 && dx < overlap){
       /* where it landed decides everything, and both cars move (RLG-131) */
       const sev = impactWith(c);
       hurt(13 * sev, 'traffic');
+      /* and it takes what ITS end earned, the same mirror every other car gets:
+         running into the back of a van is your nose and its tail */
+      hurtTraffic(c, 13 * (c.hitSev === undefined ? sev : c.hitSev));
       iframe = 0.9;
       burst(c, '#ffb066');
     } else if(!c.near && Math.abs(dz) < 260 && dx < overlap+0.20){
@@ -15398,9 +15487,12 @@ function step(dt){
    ------------------------------------------------------------------------ */
 function hurtCop(k, n, how){
   if(!k || k.wreck > 0 || (k.iframe || 0) > 0) return false;
-  k.dmg = Math.min(100, (k.dmg || 0) + n);
+  /* a cruiser is the owner's exception: `hardinessOf` gives the two force cars
+     half again as much as their mass alone would earn */
+  const hp = hardinessOf(k.superc ? 'SUPERCRUISER' : 'CRUISER');
+  k.dmg = Math.min(hp, (k.dmg || 0) + n);
   k.iframe = 0.6;
-  if(k.dmg < 100) return false;
+  if(k.dmg < hp) return false;
   k.dmg = 0;
   wreckCop(k, how);
   return true;
@@ -15573,7 +15665,7 @@ function hurt(n, src){
   combo = 0; comboTime = 0;
   shake = Math.max(shake, Math.min(1.1, n/22));
   hitFlash = 1;
-  if(dmg>=100) wreck(src==='cop' ? 'TAKEN OUT' : 'WRECKED');
+  if(dmg >= hardinessOf(optBody)) wreck(src==='cop' ? 'TAKEN OUT' : 'WRECKED');
 }
 
 /* ---------- rendering ---------- */
@@ -24545,6 +24637,12 @@ requestAnimationFrame(frameLoop);
      and making that wait for the spawner to deal a real cruiser would be
      testing the spawner instead. It reports the progression and whether the
      takedown fired, without needing one on the road. */
+  /* the hidden stat, for the record and for a check - never for the HUD */
+  API.hardiness = function(){
+    const out = {};
+    for(const k in BODY) out[k] = hardinessOf(k);
+    return out;
+  };
   API.probeCop = function(hits, each){
     const k = { z:pos + 4000, x:0.5, spd:0, w:0.30, len:380, dmg:0, iframe:0, wreck:0 };
     const out = [];
