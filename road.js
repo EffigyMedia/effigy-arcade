@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.16';
+window.ROAD_BUILD = '0.13.17';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15036,7 +15036,24 @@ function step(dt){
      speed the bottle is supposed to earn it. */
   spd = clamp(spd, 0, MAX_SPD * FLEET_TOP * (Math.max(NOS_REV, 1.045) + 0.05));
   if(offRoad){
-    shake = Math.max(shake, 0.22);
+    /* ---- ROUGH GROUND ONLY SHAKES A CAR THAT IS ROLLING OVER IT ---------
+       Owner, 2026-09-07: "When parked (stopped) on the shoulder of the road,
+       the car still shutters like I'm driving offroad but I'm stopped. It
+       shouldn't do that."
+
+       THE SHAKE WAS A CONSTANT AND ASKED NOTHING ABOUT SPEED. Off the tarmac
+       was enough, so a car parked on the verge juddered exactly as hard as one
+       crossing it at 90 - which reads as a fault in the picture rather than as
+       rough ground, because nothing on screen is moving.
+
+       It is a fraction of speed now, at full strength by about 20mph and gone
+       at a standstill. `roughness` is applied to the barrier scrape below as
+       well: leaning on a wall while parked against it is not a scrape either.
+       The verge's SPEED CEILING and the scrub are untouched - what the verge
+       costs you is unchanged, and this is only about what it looks like.
+       ------------------------------------------------------------------ */
+    const roughness = clamp(spd / (MAX_SPD * 0.10), 0, 1);
+    shake = Math.max(shake, 0.22 * roughness);
     targetX = clamp(targetX, -1.18, 1.18);
     /* ---- THE VERGE COSTS TIME, NOT HEALTH ---------------------------------
        Scraping the barrier used to take 9 health, which made the edge of the
@@ -15077,7 +15094,8 @@ function step(dt){
          something you drag along, and dragging along it should feel expensive
          every moment it lasts */
       spd *= Math.max(0, 1 - dt*1.9);
-      shake = Math.max(shake, 0.34);
+      /* and a car resting against the barrier is not scraping along it */
+      shake = Math.max(shake, 0.34 * roughness);
     }
   }
 
@@ -23595,6 +23613,10 @@ requestAnimationFrame(frameLoop);
              traffic: traffic ? traffic.length : 0,
              cops: cops ? cops.length : 0, fx: fx ? fx.length : 0 };
   };
+  /* how hard the picture is being shaken right now, and why a check would care:
+     rough ground shakes a car that is rolling over it and nothing else, so this
+     has to be readable against SPEED rather than against position alone */
+  API.shake = function(){ return +shake.toFixed(4); };
   API.wet = function(){ return +wet.toFixed(3); };
   API.snowy = function(){ return snowy; };
   /* how much is on the glass, so a check can watch it clear when the fall ends

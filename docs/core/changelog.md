@@ -14,6 +14,25 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-17"></a>
+## [0.13.17] - 2026-09-07
+- Fixed: **a car parked on the shoulder no longer judders.** Owner, 2026-09-07: "When parked
+  (stopped) on the shoulder of the road, the car still shutters like I'm driving offroad but I'm
+  stopped. It shouldn't do that." The off-road shake was a **constant** - being off the tarmac was
+  the whole test - so a parked car shook exactly as hard as one crossing the verge at 90mph. With
+  nothing on screen moving, that reads as a fault in the picture rather than as rough ground.
+- It scales with speed now: full strength by about 20mph, **nothing at a standstill**. The same
+  factor applies to the barrier scrape, because resting against a wall is not scraping along one.
+- **What the verge costs is untouched.** The off-road speed ceiling and the scrub are unchanged;
+  this is only about what it looks like.
+- Added `tools/verge-test.py`, watched failing with the constant restored. **Two of its own checks
+  were wrong first and are worth recording:** it sampled before the car had finished slowing from the
+  launch, and reported the fix broken on a build where it worked; and it tried to assert the off-road
+  speed ceiling using the harness's own speed setter, which writes straight past the acceleration
+  model the ceiling lives in - it read 13,280 against a 4,200 limit that was working perfectly. That
+  assertion measured the harness, not the game, and has been removed rather than tuned. See
+  [UNT-189](../fragments/UNT-189.md).
+
 <a id="v0-13-16"></a>
 ## [0.13.16] - 2026-09-07
 - Added: **the third source of police, and it is the one a wanted level actually buys.** Owner,
