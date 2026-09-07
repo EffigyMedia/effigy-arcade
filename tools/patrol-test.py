@@ -176,6 +176,53 @@ def main():
         ok(fast['chasing'] > 0, 'and it is chasing you rather than merely gone',
            f"{fast['chasing']} cruisers on the road")
 
+        # ================= AND ONLY AS FAST AS ITS OWN CAR =======================
+        # Owner, 2026-09-07: "I want the police cruiser to have the same stats - the fact
+        # that a supercar can outrun it is the point, and why the super cruiser exists."
+        #
+        # The chase used to clamp every cruiser to `AI_TOP`, a flat 180 of the player's
+        # 200, and never asked the car what it could do: a chasing cruiser was measured at
+        # 169mph while the CRUISER in the garage tops out at 142.
+        #
+        # THE INVARIANT IS CHECKED, NOT THE CEILING. Coaxing one cruiser up to its limit
+        # means fighting the chase AI, which backs off, boxes, dodges and peels away for
+        # reasons of its own - three attempts at that measured 64, 89 and 102mph and proved
+        # nothing about the clamp. "No cruiser ever exceeds its own body's vmax" is the
+        # property that actually matters, it holds over a whole pursuit, and it fails
+        # immediately if the flat ceiling comes back.
+        print('  ..    letting a real pursuit run, and watching what the cruisers do')
+        page.evaluate("() => window.__road.heat(4)")
+        page.evaluate("() => window.__road.earnSupers(true)")
+        worst = {'cruiser': 0.0, 'superCruiser': 0.0}
+        seen = {'cruiser': 0, 'superCruiser': 0}
+        caps = None
+        for _ in range(120):
+            page.evaluate('() => { const R = window.__road;'
+                          ' R.setSpd(0.99 * R.MAX_SPD); R.heat(4); }')
+            page.wait_for_timeout(250)
+            cs = page.evaluate("() => window.__road.copSpeeds()")
+            caps = cs
+            for kind in worst:
+                if cs[kind]['fastest'] is not None:
+                    worst[kind] = max(worst[kind], cs[kind]['fastest'])
+                    seen[kind] = max(seen[kind], cs[kind]['n'])
+        for kind, label in (('cruiser', 'CRUISER'), ('superCruiser', 'SUPERCRUISER')):
+            cap, mph = caps[kind]['ceiling'], caps[kind]['mph']
+            top = worst[kind]
+            print(f'  ..    {label:13s} ceiling {cap:8.0f} ({mph}mph)   fastest seen {top:8.0f}'
+                  f'   ({seen[kind]} on the road at most)')
+            if seen[kind]:
+                ok(top <= cap * 1.01,
+                   f'a {label} never goes faster than the one you can drive',
+                   f'{top:.0f} against its own ceiling of {cap:.0f}')
+            else:
+                ok(True, f'no {label} appeared, so nothing was measured of it', 'reported only')
+        # AND THE TWO ARE NOT THE SAME CAR, which is the owner's whole reason for the
+        # second one: a supercar outruns the cruiser, and the interceptor is the answer.
+        ok(caps['superCruiser']['ceiling'] > caps['cruiser']['ceiling'] * 1.2,
+           'and the interceptor is meaningfully faster than the patrol car',
+           f"{caps['superCruiser']['mph']}mph against {caps['cruiser']['mph']}mph")
+
         errs = errs + errs2 + errs3 + page.evaluate("() => []")
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         ctx.close()

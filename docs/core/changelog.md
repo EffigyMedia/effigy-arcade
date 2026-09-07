@@ -14,6 +14,29 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-15"></a>
+## [0.13.15] - 2026-09-07
+- Fixed: **a police car is only as fast as the same car in your hands.** Owner, 2026-09-07: "I want
+  the police cruiser to have the same stats - the fact that a supercar can outrun it is the point,
+  and why the super cruiser exists." The chase clamped every cruiser to `AI_TOP`, a flat 180 of the
+  player's 200, and never asked the car what it could do. **Measured before: a chasing cruiser
+  reached 169mph while the CRUISER in the garage tops out at 142.** That is an NPC in a better
+  version of the same car, against the standing one-physics ruling.
+- **It cuts both ways, and that is the part worth reading.** The patrol car loses 38mph and can no
+  longer stay with a supercar - the owner's point rather than a regression. But the flat ceiling was
+  also **holding the interceptor back**: a SUPERCRUISER is a 190mph car and was being run at 180. It
+  gets its ten back. The gap between the two police cars is now the reason the second one exists:
+  **142 against 190**, where before it was 180 against 180.
+- Only the two force cars changed. `AI_TOP` still governs every other AI car on the road, and the
+  rubber band remains the one named exception to one physics for every car.
+- `patrol-test` gained the check, and it asserts the **invariant** rather than the ceiling: no
+  cruiser ever exceeds its own body's `vmax` over a whole pursuit. Coaxing one car up to its limit
+  means fighting a chase AI that backs off, boxes and peels away - three attempts measured 64, 89 and
+  102mph and proved nothing. Watched failing with the flat ceiling restored: the patrol car ran to
+  **173mph against its 142**, and the interceptor was pinned at exactly 180 against its 190.
+- Findings 1 and 3 of the police audit are untouched and still open. See
+  [UNT-187](../fragments/UNT-187.md).
+
 <a id="v0-13-14"></a>
 ## [0.13.14] - 2026-09-07
 - Added: **police patrol in ordinary traffic.** Owner, 2026-09-07: "We should put police into the

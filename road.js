@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.14';
+window.ROAD_BUILD = '0.13.15';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9463,6 +9463,21 @@ function launchDrag(){
    car you are driving is the fastest thing out here.
    -------------------------------------------------------------------------- */
 const AI_TOP = MAX_SPD * (180/200);
+/* ---- AND A POLICE CAR IS CAPPED BY ITS OWN BODY (owner, 2026-09-07) -----
+   `AI_TOP` is the flat ceiling every OTHER AI car on the road runs to. The two
+   force cars do not use it: a cruiser is a CRUISER and an interceptor is a
+   SUPERCRUISER, and each runs to the `vmax` its own record declares - the same
+   number the player gets when driving it.
+
+   142 AND 190, against the old flat 180. The ordinary cruiser is now genuinely
+   outrunnable by anything quick, which is the owner's ruling and the reason the
+   interceptor exists at all; the interceptor is now genuinely a supercar, which
+   the flat clamp had been quietly denying it.
+   ---------------------------------------------------------------------- */
+function copTop(k){
+  const B = BODY[k && k.superc ? 'SUPERCRUISER' : 'CRUISER'];
+  return MAX_SPD * ((B && B.vmax) || (180/200));
+}
 /* ---- THE GEAR AN AI CAR IS IN, IN ITS OWN GEARBOX ------------------------
    `key` is the body it is driving. The comment above this function used to say
    "as a fraction of ITS top" while measuring against a `top` the caller passed
@@ -15557,7 +15572,29 @@ function step(dt){
        horizon and never came back. */
     let want = spd + clamp((wantDz - dz)*2.2, -2600, 3400);
     if(spd < MAX_SPD*0.10 && dz > 0) want = Math.min(want, spd + 400);
-    want = Math.min(want, AI_TOP);
+    /* ---- ITS OWN CAR'S TOP END, NOT THE AI'S (owner, 2026-09-07) --------
+       "I want the police cruiser to have the same stats - the fact that a
+       supercar can outrun it is the point, and why the super cruiser exists."
+
+       THIS READ `AI_TOP`, a flat 180 of the player's 200 applied to every AI car
+       on the road, and it never asked the cruiser what it could do. Measured
+       before this: a chasing cruiser reached 169mph while the CRUISER in the
+       garage tops out at 142. That is an NPC in a better version of the same
+       car, and the standing rule is one physics for every car with the rubber
+       band as the only named exception.
+
+       IT CUTS BOTH WAYS, WHICH IS THE PART WORTH READING. The ordinary cruiser
+       loses 38mph and can no longer stay with a supercar - and that is the
+       owner's point rather than a regression. But `AI_TOP` was also holding the
+       SUPER CRUISER back: a SUPERCRUISER is a 190mph car and the flat clamp had
+       it at 180. The interceptor gets its ten back. The gap between the two
+       police cars is now the reason the second one exists.
+
+       `aiAccel` on the next line has taken the body key all along, so the car
+       was already accelerating through its own gearbox. Only the ceiling was
+       somebody else's.
+       ------------------------------------------------------------------- */
+    want = Math.min(want, copTop(k));
     const kWas = k.spd;
     /* a cruiser is a CRUISER and an interceptor is a SUPERCRUISER - they were
        both accelerating through the player's gearbox too (RLG-042) */
@@ -15571,7 +15608,7 @@ function step(dt){
        could not surround a stationary car — it just circled past forever.
        When you are stopped, so are they. */
     const boxing = spd < MAX_SPD*0.10;
-    k.spd = clamp(k.spd, boxing ? -2600 : 2000, AI_TOP);
+    k.spd = clamp(k.spd, boxing ? -2600 : 2000, copTop(k));
     k.z += k.spd*dt;
     /* and it steers at whatever it is chasing, not always at you */
     if(k.tx !== undefined && !k.onPlayer && isFinite(k.tx))
@@ -24805,6 +24842,25 @@ requestAnimationFrame(frameLoop);
   };
   /* put one exactly where a check needs it, through the REAL spawn record - so
      what is tested is the car the road builds rather than one the harness did */
+  /* ---- WHAT A POLICE CAR IS ALLOWED TO DO, AND WHAT IT IS DOING ---------
+     `ceiling` is the body's own `vmax`, which is what the player gets driving
+     the same car; `fastest` is the quickest any cruiser of that kind is going
+     right now. A check reads both and asserts the second never passes the first
+     - the invariant, rather than trying to coax one car up to its limit and
+     hoping the chase AI cooperates.
+     -------------------------------------------------------------------- */
+  API.copSpeeds = function(){
+    const row = (key, list) => ({
+      ceiling: +(MAX_SPD * BODY[key].vmax).toFixed(1),
+      mph: Math.round(BODY[key].vmax * 200),
+      fastest: list.length ? +Math.max.apply(null, list.map(k => k.spd || 0)).toFixed(1) : null,
+      n: list.length
+    });
+    const live = cops.filter(k => k.wreck <= 0 && !k.trap);
+    return { cruiser: row('CRUISER', live.filter(k => !k.superc)),
+             superCruiser: row('SUPERCRUISER', live.filter(k => k.superc)),
+             aiTop: +AI_TOP.toFixed(1) };
+  };
   API.placePatrol = function(dz){
     const z = pos + PLAYER_Z + (dz === undefined ? 4000 : dz);
     traffic.push({
