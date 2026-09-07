@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.15';
+window.ROAD_BUILD = '0.13.16';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8392,7 +8392,7 @@ function spawnTrap(){
     x: side * 1.16,                    /* on the grass, clear of the road */
     spd: 0, wreck:0, ang:0, grace:0, cool:0, side,
     w:0.27, len:400, phase: Math.random()*6.28,
-    trap: true, armed: true
+    trap: true, armed: true, from:'trap'
   });
 }
 
@@ -8456,7 +8456,7 @@ function patrolWatch(){
       spd: Math.max(c.spd || 0, spd * 0.95 + 1800),
       wreck:0, ang:0, grace:0.5, cool:0, side:1,
       w:0.27, len:400, phase: Math.random()*6.28,
-      dmg:0
+      dmg:0, from:'patrol'
     });
     snd.warnCop();
     flashWarn('PATROL ENGAGED');
@@ -8561,12 +8561,15 @@ function spawnSuper(){
     spd: spd * 1.04 + 1200,
     wreck:0, ang:0, grace:0.8, cool:0, side:1,
     w:0.265, len:390, phase: Math.random()*6.28,
-    superc: true
+    superc: true, from:'super'
   });
   snd.warnCop();
   flashWarn('INTERCEPTOR');
 }
 
+/* how many ordinary cruisers the radio will have on you at once, by wanted
+   level. Heat one is the baseline and dispatches nothing at all. */
+function dispatchCap(){ return heat < 2 ? 0 : Math.min(3, heat - 1); }
 function spawnCop(){
   const z = pos - rnd(3200,4200);
   let lane = rint(0,3), tries = 0;
@@ -8575,7 +8578,15 @@ function spawnCop(){
     z, x: LANE_X[lane],
     spd: spd*0.95 + 1800,
     wreck:0, ang:0, grace:1.1, cool:0, side:1,
-    w:0.27, len:400, phase: Math.random()*6.28
+    w:0.27, len:400, phase: Math.random()*6.28,
+    /* ---- WHICH OF THE THREE SOURCES SENT IT (owner, 2026-09-07) --------
+       "Police are generated from 3 sources. Traffic cruisers engaging after
+       pass, speed traps raising heat, and random timers from rear spawner."
+       They answer to different things and only this one answers to HEAT, so a
+       count that lumps them together cannot see a wanted level doing its job -
+       which is exactly how the rear spawner went missing. Every cruiser now
+       says where it came from. */
+    from:'radio'
   });
 }
 
@@ -8716,7 +8727,7 @@ function reset(){
   if(mode === 'race') buildField();
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
-  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0;
+  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6;
   coolT=0; supersEarned=false;
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
@@ -11884,6 +11895,8 @@ let towOverride = -1;               /* -1 = off; a harness may force a tow */
 /* debug only: a pinned road curvature, or null for the real road (RLG-048) */
 let curveHold = null;
 let horning = false, hornCool = 0, bustT = 0, behindT = 2, slowFor = 0, audioTick = 0, bendT = 0, skySmooth = 0, pushK = 0;
+/* the radio's own clock - see the dispatch block in `step` */
+let nextChaseT = 6;
 /* how long until the next ambulance is called out - see `spawnEmergency` */
 let ambT = 0;
 
@@ -15112,7 +15125,7 @@ function step(dt){
       flashWarn('HEAT ' + heat);
     }
   }
-  nextCopT -= dt; nextBlockT -= dt; nextCrateT -= dt;
+  nextCopT -= dt; nextBlockT -= dt; nextCrateT -= dt; nextChaseT -= dt;
   /* ---- A CIRCUIT IS NOT A HIGHWAY --------------------------------------
      Motorsport was running Interstate's whole world — civilian traffic, police,
      roadblocks, repair crates — on top of its circuit. A closed track with a
@@ -15140,6 +15153,77 @@ function step(dt){
     const parked = cops.filter(k => k.trap).length;
     if(parked < Math.min(4, 2 + Math.floor(heat/2))) spawnTrap();
     nextCopT = Math.max(3.0, rnd(9, 16) - heat*0.8);
+  }
+  /* ---- THE THIRD SOURCE, AND IT IS THE ONE HEAT ACTUALLY DRIVES ---------
+     Owner, 2026-09-07, settling the first finding of the police audit: "Police
+     are generated from 3 sources. Traffic cruisers engaging after pass, speed
+     traps raising heat, and random timers from rear spawner."
+
+     THE FIRST TWO WERE BUILT AND THIS ONE WAS NOT. `spawnCop` has existed for a
+     long time and was NEVER CALLED FROM ANYWHERE - its only other mentions in
+     the file are comments, and `nextCopT`, the timer whose name says it once
+     drove this, had been repurposed above to lay speed traps. So nothing ever
+     arrived because your wanted level was high; something arrived only because
+     you personally tripped it, and heat four summoned exactly what heat two did.
+
+     WHICH IS WHY THE ESCALATION WAS FLAT. A trap is a place you drove past and a
+     patrol is a car you overtook - both are things YOU did. This is the one
+     source that is about what the police think of you, so it is the one that has
+     to read `heat`, in both of the ways a dispatch can:
+
+       HOW MANY  the cap on cars actively chasing. Nothing at heat one, which is
+                 the baseline and means "not wanted"; one more for each level
+                 above it, to a ceiling of three. Interceptors are counted apart
+                 because `superWatch` has its own cap and they would otherwise
+                 crowd each other out.
+       HOW OFTEN the wait between dispatches, which shortens as heat rises.
+
+     IT DOES NOT ANNOUNCE ITSELF. A trap flashes SPEED TRAP and a patrol flashes
+     PATROL ENGAGED because in both cases you did something and deserve to be
+     told what. A car dispatched from the radio is just a car appearing in your
+     mirror, so it gets the warning tone and nothing else. The siren and the
+     lights do the telling, which is what they are for.
+     ------------------------------------------------------------------- */
+  if(roadFurniture && !optEasy && nextChaseT <= 0){
+    /* ---- THE QUOTA IS THE RADIO'S OWN, AND THE CEILING IS THE ROAD'S ----
+       Counting EVERY chasing cruiser against the cap was the first version and
+       it silently killed this source all over again: at any real speed a trap
+       catches you every few seconds, so two or three trap cars are on you
+       almost permanently and the radio never got a turn. Measured - radio cars
+       peaked at zero on every rung of the ladder while the cap said three.
+
+       So the cap counts the radio's OWN cars, which is what it is a cap on, and
+       a separate hard ceiling on everything chasing stops the three sources
+       piling into an absurdity when they all fire at once. Four is the ceiling:
+       the boxing-in behaviour stations cars around you in threes, so a fourth
+       is the one that closes the box and a fifth has nowhere to stand.
+       ---------------------------------------------------------------- */
+    const live = cops.filter(k => k.wreck <= 0 && !k.trap);
+    const mine = live.filter(k => !k.superc && k.from === 'radio').length;
+    /* ---- AND ONLY WHILE SOMEBODY ALREADY HAS EYES ON YOU ---------------
+       THE RADIO MADE HEAT PERMANENT AND `heat-test` CAUGHT IT: "outrunning
+       them cools the wanted level" went red, still 4 after fourteen seconds.
+       Cooling needs a stretch with nothing chasing you, and a dispatcher
+       driven by heat alone puts a fresh car behind you every few seconds at
+       heat four - which resets the cooling clock, which keeps heat at four,
+       which keeps dispatching. Heat could never come down again and a bad run
+       had no way out but the wall.
+
+       So the radio REINFORCES A PURSUIT rather than starting one. Something has
+       to be on you already - a trap you tripped, a patrol you passed, or a car
+       it sent earlier - and then heat decides how many more join and how
+       quickly. Lose them all and nothing new arrives, which is what makes
+       escaping a thing you can do.
+
+       THAT IS ALSO WHAT A RADIO IS. A dispatch goes to a pursuit in progress;
+       with nobody reporting your position there is nowhere to send anyone.
+       ---------------------------------------------------------------- */
+    const onYou = live.some(k => k.onPlayer !== false);
+    if(onYou && mine < dispatchCap() && live.length < 4){
+      spawnCop();
+      snd.warnCop();
+    }
+    nextChaseT = Math.max(4, rnd(12, 22) - heat*1.5);
   }
   /* patrolWatch runs whether or not pursuit is on, because a patrol has to keep
      track of whether you have gone past it either way - it simply never acts on
@@ -24849,6 +24933,28 @@ requestAnimationFrame(frameLoop);
      - the invariant, rather than trying to coax one car up to its limit and
      hoping the chase AI cooperates.
      -------------------------------------------------------------------- */
+  /* ---- WHAT THE WANTED LEVEL ACTUALLY PUT ON THE ROAD --------------------
+     The audit's third finding: nothing asserted that heat DOES anything, so
+     nothing failed on the day the rear spawner stopped being called and heat
+     four summoned exactly what heat two did. This is what a ladder check reads -
+     the three sources counted apart, because they answer to different things.
+     -------------------------------------------------------------------- */
+  API.copCensus = function(){
+    const live = cops.filter(k => k.wreck <= 0);
+    const by = (w) => live.filter(k => !k.trap && !k.superc && k.from === w).length;
+    return { heat: heat,
+             traps:    live.filter(k => k.trap).length,
+             /* THE THREE SOURCES, APART. `radio` is the only one a wanted level
+                buys; a trap is a place you drove past and a patrol is a car you
+                overtook, and both of those are things YOU did. */
+             radio:    by('radio'),
+             fromTrap: by('trap'),
+             fromPatrol: by('patrol'),
+             chasers:  live.filter(k => !k.trap && !k.superc).length,
+             supers:   live.filter(k => k.superc).length,
+             cap:      dispatchCap(),
+             patrols:  traffic.filter(c => c.patrol).length };
+  };
   API.copSpeeds = function(){
     const row = (key, list) => ({
       ceiling: +(MAX_SPD * BODY[key].vmax).toFixed(1),

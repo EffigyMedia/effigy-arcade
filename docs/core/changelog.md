@@ -14,6 +14,36 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-16"></a>
+## [0.13.16] - 2026-09-07
+- Added: **the third source of police, and it is the one a wanted level actually buys.** Owner,
+  2026-09-07: "Police are generated from 3 sources. Traffic cruisers engaging after pass, speed traps
+  raising heat, and random timers from rear spawner." The first two were built; the third,
+  `spawnCop`, **had existed for a long time and was never called from anywhere.** So nothing ever
+  arrived because your wanted level was high, and heat four summoned exactly what heat two did.
+- Heat now decides **how many** the radio will keep on you - nobody at heat 1, one more per level to
+  a ceiling of three - and **how often** it sends them.
+- **It reinforces a pursuit; it does not start one.** The first build dispatched on heat alone and
+  `heat-test` caught what that costs: "outrunning them cools the wanted level" went red, still at 4
+  after fourteen seconds. Cooling needs a stretch with nothing chasing you, and a fresh car every few
+  seconds resets that clock forever - **heat could never come down and a bad run had no way out but
+  the wall.** Something must already have eyes on you before the radio adds to it, which is also what
+  a radio *is*: a dispatch goes to a pursuit in progress.
+- The radio has **its own quota**, and that mattered: counting every chasing cruiser against the cap
+  killed this source a second time, because at speed a trap catches you every few seconds and two or
+  three trap cars sit on you almost permanently. Measured - radio cars peaked at **zero on every rung
+  of the ladder** while the cap said three. A separate hard ceiling of four keeps all three sources
+  from piling up.
+- Every cruiser now records **which of the three sources made it**. A count that lumps them together
+  cannot see a wanted level doing its job, which is precisely how the rear spawner went missing.
+- Added `tools/ladder-test.py` — **the check whose absence let this happen.** Nothing had ever asked
+  whether heat *does* anything. It reads cars actually on the road rather than the cap they are drawn
+  from, and it was watched failing with the spawner un-wired again: 0 at every level, against 0-1-2-2
+  now. This closes the fourth row of the audit's Finding 3; the bust, roadblocks and the PIT are
+  still uncovered. See [UNT-188](../fragments/UNT-188.md).
+- Known flaky, not caused by this: `heat-test`'s super-cruiser dispatch depends on four unbroken
+  seconds above 150mph and reported 0 supers on one run and 4 on the next, unchanged.
+
 <a id="v0-13-15"></a>
 ## [0.13.15] - 2026-09-07
 - Fixed: **a police car is only as fast as the same car in your hands.** Owner, 2026-09-07: "I want
