@@ -14,6 +14,37 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-14"></a>
+## [0.13.14] - 2026-09-07
+- Added: **police patrol in ordinary traffic.** Owner, 2026-09-07: "We should put police into the
+  traffic as standard vehicles. They just don't engage you if hot pursuit has turned off. If hot
+  pursuit is turned on then these random police in the traffic will engage you if you pass them going
+  beyond the speed limit." Four per cent of the cars ahead of you, with a Civilian at the wheel, the
+  bar dark, cruising at the limit like anything else.
+- **It drives as traffic and then stops being traffic.** While patrolling it is an ordinary car in
+  the traffic array - it sits in a lane, merges round slow cars, takes no interest in you. When it
+  engages it is moved into the `cops` array, where the chase, the lunge, the siren, the scatter and
+  the lights already live. **Nothing about chasing was written twice.** It is the same shape the
+  speed trap already uses: a dormant cruiser that wakes.
+- **Passing it is the trigger, not being near it.** The engagement fires on the frame you go from
+  behind it to ahead of it, so a patrol you never catch never looks at you.
+- **Four per cent and not two, which is what "standard" means.** At two, a thirty-second drive turned
+  up either one patrol car or none - a vehicle you meet once every couple of minutes is an event, not
+  ordinary traffic. The ambulance stays at two *because* it is meant to be rarer than that.
+- **The super cruiser is not in this and must not be.** Owner, same day: "the super cruiser is still
+  omitted from regular traffic, it only comes out when you are triggering its conditions."
+- **Patrols spawn ahead only**, which is the one body deliberately not in both spawn tables. A car
+  spawned behind you must be quicker than you or it never arrives, and a police car doing 130 to
+  catch up is either already chasing you or breaking the law it is there to enforce. It would also
+  trip the speed trap, which would then be pulling over the police.
+- A patrol is exempt from the speed trap and from a cruiser's retargeting, the same way an ambulance
+  on a call is - or the force spends the run arresting itself.
+- Added `tools/patrol-test.py`, and **both guards were watched failing**: with the pursuit switch
+  ignored, blasting past with HOT PURSUIT off starts a chase; with the limit ignored, a legal pass
+  starts one. Two of its own checks were also caught proving nothing and fixed - one read the drivers
+  at a moment when no patrol was on the road, and one "passed legally" case never actually overtook,
+  because the patrol was faster than the player. See [UNT-186](../fragments/UNT-186.md).
+
 <a id="v0-13-13"></a>
 ## [0.13.13] - 2026-09-07
 - Fixed: **a car that signals a lane change can now finish it.** The merge decision re-ran on every

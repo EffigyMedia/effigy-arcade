@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.13';
+window.ROAD_BUILD = '0.13.14';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7827,6 +7827,7 @@ function laneSpeed(c, tx){
    ------------------------------------------------------------------------ */
 let blockedAhead = 0;               /* windows with no way through, last pass */
 let mergesMade = 0;                 /* lane changes traffic has decided on, this run */
+let patrolsWoken = 0;               /* patrols that stopped being traffic, this run */
 /* ---- AND HOW MANY OF THEM WERE ANNOUNCED FIRST -------------------------
    Split out because `mergesMade` could not see the defect that made it
    necessary. A car either moves at once (`signals` false, about one driver in
@@ -7994,6 +7995,21 @@ function spawnBehind(){
      to the station, and it drives like anything else its size. The one with the
      lights on is a different spawn entirely.
      ------------------------------------------------------------------- */
+  /* ---- AND NO PATROL CAR HERE, WHICH IS DELIBERATE ----------------------
+     Every other body is in both tables, and the note above says why. A patrol
+     car is the one exception and it must stay one.
+
+     THIS TABLE IS FOR CARS THAT COME UP BEHIND YOU, and a car spawned behind
+     has to be QUICKER THAN THE PLAYER or it never arrives - `behindCruise` is
+     built from your speed for exactly that reason. A police car doing 130 to
+     catch you up is either already chasing you or breaking the law it is on the
+     road to enforce, and neither of those is standard traffic. It would also
+     trip the speed trap in the next function, which would then be pulling over
+     the police.
+
+     And the owner's trigger cannot happen to it: a patrol engages "if you pass
+     them going beyond the speed limit", which needs it to be AHEAD of you.
+     ------------------------------------------------------------------- */
   const t = Math.random() < SUPER_IN_TRAFFIC ? superType()
           : roll<0.10 ? 'truck'  : roll<0.12 ? 'ambulance'
           : roll<0.24 ? 'van'
@@ -8106,7 +8122,24 @@ function spawnWave(z){
     /* the ambulance takes its two per cent out of the VAN's share, for the
        reason written against the other table - it is a van. Both tables move
        together or it appears in half the traffic and nowhere else. */
+    /* ---- AND THE PATROL CAR (owner, 2026-09-07) -----------------------
+       "We should put police into the traffic as standard vehicles." FOUR per
+       cent, out of the van's share here and the saloon's in spirit - a cruiser
+       is `kin:'SALOON'`, a saloon in force colours, so the road gets a more
+       varied set of cars rather than more of them.
+
+       FOUR AND NOT TWO, WHICH IS WHAT `standard` MEANS. At two per cent a
+       thirty-second drive turned up either one patrol car or none, measured -
+       and a vehicle you meet once every couple of minutes is an event, not
+       ordinary traffic. One car in twenty-five is a police car you notice
+       without it being remarkable, which is the motorway this is modelled on.
+       The ambulance stays at two BECAUSE it is meant to be rarer than that.
+
+       AHEAD ONLY, AND THE OTHER TABLE SAYS WHY. This is the one body that is
+       deliberately not in both.
+       ---------------------------------------------------------------- */
     const t = roll<0.12 ? 'truck'  : roll<0.14 ? 'ambulance'
+            : roll<0.18 ? 'cop'
             : roll<0.26 ? 'van'
             : roll<0.42 ? 'pickup' : roll<0.53 ? 'coupe'
             : roll<0.59 ? 'tuner'  : roll<0.67 ? 'muscle'
@@ -8134,6 +8167,8 @@ function spawnWave(z){
          The only difference is the number. */
       spd: 0, cruise: cruiseFor(t, mind),
       mind: mind,
+      /* it is police, and everything that must not touch it reads this */
+      patrol: t === 'cop' || undefined,
       type: t,
       w: typeW(t), len: typeLen(t),
       near: false, drift: rnd(-1,1)*0.0002, paintN: (Math.random()*10)|0
@@ -8202,6 +8237,22 @@ const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55,
                        with itself about its own top end is the fault RLG-042 was
                        written to stop. Both went up together. */
                     ambulance:0.55,
+                    /* ---- A PATROL CAR IS THE INTERCEPTOR (owner, 2026-09-07) ----
+                       "We should put police into the traffic as standard
+                       vehicles." It is the CRUISER, so it gets the CRUISER's
+                       0.71 - the car is fully capable and the driver decides,
+                       and a patrol driver is not trying to get anywhere. It
+                       cruises at the limit like everything else with a Civilian
+                       at the wheel, and the 0.71 only matters from the moment it
+                       stops being traffic and starts chasing you.
+
+                       THE SUPER CRUISER IS NOT HERE AND MUST NOT BE. Owner, same
+                       day: "the super cruiser is still omitted from regular
+                       traffic, it only comes out when you are triggering its
+                       conditions." It is dispatched at heat three with a
+                       recorded 170mph pass behind it, and that is the whole
+                       point of it. */
+                    cop:0.71,
                     sedan:0.58, sedan2:0.58, coupe:0.66, tuner:0.74, muscle:0.78,
                     /* A SUPERCAR IN TRAFFIC GETS THE SUPERCAR'S STATS (RLG-042).
                        It is slow because the person driving it is going to work,
@@ -8249,6 +8300,9 @@ function typeW(t){
   return t === 'truck'  ? 0.32
        : t === 'van' || t === 'ambulance' ? 0.275
        : t === 'pickup' ? 0.29
+       /* the same figures `spawnCop` gives a chasing cruiser, so a patrol does
+          not change size at the moment it starts chasing you */
+       : t === 'cop' ? 0.27
        : (t === 'coupe' || t === 'tuner') ? 0.26
        : t === 'muscle' ? 0.285
        : SUPER_W[t] || 0.275;
@@ -8257,9 +8311,17 @@ function typeLen(t){
   return t === 'truck'  ? 520
        : t === 'van' || t === 'ambulance' ? 410
        : t === 'pickup' ? 420
+       : t === 'cop' ? 400
        : SUPER_W[t] ? 360 : 380;
 }
 function rollMind(t){
+  /* ---- A PATROL DRIVER IS NOT GOING ANYWHERE ---------------------------
+     Always a Civilian, which in this engine means "cruises at the limit". A
+     Speeder or a Racer in a police car is a police car breaking the law it is
+     parked on the road to enforce, and the speed trap two functions down would
+     then have to decide whether to pull it over. It is not a coin toss.
+     ------------------------------------------------------------------ */
+  if(t === 'cop') return CIVILIAN;
   const fast = !!SPORTY[t];
   if(Math.random() < (fast ? 0.05 : 0.01)) return RACER;
   if(Math.random() < (fast ? 0.30 : 0.10)) return SPEEDER;
@@ -8334,6 +8396,76 @@ function spawnTrap(){
   });
 }
 
+/* ---- A PATROL IS TRAFFIC UNTIL YOU GIVE IT A REASON (owner, 2026-09-07) --
+   "They just don't engage you if hot pursuit has turned off. If hot pursuit is
+   turned on then these random police in the traffic will engage you if you pass
+   them going beyond the speed limit."
+
+   IT DRIVES AS TRAFFIC AND THEN STOPS BEING TRAFFIC. While it is patrolling it
+   is an ordinary car in the `traffic` array with a Civilian at the wheel: it
+   sits in a lane, merges round slow cars, has its bar DARK, and takes no
+   interest in you at all. When it engages it is spliced out of `traffic` and
+   pushed into `cops`, where every piece of pursuit behaviour already lives -
+   the chase, the lunge, the siren, the scatter, the lights. Nothing about
+   chasing had to be written twice.
+
+   THAT HANDOVER IS THE SAME SHAPE THE SPEED TRAP ALREADY USES. A trap is a
+   dormant cruiser that flips a few fields when something goes past it too fast.
+   This is a dormant cruiser that changes ARRAY, because a patrol has to drive
+   like traffic first and a parked trap never moves.
+
+   PASSING IT IS THE TRIGGER, not being near it. `behind` is recorded when the
+   car is built and the engagement fires on the frame it turns false - you came
+   from behind and went by. A patrol you never catch never looks at you, and one
+   that is already behind you when it spawns cannot fire, which is why patrols
+   spawn ahead only.
+
+   AND `optEasy` IS PURSUIT OFF, so `!optEasy` is the switch being on. With it
+   off a patrol is scenery with a light bar: it still drives, it is still there,
+   and it will never engage.
+   ---------------------------------------------------------------------- */
+function patrolWatch(){
+  if(CFG.circuitOnly) return;
+  const pz = pos + PLAYER_Z;
+  for(let i = traffic.length - 1; i >= 0; i--){
+    const c = traffic[i];
+    if(!c.patrol) continue;
+    const behind = pz < c.z;
+    if(c.behind === undefined){ c.behind = behind; continue; }
+    const passed = c.behind && !behind;
+    c.behind = behind;
+    if(!passed) continue;
+    if(optEasy) continue;                         /* hot pursuit is off */
+    if(spd <= MAX_SPD * SPEED_LIMIT) continue;    /* you went by legally */
+    /* out of the traffic and into the chase, at its own place and speed */
+    traffic.splice(i, 1);
+    cops.push({
+      z: c.z, x: c.x,
+      /* ---- IT STARTS THE WAY EVERY DISPATCHED CRUISER STARTS -----------
+         `spawnCop` gives a cruiser `spd*0.95 + 1800` and it does so for a
+         reason: a cruiser's ceiling is 0.71 of top speed, so one that had to
+         accelerate honestly from a patrol's 60mph could never catch anybody
+         doing more than 142 - it would drop back 34,000 units and be culled,
+         which is what happened when this was written as 0.60 of your speed.
+         The chase would have been a car briefly appearing in the mirror.
+
+         So a woken patrol uses the same figure as every other cruiser in the
+         game rather than a second rule of its own. Its own patrol speed is the
+         floor, for the case where you are barely over the limit.
+         ---------------------------------------------------------------- */
+      spd: Math.max(c.spd || 0, spd * 0.95 + 1800),
+      wreck:0, ang:0, grace:0.5, cool:0, side:1,
+      w:0.27, len:400, phase: Math.random()*6.28,
+      dmg:0
+    });
+    snd.warnCop();
+    flashWarn('PATROL ENGAGED');
+    heat = Math.min(5, heat + 1);
+    coolT = 0;                        /* seen again: the cooling clock restarts */
+    patrolsWoken++;
+  }
+}
+
 /* a trap watches everything that goes past, not just you */
 function trapWatch(dt){
   for(const k of cops){
@@ -8377,7 +8509,7 @@ function trapWatch(dt){
          stays true for whatever carries one next without this line being
          revisited.
          ---------------------------------------------------------------- */
-      if(c.emergency) continue;
+      if(c.emergency || c.patrol) continue;
       if(!(c.mind >= SPEEDER)) continue;
       if(Math.abs(k.z - c.z) > 2200) continue;
       if((c.spd || c.cruise || 0) > MAX_SPD * SPEED_LIMIT){
@@ -8551,7 +8683,7 @@ function reset(){
   /* You start PARKED, in first, with the engine idling. A run that begins at
      60mph gives away the launch, and now that first gear pulls properly off
      the line the launch is worth having. */
-  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0;
+  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0;
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
@@ -14994,7 +15126,10 @@ function step(dt){
     if(parked < Math.min(4, 2 + Math.floor(heat/2))) spawnTrap();
     nextCopT = Math.max(3.0, rnd(9, 16) - heat*0.8);
   }
-  if(roadFurniture){ trapWatch(dt); superWatch(dt); }
+  /* patrolWatch runs whether or not pursuit is on, because a patrol has to keep
+     track of whether you have gone past it either way - it simply never acts on
+     it while the switch is off */
+  if(roadFurniture){ trapWatch(dt); superWatch(dt); patrolWatch(); }
   /* A roadblock across a bend is a wall you cannot see until you are in it,
      so they only go up on a stretch that is straight where it stands AND
      still straight a little further on. */
@@ -15407,7 +15542,7 @@ function step(dt){
          like a bug: a cruiser picks the nearest thing over 0.44 and an emergency
          ambulance is faster than that by design, so a patrol would have dropped
          a real pursuit to chase the ambulance it was making way for */
-      for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency) look(c.z, c.x, c.spd);
+      for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency && !c.patrol) look(c.z, c.x, c.spd);
       k.tz = bestZ; k.tx = bestX;
       k.onPlayer = (bestZ === pz);
     }
@@ -24655,6 +24790,32 @@ requestAnimationFrame(frameLoop);
   API.signalledMerges = function(){ return signalledMerges; };
   /* and how many indicators were STARTED to get them - see `signalsStarted` */
   API.signalsStarted = function(){ return signalsStarted; };
+  /* ---- WHAT THE PATROLS ARE DOING ----------------------------------------
+     `patrolling` is how many police are still driving as traffic; `woken` is how
+     many have engaged this run. A check needs both: a run where nothing engaged
+     because nothing was there proves something different from a run where a
+     patrol was passed and let you go.
+     -------------------------------------------------------------------- */
+  API.patrols = function(){
+    const list = traffic.filter(c => c.patrol);
+    return { patrolling: list.length, woken: patrolsWoken,
+             chasing: cops.filter(k => k.wreck <= 0 && !k.trap).length,
+             cars: list.map(c => ({ z: Math.round(c.z - (pos + PLAYER_Z)),
+                                    spd: Math.round(c.spd || 0), mind: c.mind })) };
+  };
+  /* put one exactly where a check needs it, through the REAL spawn record - so
+     what is tested is the car the road builds rather than one the harness did */
+  API.placePatrol = function(dz){
+    const z = pos + PLAYER_Z + (dz === undefined ? 4000 : dz);
+    traffic.push({
+      z, lane:1, x: LANE_X[1],
+      spd: MAX_SPD * 0.34, cruise: MAX_SPD * 0.34, mind: CIVILIAN,
+      type:'cop', patrol:true,
+      w: typeW('cop'), len: typeLen('cop'),
+      near:false, drift:0, paintN:0
+    });
+    return traffic.length;
+  };
   /* RLG-052's instrument: how many cars are announcing a move right now, how
      many have announced one at all, and how many drivers never signal. A check
      that only counted blinking cars could not tell "nobody signals" from
