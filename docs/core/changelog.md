@@ -14,6 +14,19 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-6"></a>
+## [0.13.6] - 2026-09-07
+- Fixed: **a police car wore two badges on the nose.** Owner, from the saved fleet renders,
+  2026-09-07: "there's two badges on the front." The `else if` correctly kept the GENERIC badge off a
+  cruiser, but the branch above it fires for any car declaring a `marque` - and the cop branch at the
+  foot of the same painter draws the star as well. `cop` is excluded from both branches now, so that
+  branch owns the star wherever the sprite was built.
+- Note: **it only ever appeared in the fleet sheet, which is why it survived.** The game builds
+  `FRONT_SP.cop` with no `marque` at all, so the first branch never fired there. The sheet builds
+  every front with `marque: rs.rear`, and a cruiser's `rear` is CRUISER - so the sheet, and only the
+  sheet, drew it twice. **A defect that lives only in a generated document is invisible to every
+  harness that drives the game.**
+
 <a id="v0-13-5"></a>
 ## [0.13.5] - 2026-09-07
 - Fixed: **police hardiness follows the car they are a variant OF, not their own mass.** Owner,

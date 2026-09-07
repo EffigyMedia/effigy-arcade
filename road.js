@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.5';
+window.ROAD_BUILD = '0.13.6';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3381,10 +3381,29 @@ function paintRigFront(kind, o){
       decl(g, lamps, 'turn.l', turnBulb(w*FL, ly, w*FT, lh, true));
       decl(g, lamps, 'turn.r', turnBulb(w*(FR+FW-FT), ly, w*FT, lh, true));
     }
-    /* and on the nose */
-    if(P.marque) drawMarque(g, P.marque, w*0.5, pDeck + h*0.026, h*0.030);
-    else if(kind !== 'tuner' && kind !== 'muscle' && kind !== 'cop')
-      drawMarque(g, 'GENERIC', w*0.5, pDeck + h*0.026, h*0.030);
+    /* ---- ONE BADGE ON THE NOSE, NOT TWO (owner render, 2026-09-07) -----
+       Owner, from the saved fleet renders: "there's two badges on the front" of
+       the police car.
+
+       There were. The `else if` below correctly kept the GENERIC badge off a
+       cruiser, but the branch ABOVE it fires for any car that declares a
+       `marque` - and the cop branch at the foot of this painter draws the star
+       as well. Two stars, one on top of the other's neighbour.
+
+       IT ONLY EVER SHOWED IN THE FLEET SHEET, which is why it survived: the
+       game's own `FRONT_SP.cop` is built with no `marque` at all, so the first
+       branch never fired there. The sheet builds every front with
+       `marque: rs.rear`, and the cruiser's `rear` is CRUISER - so the sheet,
+       and only the sheet, drew it twice.
+
+       `cop` is excluded from BOTH branches now. The rule is that the cop branch
+       owns the cruiser's star, wherever the sprite was built from.
+       ---------------------------------------------------------------- */
+    if(kind !== 'cop'){
+      if(P.marque) drawMarque(g, P.marque, w*0.5, pDeck + h*0.026, h*0.030);
+      else if(kind !== 'tuner' && kind !== 'muscle')
+        drawMarque(g, 'GENERIC', w*0.5, pDeck + h*0.026, h*0.030);
+    }
     /* ---- CLEAR OF THE SCOOP ---------------------------------------------
        The muscle car's bonnet scoop runs `pDeck - 0.010` to `pDeck + 0.045`,
        and the badge at +0.026 was sitting inside it. It drops below the scoop;
