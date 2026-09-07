@@ -14,6 +14,35 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-21"></a>
+## [0.13.21] - 2026-09-07
+- Removed: **the PIT manoeuvre.** Owner, 2026-09-07: "I don't think there is enough collision
+  granularity to really do the PIT justice reliably... just have the main mechanism for losing the
+  police and your heat level outrunning them and leaving them behind." It was decided on the single
+  frame two bodies overlapped, and a contact that lasts a frame cannot tell a deliberate move from a
+  lucky one. Writing its check made that plain rather than proving it. A cruiser is now just a car
+  you can hit, which is what [RLG-131](../fragments/RLG-131.md) asked for in the first place - the
+  PIT was its one exception.
+- **You can still take one out.** Owner: "the police can still be taken out of the chase if their
+  health is reduced to zero, so you can still lead them into collisions or hit them yourself... the
+  dirty alternative to simply outrunning them." Barrier and traffic damage are untouched.
+- Fixed: **a cruiser you have left behind no longer holds your wanted level up.** One counted as
+  chasing you until it was *culled*, 34,000 units back - so a car five seconds off your tail and
+  falling further away every second held the cooling clock at zero. Measured: thirty seconds of
+  running, half flat out in a car 40mph faster than anything behind it, and **the wanted level never
+  came down one level.** A cruiser more than `LOST_AT` away has lost you, and the radio does not
+  reinforce a pursuit you have already broken.
+- **Escapes still need you to avoid meeting new police.** With traps and patrols on the road ahead,
+  running flat out trips fresh ones faster than the clock can run. The cooling now *starts* where it
+  never did; finishing it is a matter of the road. That is what a radar detector would answer.
+- `ladder-test` had to give ground, and it is written up rather than quietly relaxed: the cap is a
+  pure function of the wanted level and is asserted; how many cars come out of it in a window is not,
+  because the population is at most three and the level keeps being re-earned while driving fast.
+  Three attempts to assert the observed numbers rung by rung all produced a gate that went red on the
+  road. **Revisit it when the wanted level becomes granular points.** See
+  [UNT-193](../fragments/UNT-193.md).
+- `tools/pit-test.py` is deleted with the feature it covered.
+
 <a id="v0-13-20"></a>
 ## [0.13.20] - 2026-09-07
 - Added `tools/pit-test.py`, the last of the three rows the police audit left uncovered. The PIT

@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.20';
+window.ROAD_BUILD = '0.13.21';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -286,6 +286,10 @@ let coolT = 0, supersEarned = false;
    than a number edited in place. Twelve seconds clear of every cruiser drops one
    star; five stars therefore take a minute of clean driving to shed. */
 const HEAT_COOL = 12;
+/* how far you have to get before a cruiser has LOST you rather than merely being
+   behind you. Well inside the 34,000 at which one is culled - see the cooling
+   test, which is the only thing that reads it. */
+const LOST_AT = 12000;
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
@@ -7828,6 +7832,15 @@ function laneSpeed(c, tx){
 let blockedAhead = 0;               /* windows with no way through, last pass */
 let mergesMade = 0;                 /* lane changes traffic has decided on, this run */
 let patrolsWoken = 0;               /* patrols that stopped being traffic, this run */
+/* ---- HOW MANY THE RADIO HAS SENT, WHICH IS THE SIGNAL THAT SURVIVES ------
+   `ladder-test` counted how many radio cars were on the road at once, and with a
+   cap of at most three and a dispatch that waits for somebody to have eyes on you,
+   that number is mostly noise: 3:2 and 5:1 on a working engine, because the road
+   put the chasers in different places. How many were SENT over a fixed window is
+   the thing heat actually drives - through the cap and through the timer - and it
+   accumulates rather than depending on where two cars happen to be.
+   ------------------------------------------------------------------------ */
+let radioSent = 0;
 /* ---- AND HOW MANY OF THEM WERE ANNOUNCED FIRST -------------------------
    Split out because `mergesMade` could not see the defect that made it
    necessary. A car either moves at once (`signals` false, about one driver in
@@ -8694,7 +8707,7 @@ function reset(){
   /* You start PARKED, in first, with the engine idling. A run that begins at
      60mph gives away the launch, and now that first gear pulls properly off
      the line the launch is worth having. */
-  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0;
+  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0; radioSent=0;
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
@@ -8727,7 +8740,7 @@ function reset(){
   if(mode === 'race') buildField();
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
-  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck=''; copHits=[];
+  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
   coolT=0; supersEarned=false;
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
@@ -8816,8 +8829,7 @@ function start(){
    and is not made here.
    ---------------------------------------------------------------------- */
 let lastWreck = '';
-/* every contact between the player and a cruiser this run - see the PIT block */
-let copHits = [];
+
 function wreck(reason){
   lastWreck = reason || '';
   /* ---- A WRECK COSTS TWO SECONDS, NOT THE RUN -------------------------
@@ -8905,9 +8917,9 @@ nitroBtn.addEventListener('pointerup',()=>nosOn=false);
 nitroBtn.addEventListener('pointerleave',()=>nosOn=false);
 nitroBtn.addEventListener('pointercancel',()=>nosOn=false);
 
-/* Brake. Not just a way to avoid a crash — it is how you drop back alongside a
-   cruiser instead of blowing past it, which is what makes the PIT a decision
-   rather than an accident. */
+/* Brake. Not just a way to avoid a crash - it is how you keep a line through
+   traffic at speed, and how you drop back rather than pile into what is in
+   front of you. */
 function setBrake(on){
   brakeBtn.classList.toggle('on', on);
   braking = on;
@@ -15150,7 +15162,31 @@ function step(dt){
        counting them as pursuit meant the cooling clock reset every frame and
        heat could never come down at all. Found by the check for cooling failing
        with nobody behind the car. */
-    const chased = cops.some(k => k.wreck <= 0 && k.onPlayer !== false && !k.trap);
+    /* ---- AND LOSING THEM MEANS DISTANCE (owner, 2026-09-07) -------------
+       "The main mechanism for losing the police and your heat level [is]
+       outrunning them and leaving them behind."
+
+       IT COULD NOT HAPPEN, AND THAT IS WHAT THIS TEST WAS. A cruiser counted as
+       chasing you until it was CULLED, which happens 34,000 units back - so a
+       car you had comprehensively lost, five seconds off the back of you and
+       falling further away every second, still held the cooling clock at zero.
+       Measured before this: thirty seconds of running, fifteen of them flat out
+       in a car forty miles an hour faster than anything behind it, and the
+       wanted level never came down by a single level.
+
+       A cruiser that cannot see you has lost you. `LOST_AT` is that distance,
+       and it is deliberately well inside the cull: you break away, they stop
+       counting, and the clock starts - rather than dragging a car you cannot
+       even see behind you for another twenty thousand units.
+
+       IT IS A TUNABLE AND THE NUMBER IS A FIRST ANSWER. At full chat in a quick
+       car you gain about four thousand units a second, so this is roughly three
+       seconds of genuine running before the clock starts, and twelve more per
+       level after that. Whether that FEELS like shaking off the police is the
+       owner's call on a real device.
+       ------------------------------------------------------------------ */
+    const chased = cops.some(k => k.wreck <= 0 && k.onPlayer !== false && !k.trap
+                                  && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
     if(chased) coolT = 0;
     else coolT += dt;
     if(coolT > HEAT_COOL && heat > 1){
@@ -15251,9 +15287,13 @@ function step(dt){
        THAT IS ALSO WHAT A RADIO IS. A dispatch goes to a pursuit in progress;
        with nobody reporting your position there is nowhere to send anyone.
        ---------------------------------------------------------------- */
-    const onYou = live.some(k => k.onPlayer !== false);
+    /* and the radio does not top up a pursuit you have already broken - a car
+       that has lost you is not reporting your position to anybody */
+    const onYou = live.some(k => k.onPlayer !== false
+                                 && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
     if(onYou && mine < dispatchCap() && live.length < 4){
       spawnCop();
+      radioSent++;
       snd.warnCop();
     }
     nextChaseT = Math.max(4, rnd(12, 22) - heat*1.5);
@@ -15827,51 +15867,38 @@ function step(dt){
        ------------------------------------------------------------------ */
     const pdz = k.z - pz;
     if(iframe<=0 && Math.abs(pdz) < (k.len+380)/2 && Math.abs(k.x-playerX) < carW(k.w+PLAYER_W)/2){
-      /* PIT: catch a cruiser on the side, alongside rather than nose to tail,
-         while you are actually moving into it and carrying speed, and it goes
-         around. Hitting one square-on is still just a crash — the manoeuvre has
-         to be deliberate, which means the lateral component is what decides it. */
-      const sideOn   = Math.abs(pdz) < (k.len + 380) / 2 * 0.55;  // overlapping, not rear-ended
-      const closing  = (playerX - k.x) * (targetX - playerX) < 0; // steering into it
-      const fast     = spd > MAX_SPD * 0.62;
-      /* ---- EVERY CONTACT WITH A CRUISER, AND WHAT DECIDED IT --------------
-         `pit-test` reads this. Staging the manoeuvre from a harness was tried
-         first and abandoned: the decision is made on the single frame two bodies
-         overlap, a staged cruiser is a real one whose chase AI moves it between
-         anything a harness can set, and three runs of one unchanged build gave
-         three different answers. A gate that flaky is worse than none.
+      /* ---- THE PIT IS GONE (owner, 2026-09-07) ---------------------------
+         "I don't think there is enough collision granularity to really do the
+         PIT justice reliably. We could get rid of the PIT manoeuvre and just
+         have the main mechanism for losing the police and your heat level
+         outrunning them and leaving them behind."
 
-         So the check reads the RULE over whatever contacts a real pursuit
-         produces, rather than trying to produce one contact to order. Each entry
-         is the three conditions as the engine evaluated them and whether a PIT
-         followed, which makes "a PIT happens exactly when all three hold" a
-         thing that can be asserted over dozens of collisions.
+         IT WAS DECIDED ON ONE FRAME AND THAT WAS THE WHOLE PROBLEM. The
+         manoeuvre asked three questions at the instant two bodies overlapped -
+         alongside, steering in, carrying speed - and a contact that lasts a
+         frame or two cannot tell a deliberate move from a lucky one. Writing a
+         check for it made that plain rather than proving it: four different ways
+         of staging the manoeuvre, and three runs of one unchanged build giving
+         three different answers. The engine was not being unfair; the question
+         was too fine for the resolution available to answer it.
+
+         SO A CRUISER IS NOW JUST A CAR YOU CAN HIT, and the code below is the
+         same collision the rest of the road gets (RLG-131) - which is what that
+         ruling asked for in the first place, and the PIT was the one exception
+         to it. You can still put one into the barrier or into traffic, and both
+         still take it out; what has gone is the takedown that came from a
+         well-timed touch.
+
+         AND LOSING THEM IS THE POINT NOW. Outrun them, leave them behind, and
+         the wanted level comes down on its own - which is exactly what the
+         cruiser speed ruling earlier the same day made possible: a patrol car
+         tops out at 142 and anything quick can simply go. The interceptor at
+         190 is the answer to that, and the reason it exists.
          ---------------------------------------------------------------- */
-      /* THE ENTRY RECORDS WHAT HAPPENED, NOT WHAT SHOULD HAVE. `pit` was first
-         written here as `sideOn && closing && fast` - the predicate copied out
-         of the line below it - which would have made the check a test of the
-         harness's own arithmetic and green no matter what the branch did. It is
-         set INSIDE the branch instead, so the ledger says whether a PIT was
-         actually performed. */
-      const hit = { sideOn:!!sideOn, closing:!!closing, fast:!!fast, pit:false };
-      if(copHits.length < 200) copHits.push(hit);
-      if(sideOn && closing && fast){
-        hit.pit = true;
-        /* the PIT is a DELIBERATE manoeuvre executed at speed, so it still puts
-           a cruiser out outright rather than chipping at it. That is the whole
-           point of it being harder to do than a shunt. */
-        k.dmg = 0;
-        wreckCop(k, 'pit');
-        fx.push({txt:'PIT MANOEUVRE', x:W/2, y:msgY()+16, vy:-26, age:0, life:1.3});
-        spd *= 0.94;
-        shake = Math.max(shake, 0.5);
-        iframe = 0.6;
-        continue;
-      }
       /* the same collision as the rest of the road (RLG-131). A cruiser that
          is left behaving differently from traffic and rivals recreates the
-         inconsistency this ruling exists to remove. The PIT above is a separate
-         manoeuvre and returns before reaching here. */
+         inconsistency this ruling exists to remove - and with the PIT gone there
+         is no longer any exception to it at all. */
       const push = Math.sign(playerX - k.x || 1);
       const ksev = impactWith(k);
       hurt(9 * ksev, 'cop');
@@ -25013,9 +25040,7 @@ requestAnimationFrame(frameLoop);
      which frame happened to touch first. It cannot manufacture a PIT: the
      conditions are still the engine's. */
   API.clearIframe = function(){ iframe = 0; return true; };
-  /* the contacts with cruisers this run, and what the PIT test made of each */
-  API.copHits = function(){ return copHits.slice(); };
-  API.clearCopHits = function(){ copHits = []; return true; };
+
   API.stagedCop = function(){
     const k = cops[0];
     return k ? { wreck:+(k.wreck||0).toFixed(2), dmg:Math.round(k.dmg||0),
@@ -25084,6 +25109,7 @@ requestAnimationFrame(frameLoop);
     const live = cops.filter(k => k.wreck <= 0);
     const by = (w) => live.filter(k => !k.trap && !k.superc && k.from === w).length;
     return { heat: heat,
+             sent:     radioSent,
              traps:    live.filter(k => k.trap).length,
              /* THE THREE SOURCES, APART. `radio` is the only one a wanted level
                 buys; a trap is a place you drove past and a patrol is a car you

@@ -119,6 +119,34 @@ def main():
         ok(cool['heat'] < 4, 'outrunning them cools the wanted level',
            'still %d after 14s with %d chasing' % (cool['heat'], cool['chasing']))
 
+        # ---- AND A CRUISER YOU HAVE LEFT BEHIND IS NOT CHASING YOU ------------------
+        # Owner, 2026-09-07: the main way to lose the police and the wanted level is
+        # "outrunning them and leaving them behind".
+        #
+        # IT COULD NOT HAPPEN BEFORE THIS. A cruiser counted as chasing until it was
+        # CULLED, 34,000 units back, so a car you had comprehensively lost held the
+        # cooling clock at zero the whole way. Measured: thirty seconds of running, half
+        # of it flat out in a car forty miles an hour faster than anything behind it, and
+        # the wanted level never came down by one level.
+        #
+        # A cruiser is parked WELL BEHIND, alive and still pointed at the player, and the
+        # clock has to run anyway. Without the distance rule this reads zero.
+        pg.evaluate('() => window.__probe.road.heat(4)')
+        pg.evaluate('() => { const R = window.__probe.road; R.copsClear();'
+                    ' R.cops().push({ z: R.pos - 20000, x: 0, spd: 0, wreck:0, ang:0,'
+                    '   grace:0, cool:0, side:1, w:0.27, len:400, phase:0, dmg:0,'
+                    '   from:"test", onPlayer:true }); }')
+        for _ in range(56):
+            pg.evaluate('() => { const R = window.__probe.road; R.setSpd(0); R.heat(4);'
+                        ' const k = R.cops()[0]; if(k) k.z = R.pos - 20000; }')
+            pg.wait_for_timeout(250)
+        far = pg.evaluate('() => window.__probe.road.pursuit()')
+        print('      a cruiser held 20,000 behind: the cool clock reached %.1f of the %d needed'
+              % (far['cool'], far['coolNeeds']))
+        ok(far['cool'] > 2 or far['heat'] < 4,
+           'a cruiser you have left behind stops holding the wanted level up',
+           'the clock read %.2f with one still on the road' % far['cool'])
+
         # ---- AND IT NEVER FALLS BELOW ONE -------------------------------------------
         pg.evaluate('() => window.__probe.road.heat(1)')
         hold(14000)
