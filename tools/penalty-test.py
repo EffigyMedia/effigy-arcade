@@ -137,6 +137,20 @@ with sync_playwright() as p:
           'and at a hundred it serves the same two seconds',
           f'wreck timer {out["wreck"] if out else "?"}s (the player serves 2.0)')
 
+    # ---- and a cruiser is worn down, not dropped by one hit -----------------
+    # Owner, 2026-09-07: "this damage system should apply to taking out police as
+    # well." Scored against a throwaway cruiser rather than a real one: making
+    # this wait for the spawner to deal a cruiser would be testing the SPAWNER,
+    # and the claim is about the damage rule.
+    cop = pg.evaluate("() => window.__road.probeCop(3, 45)")
+    check(cop and not cop[0]['downed'] and not cop[1]['downed'] and cop[2]['downed'],
+          'a cruiser is worn down rather than dropped',
+          f"dmg {cop[0]['dmg']} then {cop[1]['dmg']}, down on the third"
+          if cop else 'no reading')
+    check(cop and cop[2]['wreck'] > 1.5,
+          'and serves the same two seconds when it goes',
+          f"wreck timer {cop[2]['wreck']}s" if cop else 'no reading')
+
     check(not errs, 'no page errors', errs[0] if errs else 'clean')
     pg.close()
     b.close()

@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.2';
+window.ROAD_BUILD = '0.13.3';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15062,13 +15062,15 @@ function step(dt){
     k.x += clamp(aim - k.x, -1.15*dt, 1.15*dt);
     k.phase += dt*7;
 
-    if(Math.abs(k.x) > 1.16){ wreckCop(k, 'barrier'); continue; }
+    /* into the barrier at the edge: the heaviest thing that can happen to it */
+    if((k.iframe || 0) > 0) k.iframe -= dt;
+    if(Math.abs(k.x) > 1.16){ hurtCop(k, 60, 'barrier'); continue; }
 
     // cops eat traffic too — that is the player's best weapon
     let smashed=false;
     if(k.grace<=0 && k.z > pz - 900) for(const c of traffic){
       if(Math.abs(c.z - k.z) < (c.len+k.len)/2 && Math.abs(c.x-k.x) < (c.w+k.w)/2){
-        wreckCop(k,'traffic'); c.spd*=0.6; smashed=true; break;
+        hurtCop(k, 45, 'traffic'); c.spd*=0.6; smashed=true; break;
       }
     }
     if(smashed) continue;
@@ -15080,7 +15082,7 @@ function step(dt){
         if(p.cop) continue;
         if(Math.abs(p.x - k.x) < (p.w + k.w)/2){ hitBar = true; break; }
       }
-      if(hitBar){ wreckCop(k, 'barrier'); smashed = true; break; }
+      if(hitBar){ hurtCop(k, 60, 'barrier'); smashed = true; break; }
     }
     if(smashed) continue;
 
@@ -15116,6 +15118,10 @@ function step(dt){
       const closing  = (playerX - k.x) * (targetX - playerX) < 0; // steering into it
       const fast     = spd > MAX_SPD * 0.62;
       if(sideOn && closing && fast){
+        /* the PIT is a DELIBERATE manoeuvre executed at speed, so it still puts
+           a cruiser out outright rather than chipping at it. That is the whole
+           point of it being harder to do than a shunt. */
+        k.dmg = 0;
         wreckCop(k, 'pit');
         fx.push({txt:'PIT MANOEUVRE', x:W/2, y:msgY()+16, vy:-26, age:0, life:1.3});
         spd *= 0.94;
@@ -15377,8 +15383,30 @@ function step(dt){
   if(dmg>=100 && state==='driving') wreck('WRECKED');
 }
 
+/* ---- A CRUISER TAKES DAMAGE LIKE EVERYTHING ELSE (owner, 2026-09-07) -----
+   "This damage system should apply to taking out police as well."
+
+   A cruiser used to go down on ONE call to `wreckCop`, whatever hit it and
+   however hard - a barrier, a traffic car, a PIT at any speed, all identical.
+   It now carries `dmg` exactly as the player and the rivals do, and it is TAKEN
+   OUT when that reaches a hundred.
+
+   THE REWARD STILL BELONGS TO THE TAKEDOWN, not to the hit. Heat, the nitrous
+   and the CRUISER DOWN flash fire when the car actually goes down, so leaning on
+   a cruiser four times pays once - which is what it always did, and what stops
+   a scrape being worth as much as putting one in the barrier.
+   ------------------------------------------------------------------------ */
+function hurtCop(k, n, how){
+  if(!k || k.wreck > 0 || (k.iframe || 0) > 0) return false;
+  k.dmg = Math.min(100, (k.dmg || 0) + n);
+  k.iframe = 0.6;
+  if(k.dmg < 100) return false;
+  k.dmg = 0;
+  wreckCop(k, how);
+  return true;
+}
 function wreckCop(k, how){
-  k.wreck = 1.2; k.spd *= 0.55;
+  k.wreck = WRECK_SECS; k.spd *= 0.55;
   snd.copDown();
   /* taking one out is the other way to earn heat (RLG-030, owner 2026-08-30) */
   if(!optEasy){ heat = Math.min(5, heat + 1); coolT = 0; }
@@ -18612,6 +18640,11 @@ function paintBucket(list, onRoad){
          over its sprite. Small cars far up the road are skipped: below about
          ten pixels the glow is bigger than the car and reads as a smudge on the
          road rather than as a jet. */
+      /* and its damage, the same plume the player wears - see `damageFx`.
+         Skipped on the far small ones, where the smoke would be wider than the
+         car and read as fog on the road rather than as a hurt vehicle. */
+      if(box && (r.dmg || 0) > 25 && box.w > 12)
+        damageFx(box.x, box.y - box.h*0.5, box.w, box.h, r.dmg);
       if(box && r.nosOn && box.w > 10){
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -18672,6 +18705,9 @@ function paintBucket(list, onRoad){
       const spr = it.o.superc ? (SP.superCop || SP.cop) : SP.cop;
       const box = drawSprite(spr, it.o.x, it.o.z, it.o.w, it.o.wreck>0?0.85:1);
       noteSprite(it.o);
+      /* a cruiser that has been leaned on shows it, like everything else */
+      if(box && (it.o.dmg || 0) > 25 && box.w > 12)
+        damageFx(box.x, box.y - box.h*0.5, box.w, box.h, it.o.dmg);
       drawCopLights(box, sirenPhase + it.o.phase, spr);
       /* backing up: white reverse lamps, low and inboard on the tail */
       if(it.o.spd < -60 && it.o.wreck <= 0) drawReverse(box);
@@ -18718,33 +18754,30 @@ let playerTurn = 0, blinkPhase = 0, blinkHold = false, playerScreen = null;
    because converting it would have kept a second answer alive.
    ------------------------------------------------------------------------- */
 
-function drawPlayer(){
-  /* THE CAR HAD A MIND OF ITS OWN. `proj()` adds the road's screen-space sweep
-     at that z — but the player IS the camera reference, and PLAYER_Z sits a
-     little ahead of `pos`, so the car was being slid sideways by the bend on
-     top of whatever you steered. It stays where its lane position puts it and
-     the road moves around it, which is how Out Run works. */
-  const p = proj(playerX*ROAD, pos + PLAYER_Z);
-  p.x -= bendPx(pos + PLAYER_Z);
-  p.y -= hillPx(pos + PLAYER_Z);
-  if(!p.ok) return;
-  const w = p.scale*PLAYER_W*CAR_UNIT*W/2*2;
-  const h = w*SP.player.height/SP.player.width;
-  const lean = clamp((playerX-camX)*3.4, -0.28, 0.28);
-  const bump = Math.abs(playerX)>1 ? Math.sin(pos*0.02)*w*0.02 : 0;
-  /* NOTE: the car's own save/translate/rotate now lives BELOW, after the
-     smoke. Leaving it here left the particles inside the car's transform —
-     they were drawn at doubled coordinates and took the car off screen with
-     them, so the player vanished entirely. */
-  /* ---- damage: smoke and fire from under the bonnet ----------------------
-     Drawn BEFORE the car and clipped to above its roofline, so it billows out
-     from the front and the body occludes the source — you never see where it
-     is coming from, which is right, because it is coming from an engine bay
-     you are sitting behind.
+/* ---- EVERY CAR WEARS ITS OWN DAMAGE (owner, 2026-09-07) ------------------
+   "The visual effects of damage/health should apply to every car now."
 
-     Smoke from 75% health down (dmg 25 up); flames from 25% health down
-     (dmg 75 up).
-     -------------------------------------------------------------------------- */
+   This lived inside `drawPlayer` and read the global `dmg`, so it could only
+   ever describe the player - the same shape the NOS flame had before it was
+   lifted out, and the same duplication RLG-053 exists to finish. THE DRAWING
+   IS UNCHANGED: smoke from 75% health down, flames and embers from 25% down,
+   emitted in screen space so a plume rises rather than leaning with the car.
+
+   It takes the car's centre, its drawn size and ITS OWN damage, so a rival, a
+   cruiser and the player are one effect seen on three cars rather than three
+   effects that drift apart.
+
+   THE CALLER OWNS THE TRANSFORM. The player calls it before its own
+   save/rotate, so the particles are not caught in the car's lean; a sprite on
+   the road has no such transform and simply calls it.
+   ------------------------------------------------------------------------ */
+function damageFx(cx, cy, w, h, dmg, lean){
+  /* `lean` is how far the car is rolled into a corner, and only the PLAYER has
+     one - a sprite on the road is drawn upright. It tilts the origin of the
+     plume so the smoke leaves the leaning nose rather than the car's centre.
+     Defaulting it to zero is what lets every other car call this: an upright
+     car's plume leaves its nose, which is correct rather than a compromise. */
+  lean = lean || 0;
   if(dmg > 25){
     const q  = clamp((dmg - 25) / 50, 0, 1);        /* 0 at 25 dmg, 1 at 75 */
     const now = performance.now();
@@ -18764,8 +18797,8 @@ function drawPlayer(){
     const _dpr = Math.min(2, window.devicePixelRatio || 1);
     ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
     /* where the nose has swung to, given the body roll */
-    const noseX = p.x + Math.sin(lean*0.12) * h * 0.42;
-    const noseY = p.y + bump - Math.abs(Math.sin(lean*0.12)) * h * 0.05;
+    const noseX = cx + Math.sin(lean*0.12) * h * 0.42;
+    const noseY = cy - Math.abs(Math.sin(lean*0.12)) * h * 0.05;
     /* everything below the bonnet line is hidden by the car itself */
     ctx.beginPath();
     ctx.rect(0, 0, W, noseY - h*0.62);
@@ -18830,8 +18863,8 @@ function drawPlayer(){
         const rise = life * h * (0.75 + f*0.6);
         const sway = Math.sin(life*9 + i*3.3) * w * 0.16 * life;
         const a    = (1 - life) * (0.55 + f*0.4);
-        const ex   = p.x + sway + ((i%7)-3) * w*0.035;
-        const ey   = p.y + bump - h*0.60 - rise;
+        const ex   = cx + sway + ((i%7)-3) * w*0.035;
+        const ey   = cy - h*0.60 - rise;
         const er   = w * 0.012 * (1 - life*0.5);
         ctx.fillStyle = 'rgba(255,' + Math.round(200 - life*120) + ',90,' + a + ')';
         ctx.beginPath(); ctx.arc(ex, ey, Math.max(0.6, er), 0, 6.2832); ctx.fill();
@@ -18840,6 +18873,36 @@ function drawPlayer(){
     }
     ctx.restore();
   }
+}
+function drawPlayer(){
+  /* THE CAR HAD A MIND OF ITS OWN. `proj()` adds the road's screen-space sweep
+     at that z — but the player IS the camera reference, and PLAYER_Z sits a
+     little ahead of `pos`, so the car was being slid sideways by the bend on
+     top of whatever you steered. It stays where its lane position puts it and
+     the road moves around it, which is how Out Run works. */
+  const p = proj(playerX*ROAD, pos + PLAYER_Z);
+  p.x -= bendPx(pos + PLAYER_Z);
+  p.y -= hillPx(pos + PLAYER_Z);
+  if(!p.ok) return;
+  const w = p.scale*PLAYER_W*CAR_UNIT*W/2*2;
+  const h = w*SP.player.height/SP.player.width;
+  const lean = clamp((playerX-camX)*3.4, -0.28, 0.28);
+  const bump = Math.abs(playerX)>1 ? Math.sin(pos*0.02)*w*0.02 : 0;
+  /* NOTE: the car's own save/translate/rotate now lives BELOW, after the
+     smoke. Leaving it here left the particles inside the car's transform —
+     they were drawn at doubled coordinates and took the car off screen with
+     them, so the player vanished entirely. */
+  /* ---- damage: smoke and fire from under the bonnet ----------------------
+     Drawn BEFORE the car and clipped to above its roofline, so it billows out
+     from the front and the body occludes the source — you never see where it
+     is coming from, which is right, because it is coming from an engine bay
+     you are sitting behind.
+
+     Smoke from 75% health down (dmg 25 up); flames from 25% health down
+     (dmg 75 up).
+     -------------------------------------------------------------------------- */
+  /* the plume belongs to every car now - see `damageFx` */
+  damageFx(p.x, p.y + bump, w, h, dmg, lean);
 
   /* ---- wind and blur ------------------------------------------------------
      Two effects on one scale. `rush` starts at 88% of the normal top speed and
@@ -24469,6 +24532,35 @@ requestAnimationFrame(frameLoop);
   API.hitFactor = function(square, nose){ return +endFactor(square, !!nose).toFixed(4); };
   API.impactTunables = function(){ return { front:IMPACT.front, side:IMPACT.side,
                                             rear:IMPACT.rear }; };
+  /* the cruisers' health, so a check can watch one be worn down rather than
+     dropped in a single hit */
+  API.copState = function(){
+    return cops.map(function(k){
+      return { dmg:+(k.dmg || 0).toFixed(1), wreck:+(k.wreck || 0).toFixed(2),
+               z:Math.round(k.z || 0) };
+    });
+  };
+  /* Score `hurtCop` against a throwaway cruiser. The claim under test is the
+     DAMAGE RULE - that a cruiser is worn down rather than dropped by one hit -
+     and making that wait for the spawner to deal a real cruiser would be
+     testing the spawner instead. It reports the progression and whether the
+     takedown fired, without needing one on the road. */
+  API.probeCop = function(hits, each){
+    const k = { z:pos + 4000, x:0.5, spd:0, w:0.30, len:380, dmg:0, iframe:0, wreck:0 };
+    const out = [];
+    for(let i = 0; i < (hits || 3); i++){
+      k.iframe = 0;
+      const downed = hurtCop(k, each === undefined ? 45 : each, 'probe');
+      out.push({ dmg:+(k.dmg || 0).toFixed(1), wreck:+(k.wreck || 0).toFixed(2),
+                 downed:!!downed });
+    }
+    return out;
+  };
+  API.hurtCop = function(i, n){
+    const k = cops[i]; if(!k) return null;
+    k.iframe = 0; const out = hurtCop(k, n === undefined ? 50 : n, 'test');
+    return { dmg:k.dmg, wreck:k.wreck, downed:out };
+  };
   API.penalty = function(){
     return { wreckWait:+(wreckWait || 0).toFixed(2), clock:+(clock || 0).toFixed(2),
              pos:Math.round(pos), spd:Math.round(spd) };

@@ -14,6 +14,26 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-3"></a>
+## [0.13.3] - 2026-09-07
+- Added: **police are taken out by the damage system, not by one hit.** Owner, 2026-09-07: "this
+  damage system should apply to taking out police as well." A cruiser used to go down on a single
+  call to `wreckCop`, whatever hit it and however hard - a barrier, a traffic car and a PIT were all
+  identical. It carries `dmg` now, is taken out at a hundred, and serves `WRECK_SECS`
+  ([RLG-131](../fragments/RLG-131.md)).
+- Note: **the reward still belongs to the takedown, not to the hit.** Heat, the nitrous and the
+  CRUISER DOWN flash fire when the car actually goes down, so leaning on a cruiser four times pays
+  once. **The PIT still puts one out outright** - it is a deliberate manoeuvre at speed, and that is
+  the point of it being harder than a shunt.
+- Added: **every car wears its own damage.** Owner: "the visual effects of damage/health should apply
+  to every car now." The smoke and flames were written inside `drawPlayer` reading the global `dmg`,
+  so only the player could show them - the same shape the NOS flame had. Lifted into one `damageFx`
+  that rivals and cruisers also call, with the drawing unchanged.
+- Fixed: **the extraction leaked a local and threw on every frame.** `lean` is the player's roll into
+  a corner and only the player has one; it went out as a parameter defaulting to zero, because an
+  upright sprite's plume leaving its nose is correct rather than a compromise. Caught by a page error
+  in a probe, not by the eye.
+
 <a id="v0-13-2"></a>
 ## [0.13.2] - 2026-09-06
 - Added: **damage is a factor of which end took the hit.** Owner, 2026-09-06: "if you have a front
