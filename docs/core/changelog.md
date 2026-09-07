@@ -14,6 +14,20 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-8"></a>
+## [0.13.8] - 2026-09-07
+- Fixed: **everything on one segment is painted far to near, not in the order the arrays were
+  built.** Owner, 2026-09-07: "cars are rendering through scenery and the checkpoint signs." A bucket
+  is one segment of road, and traffic, police, gantries and roadblocks went into it in whatever order
+  `items` happened to be assembled - nothing sorted it. So a car two hundred units BEHIND a checkpoint
+  gantry could paint straight over the front of it. The road pass already walks far to near, which is
+  what makes the order between buckets right; the inside of a bucket now follows the same rule.
+- Note: **only half the report is confirmed fixed.** The gantry half has a found and understood cause
+  above. **The scenery half is NOT reproduced**: scenery is drawn per segment right after that
+  segment's bucket, which makes it paint OVER a car at the same depth rather than under it - the
+  opposite of the symptom. It may share the cause and be fixed by the same sort, or it may be a
+  second fault. It is not claimed as fixed.
+
 <a id="v0-13-7"></a>
 ## [0.13.7] - 2026-09-07
 - Changed: **hardiness is the material; health is what comes out of it.** Owner, 2026-09-07: "I can't

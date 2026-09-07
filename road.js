@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.7';
+window.ROAD_BUILD = '0.13.8';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -18770,6 +18770,22 @@ function flushSprites(){
    false for everything else, null for all of it */
 function paintBucket(list, onRoad){
   if(!list) return;
+  /* ---- FAR TO NEAR INSIDE THE BUCKET TOO (owner report, 2026-09-07) ------
+     Owner: "cars are rendering through scenery and the checkpoint signs."
+
+     A bucket is one segment of road, and everything standing on that segment
+     went into it IN THE ORDER `items` HAPPENED TO BE ASSEMBLED - traffic, then
+     police, then gantries, then roadblocks. Nothing sorted it. So a car and a
+     checkpoint gantry on the same segment painted in whatever order the arrays
+     were built in, not in the order the eye needs: a car two hundred units
+     BEHIND a gantry could paint straight over the front of it.
+
+     THE ROAD PASS ALREADY WALKS FAR TO NEAR, and that is what makes the
+     BETWEEN-bucket order right. This gives the inside of a bucket the same
+     rule, so the whole scene is painted back to front rather than only most of
+     it. It is a sort of at most a handful of items per segment.
+     -------------------------------------------------------------------- */
+  if(list.length > 1) list.sort((a, b) => (b.z || 0) - (a.z || 0));
   for(const it of list){
     if(onRoad !== null && !!ON_ROAD[it.kind] !== onRoad) continue;
     if(it.kind==='c'){
