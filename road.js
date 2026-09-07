@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.19';
+window.ROAD_BUILD = '0.13.20';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8727,7 +8727,7 @@ function reset(){
   if(mode === 'race') buildField();
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
-  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
+  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck=''; copHits=[];
   coolT=0; supersEarned=false;
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
@@ -8816,6 +8816,8 @@ function start(){
    and is not made here.
    ---------------------------------------------------------------------- */
 let lastWreck = '';
+/* every contact between the player and a cruiser this run - see the PIT block */
+let copHits = [];
 function wreck(reason){
   lastWreck = reason || '';
   /* ---- A WRECK COSTS TWO SECONDS, NOT THE RUN -------------------------
@@ -15832,7 +15834,29 @@ function step(dt){
       const sideOn   = Math.abs(pdz) < (k.len + 380) / 2 * 0.55;  // overlapping, not rear-ended
       const closing  = (playerX - k.x) * (targetX - playerX) < 0; // steering into it
       const fast     = spd > MAX_SPD * 0.62;
+      /* ---- EVERY CONTACT WITH A CRUISER, AND WHAT DECIDED IT --------------
+         `pit-test` reads this. Staging the manoeuvre from a harness was tried
+         first and abandoned: the decision is made on the single frame two bodies
+         overlap, a staged cruiser is a real one whose chase AI moves it between
+         anything a harness can set, and three runs of one unchanged build gave
+         three different answers. A gate that flaky is worse than none.
+
+         So the check reads the RULE over whatever contacts a real pursuit
+         produces, rather than trying to produce one contact to order. Each entry
+         is the three conditions as the engine evaluated them and whether a PIT
+         followed, which makes "a PIT happens exactly when all three hold" a
+         thing that can be asserted over dozens of collisions.
+         ---------------------------------------------------------------- */
+      /* THE ENTRY RECORDS WHAT HAPPENED, NOT WHAT SHOULD HAVE. `pit` was first
+         written here as `sideOn && closing && fast` - the predicate copied out
+         of the line below it - which would have made the check a test of the
+         harness's own arithmetic and green no matter what the branch did. It is
+         set INSIDE the branch instead, so the ledger says whether a PIT was
+         actually performed. */
+      const hit = { sideOn:!!sideOn, closing:!!closing, fast:!!fast, pit:false };
+      if(copHits.length < 200) copHits.push(hit);
       if(sideOn && closing && fast){
+        hit.pit = true;
         /* the PIT is a DELIBERATE manoeuvre executed at speed, so it still puts
            a cruiser out outright rather than chipping at it. That is the whole
            point of it being harder to do than a shunt. */
@@ -16133,6 +16157,12 @@ function hurtCop(k, n, how){
   return true;
 }
 function wreckCop(k, how){
+  /* WHAT PUT IT OUT, kept on the car. `how` reached here from four places - a
+     barrier, a traffic car, the PIT and a plain shunt - and was used for nothing
+     at all, so from the outside every downed cruiser looked identical. A check
+     for the PIT has to be able to say the manoeuvre did it, rather than that the
+     cruiser stopped moving. */
+  k.downedBy = how || '';
   k.wreck = WRECK_SECS; k.spd *= 0.55;
   snd.copDown();
   /* taking one out is the other way to earn heat (RLG-030, owner 2026-08-30) */
@@ -24953,6 +24983,45 @@ requestAnimationFrame(frameLoop);
      able to say the gap exists and that it is wide enough for the car, which
      means reading the PARTS rather than trusting the number.
      -------------------------------------------------------------------- */
+  /* ---- STAGE A CRUISER EXACTLY ALONGSIDE, AND SEE WHAT PUT IT OUT --------
+     The PIT is the most deliberate thing a player can do to the police - catch
+     one on the flank, at speed, steering into it - and it had no check. Landing
+     one by driving is not something a harness can do reliably, so this places
+     the car through the same fields the spawner uses and lets the REAL collision
+     test decide. `downedBy` is how a check tells a PIT from a shunt that
+     happened to finish one off.
+     -------------------------------------------------------------------- */
+  API.placeCop = function(dz, dx){
+    cops.length = 0;
+    cops.push({ z: pos + PLAYER_Z + (dz === undefined ? 0 : dz),
+                x: dx === undefined ? 0.3 : dx,
+                spd: spd, wreck:0, ang:0, grace:0, cool:0, side:1,
+                w:0.27, len:400, phase:0, dmg:0, from:'test' });
+    iframe = 0;
+    return cops.length;
+  };
+  /* NOT `copState` - THAT NAME IS TAKEN, and taking it silently cost a debugging
+     round: `API.copState` is declared again further down and returns an ARRAY, so
+     this one was overwritten and the harness reading it got a list where it
+     expected an object. The file already carries the same warning against
+     `spdNow`, which is the second time this shape has bitten. */
+  /* THE MERCY WINDOW, CLEARED. Any contact that is not a PIT sets `iframe` to a
+     full second, so a single glancing frame locks out every attempt after it -
+     which is not the engine misbehaving, it is a harness holding two cars
+     together for longer than a player ever would. Clearing it between frames
+     lets the staged manoeuvre be judged on its own conditions rather than on
+     which frame happened to touch first. It cannot manufacture a PIT: the
+     conditions are still the engine's. */
+  API.clearIframe = function(){ iframe = 0; return true; };
+  /* the contacts with cruisers this run, and what the PIT test made of each */
+  API.copHits = function(){ return copHits.slice(); };
+  API.clearCopHits = function(){ copHits = []; return true; };
+  API.stagedCop = function(){
+    const k = cops[0];
+    return k ? { wreck:+(k.wreck||0).toFixed(2), dmg:Math.round(k.dmg||0),
+                 downedBy:k.downedBy || '', dz:Math.round(k.z - (pos + PLAYER_Z)),
+                 dx:+(k.x||0).toFixed(3) } : null;
+  };
   API.roadblocks = function(){
     return blocks.map(b => ({
       dz: Math.round(b.z - (pos + PLAYER_Z)),

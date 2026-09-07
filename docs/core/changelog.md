@@ -14,6 +14,30 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-20"></a>
+## [0.13.20] - 2026-09-07
+- Added `tools/pit-test.py`, the last of the three rows the police audit left uncovered. The PIT
+  needs three conditions together - alongside, steering into it, and above 0.62 of top speed - and
+  this asserts that a takedown happens on **exactly** the contacts where all three hold.
+- **Staging the manoeuvre was tried first and abandoned, and that is the finding.** A harness can
+  place a cruiser and drive at it, but the decision is made on the single frame two bodies overlap, a
+  staged cruiser is a *real* one whose chase AI moves it between anything the harness sets, and one
+  glancing contact locks out the next second with the mercy window. **Three runs of one unchanged
+  build gave three different answers**, including one where the manoeuvre and its opposite came back
+  inverted. A gate that flaky is worse than no gate.
+- So the engine records the three conditions **as it evaluated them** on every contact with a
+  cruiser, and the check asserts the rule over all of them. Individual contacts land where the timing
+  puts them; the implication holds either way.
+- **The ledger records what happened, not what should have.** `pit` was first written as the
+  predicate copied out of the line below it - which would have made this a test of the harness's own
+  arithmetic, green whatever the branch did. It is set inside the branch instead. Watched failing
+  with the speed and steering conditions removed: **61 PITs against 15 contacts that qualified.**
+- A run that produces no qualifying contact is reported rather than failed - about one in three does,
+  and a gate that goes red on the traffic is the failure mode this project guards against - but it
+  says plainly that only the negative direction was tested. See [UNT-192](../fragments/UNT-192.md).
+- With this, the police audit's Finding 3 is closed: the bust, roadblocks, the PIT and the escalation
+  ladder all have checks.
+
 <a id="v0-13-19"></a>
 ## [0.13.19] - 2026-09-07
 - Added `tools/roadblock-test.py`, and **something that can see a roadblock in the first place.**
