@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.1';
+window.ROAD_BUILD = '0.13.2';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12520,10 +12520,11 @@ function stepRacers(dt){
          ------------------------------------------------------------- */
       const rsev = impactWith(r);
       hurt(8 * rsev, 'racer');
-      /* and it hurts them now, on the same severity the same impact gives you.
-         The rub is still the lightest hit on the road - it takes a lot of
-         leaning to wreck a rival - but it is no longer free. */
-      hurtRival(r, 8 * rsev);
+      /* and it hurts them now - but on THEIR end's severity, not yours. Running
+         into the back of a rival is your front and their tail, so the same
+         impact costs you the most it can and them the least. `impactWith` left
+         their number on the car. */
+      hurtRival(r, 8 * (r.hitSev === undefined ? rsev : r.hitSev));
       iframe = 0.7;
       burst(r, '#ffd27a');
     }
@@ -15429,8 +15430,41 @@ function wreckCop(k, how){
 let IMPACT = {
   along: 1.35,   /* how much of the closing speed a square hit exchanges */
   apart: 1.00,   /* how hard a rub throws the two cars apart */
-  ref:   0.26 * 380   /* an ordinary car, so the mass proxy reads near 1 */
+  ref:   0.26 * 380,  /* an ordinary car, so the mass proxy reads near 1 */
+  /* ---- WHICH END TOOK IT (owner, 2026-09-06) --------------------------
+     "Damage earned should be a factor of the direction damage is from. If you
+     have a front impact it's the worst, followed by side impacts. Then finally
+     impact to your rear is the least damaging."
+
+     THE GEOMETRY WAS ALREADY BEING MEASURED AND THEN THROWN AWAY. `square` says
+     how nose-to-tail a hit was and `dz` says which side of you the other car is
+     on, so front and rear were already distinguishable - the severity simply
+     did not ask. It read `0.25 + square*0.75`, which made a car running into
+     your back exactly as costly as you running into its back, and made every
+     glancing blow the cheapest thing on the road.
+
+     Tunables rather than constants, because this is a balance judgement and
+     the only place it can be judged is a device. The ORDER is the owner's
+     ruling; these three numbers are a starting point for it.
+     ------------------------------------------------------------------- */
+  front: 1.00,   /* you drove into something: the worst */
+  side:  0.55,   /* alongside, a rub or a lean */
+  rear:  0.30    /* something ran into the back of you: the least */
 };
+/* ---- HOW MUCH OF A HIT THIS END OF THE CAR EARNS -------------------------
+   `sq` is how square the hit was (1 in line, 0 fully alongside) and `nose` says
+   whether it landed on this car's FRONT. A square hit is all front or all rear;
+   a glancing one is all side; and everything between is blended, so there is no
+   step as a car slides from alongside to in line.
+
+   IT IS ASKED ONCE PER CAR, not once per collision, because the two cars in a
+   collision are not both hit in the same place. If you run into the back of a
+   rival, that is YOUR front and THEIR rear - the worst hit on the road for you
+   and the cheapest for them, out of one impact.
+   ------------------------------------------------------------------------ */
+function endFactor(sq, nose){
+  return IMPACT.side + (( nose ? IMPACT.front : IMPACT.rear ) - IMPACT.side) * sq;
+}
 /* a vehicle's mass, from the two dimensions it already carries. Anything that
    declares a real mass keeps it. */
 function massOf(o){
@@ -15478,9 +15512,23 @@ function impactWith(o){
   if(typeof slideX !== 'undefined') slideX = 0;
   if(o.x !== undefined) o.x = clamp(o.x - push * apart * (1 - share) * 2, -0.92, 0.92);
 
-  /* how hard it was: a square hit at a big closing speed is the worst there is,
-     a gentle rub is almost nothing */
-  return clamp((0.25 + square * 0.75) * Math.min(1, 0.30 + Math.abs(rel) / (MAX_SPD * 0.55)), 0, 1);
+  /* ---- HOW HARD IT WAS, AND WHERE IT LANDED --------------------------
+     The speed term is unchanged: a big closing speed is what makes a hit hurt.
+     What is new is that the two cars no longer share one answer.
+
+     `dz` is where the other car is. Positive means it is AHEAD of you, so the
+     hit landed on YOUR NOSE and on ITS TAIL. Negative means it is behind, and
+     the ends swap. That one sign is the whole of the owner's ruling, and it was
+     already being computed at the top of this function for the shove.
+
+     The other car's severity is left on `o.hitSev` for the caller, because
+     changing what this returns would break four call sites that all want the
+     player's number.
+     ---------------------------------------------------------------- */
+  const force = Math.min(1, 0.30 + Math.abs(rel) / (MAX_SPD * 0.55));
+  const nose  = dz > 0;                  /* the other car is ahead: your front */
+  if(o && typeof o === 'object') o.hitSev = clamp(endFactor(square, !nose) * force, 0, 1);
+  return clamp(endFactor(square, nose) * force, 0, 1);
 }
 
 function burst(o,color){
@@ -24397,6 +24445,30 @@ requestAnimationFrame(frameLoop);
   };
   /* the player's own penalty state, so a check can watch what the world does
      while it is being served */
+  /* ---- WHAT A HIT FROM A GIVEN DIRECTION EARNS -------------------------
+     `impactWith` MOVES BOTH CARS as well as scoring the hit, so a harness can
+     never call it twice to compare two directions - the first call changes the
+     speeds the second would read. This scores the same geometry without
+     touching anything, which is the only way to compare front against rear
+     honestly. */
+  /* Run the REAL `impactWith` against a throwaway car and report BOTH
+     severities, then put the player back exactly as it was. It is the only way
+     to prove the mirror - that one collision scores the two cars differently -
+     without reimplementing the function and agreeing with the reimplementation.
+     The restore matters: `impactWith` shoves both cars by design. */
+  API.probeImpact = function(dz, theirSpd){
+    const kSpd = spd, kX = playerX, kT = targetX,
+          kS = (typeof slideX !== 'undefined') ? slideX : 0;
+    const o = { z: pos + PLAYER_Z + dz, x: playerX, spd: theirSpd, len: 380,
+                w: 0.30, mass: 1400 };
+    const mine = impactWith(o);
+    spd = kSpd; playerX = kX; targetX = kT;
+    if(typeof slideX !== 'undefined') slideX = kS;
+    return { mine:+mine.toFixed(4), theirs:+(o.hitSev || 0).toFixed(4) };
+  };
+  API.hitFactor = function(square, nose){ return +endFactor(square, !!nose).toFixed(4); };
+  API.impactTunables = function(){ return { front:IMPACT.front, side:IMPACT.side,
+                                            rear:IMPACT.rear }; };
   API.penalty = function(){
     return { wreckWait:+(wreckWait || 0).toFixed(2), clock:+(clock || 0).toFixed(2),
              pos:Math.round(pos), spd:Math.round(spd) };

@@ -14,6 +14,32 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-2"></a>
+## [0.13.2] - 2026-09-06
+- Added: **damage is a factor of which end took the hit.** Owner, 2026-09-06: "if you have a front
+  impact it's the worst, followed by side impacts. Then finally impact to your rear is the least
+  damaging." Front 1.00, side 0.55, rear 0.30, blended by how square the hit was so a car sliding
+  from alongside to in line never steps ([RLG-131](../fragments/RLG-131.md)).
+- Note: **the geometry was already being measured and then thrown away.** `impactWith` computes
+  `square` (how nose-to-tail) and `dz` (which side of you the other car is on) for the shove, so
+  front and rear were always distinguishable - the severity just never asked. It read
+  `0.25 + square*0.75`, which made a car running into your back exactly as costly as you running
+  into its back ([RLG-131](../fragments/RLG-131.md)).
+- Changed: **one collision now scores the two cars differently.** Running into the back of a rival is
+  YOUR front and THEIR rear, so the same impact costs you the most it can and them the least.
+  Measured through the real function: a car rear-ending you at speed takes 0.91 while you take 0.35
+  ([RLG-131](../fragments/RLG-131.md)).
+- Note: **the three numbers are tunables with committed defaults, not constants.** The ORDER is the
+  ruling; the balance is the owner's to judge on a device, and `impact-test` asserts the order rather
+  than pinning the values.
+- Added: **`tools/impact-test.py`**, which goes through the real `impactWith` rather than
+  reimplementing it - the function MOVES BOTH CARS as well as scoring the hit, so it cannot be called
+  twice and compared. Watched failing on all four checks with the ordering inverted.
+- Note: **`collide-test` fails two checks and did so before this change.** "A car in the same place
+  as you is a hit" returns an empty result, and the half-width check measures 0.0094 against an
+  expected 0.2230. Confirmed pre-existing by running it on the previous build. Not diagnosed here -
+  it is either a stale harness or a real collider defect, and it wants its own unit.
+
 <a id="v0-13-1"></a>
 ## [0.13.1] - 2026-09-06
 - Fixed: **a wreck penalty no longer freezes the world.** Owner, 2026-09-06: "when the player gets
