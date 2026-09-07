@@ -14,6 +14,39 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-12"></a>
+## [0.13.12] - 2026-09-07
+- Added: **an ambulance comes through on a call.** Owner, 2026-09-07: "there's a chance for it to
+  spawn behind you in emergency mode. It's given the racer personality so it wants to go as fast as
+  possible and the siren works just like the police version as far as moving people out of the way."
+  It arrives behind you on its own clock - one every ninety seconds to three minutes, never two at
+  once - with the bar lit, the siren sounding and a Racer driving.
+- **It could not use the spawner that puts cars behind you.** That one only runs after you have been
+  slower than the flow of traffic for two seconds, because it exists to stop a stopped car sitting on
+  an empty road. An ambulance on a call does not wait for you to dawdle, so it is an event on its own
+  clock rather than a type in a table.
+- **Nothing was made faster to let it hurry.** `RACER` chooses a target and the vehicle caps it, so
+  the ambulance gets its own 0.55 and no more - the rule the whole fleet is built on
+  ([RLG-042](../fragments/RLG-042.md)), and an emergency is not an exemption from it.
+- The siren is **literally the police call**: `scatter` at 90% from where the ambulance is. It has
+  taken an origin and a lateral position since the NPC cruisers were given sirens, so there was
+  nothing to build beyond asking it. The authority to move traffic comes from the **bar**, and this
+  has one; it has no `force`, so it is not police and never becomes a pursuit.
+- Fixed: **the bloom under a light bar took its colours from the vehicle instead of from the police.**
+  It was hardcoded blue-and-red, which painted one side of an ambulance police blue. A medical scheme
+  is red at both ends and now says so. The wash below it had been fixed for exactly this and this
+  half was missed.
+- Fixed: **the police no longer engage an ambulance.** Owner: "it should go without saying." It did
+  not - a trap arms on anything over the limit, and a cruiser retargets onto the nearest thing over
+  0.44 of top speed, and an emergency ambulance is faster than both **by design**. A patrol would have
+  dropped a real pursuit to chase the ambulance it was making way for. The test is the **bar**, not
+  the body, so it stays true for whatever carries one next.
+- **Known limitation, and it is a defect this exposed rather than one it caused:** the ambulance often
+  queues behind the player instead of going round. A car that signals a lane change never completes
+  it, because the merge decision re-runs every frame and resets the signalling wait before it can
+  elapse. That is every signalling car in the game, not this one. It is fixed in the next unit. See
+  [UNT-184](../fragments/UNT-184.md).
+
 <a id="v0-13-11"></a>
 ## [0.13.11] - 2026-09-07
 - Added: **the ambulance is ordinary traffic now, and you can finally meet one.** Owner,

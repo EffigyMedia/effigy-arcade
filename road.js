@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.11';
+window.ROAD_BUILD = '0.13.12';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1013,7 +1013,7 @@ var snd = {
   },
 
   /* driven every frame from the game loop */
-  drive: function(spd, top, off, nos, copNear, decel, slip, still){
+  drive: function(spd, top, off, nos, copNear, decel, slip, still, ambNear){
     if (!snd.eng) return;
     /* ---- PITCH IS RPM, AND NOTHING ELSE MAY MOVE IT --------------------
        The caller used to pass a `top` that had the slipstream subtracted from
@@ -1091,11 +1091,11 @@ var snd = {
     /* your own bar wails too, and louder than a distant pursuit */
     var mine = (typeof barOn !== 'undefined' && barOn) ? 1.25 : 0;
     /* nothing on a circuit has a siren, and nothing on it is being chased */
-    var wail = snd.noSiren ? 0 : Math.max(copNear, mine);
+    var wail = snd.noSiren ? 0 : Math.max(copNear, mine, ambNear || 0);
     if (wail > 0){
       /* the two tones, the rate and the brightness all come from whichever
          vehicle's siren is actually sounding - see `sirenVoice` */
-      var SV = sirenVoice(copNear, mine);
+      var SV = sirenVoice(copNear, mine, ambNear);
       snd.sirenPhase += SV.rate;
       var two = Math.sin(snd.sirenPhase) > 0 ? SV.hi : SV.lo;
       snd.siren.set(two, 0.048 * wail, SV.cutoff, 0.02);
@@ -2445,8 +2445,17 @@ function sirenVoiceFor(bodyKey){
   const sc = B && B.bar && BAR_SCHEME[B.bar];
   return (sc && sc.siren) || BAR_SCHEME.police.siren;
 }
-function sirenVoice(copNear, mine){
-  /* whichever of the two sirens is actually the louder is the one being heard */
+/* ---- THREE THINGS CAN SOUND A SIREN NOW (owner, 2026-09-07) -------------
+   There is ONE siren oscillator and whichever source is actually the loudest is
+   the one being heard. It was two - the bar on your own roof and a cruiser
+   behind you - and an ambulance on a call is the third. It gets the AMBULANCE's
+   voice rather than the cruiser's, which is the owner's 2026-09-05 ruling that
+   an ambulance must not sound like the police, applied to a vehicle that could
+   not previously be heard because it could not previously exist on the road.
+   ---------------------------------------------------------------------- */
+function sirenVoice(copNear, mine, ambNear){
+  const amb = ambNear || 0;
+  if(amb > copNear && amb > mine) return sirenVoiceFor('AMBULANCE');
   return mine < copNear ? sirenVoiceFor('CRUISER') : sirenVoiceFor(optBody);
 }
 function barScheme(k){ return BAR_SCHEME[(BODY[k] && BODY[k].bar) || ''] || null; }
@@ -7987,6 +7996,53 @@ function spawnBehind(){
   });
 }
 
+/* ---- AND SOMETIMES ONE IS ON A CALL (owner, 2026-09-07) -----------------
+   "And then there's a chance for it to spawn behind you in emergency mode. It's
+   given the racer personality so it wants to go as fast as possible and the
+   siren works just like the police version as far as moving people out of the
+   way."
+
+   IT CANNOT USE `spawnBehind`, and that is the whole reason this exists. That
+   spawner only runs after you have been SLOWER than the flow of traffic for two
+   seconds - it was written to stop a stopped car sitting on an empty road. An
+   ambulance on a call does not wait for you to dawdle; it comes through whatever
+   you are doing, which makes it an EVENT on its own clock rather than a type in
+   a table.
+
+   AS FAST AS IT GOES, WHICH IS THE RACER'S DEFINITION. The personality system
+   chooses a TARGET and the vehicle caps it (RLG-054), so `RACER` here means the
+   driver wants everything the ambulance has and the ambulance's own 0.55 is what
+   they get. Nothing about the vehicle changes to let it hurry - that is the rule
+   the whole fleet is built on, and an emergency is not an exemption from it.
+
+   IT IS NOT POLICE AND IT NEVER BECOMES A PURSUIT. It carries `bar` and no
+   `force`, which is the split RLG made before the body could exist at all: the
+   bar buys the lights, the siren and the scatter; `force` buys the livery, the
+   heat and the interest in you. This one has the first and none of the second.
+   ---------------------------------------------------------------------- */
+function spawnEmergency(){
+  const order = [0,1,2,3].sort(() => Math.random() - 0.5);
+  let lane = -1, z = 0;
+  for(const L of order){
+    const zz = pos - rnd(3000, 5200);
+    if(laneFree(zz, L, 1800)){ lane = L; z = zz; break; }
+  }
+  if(lane < 0) return false;
+  traffic.push({
+    z, lane, x: LANE_X[lane] + rnd(-TRAF_JITTER, TRAF_JITTER) * LANE_W,
+    /* everything it has. `cruiseFor` takes the smaller of what the driver wants
+       and what the vehicle can do, and a RACER wants more than this van has. */
+    spd: 0, cruise: cruiseFor('ambulance', RACER),
+    mind: RACER, type: 'ambulance',
+    w: typeW('ambulance'), len: typeLen('ambulance'),
+    /* the one field that separates it from the ambulance going home */
+    emergency: true, barPhase: Math.random() * 6.2832,
+    near:false, drift: rnd(-1,1)*0.0002, fromBehind:true, paintN:0
+  });
+  traffic[traffic.length-1].spd = traffic[traffic.length-1].cruise;
+  return true;
+}
+
 /* ---- THERE IS ALWAYS A WAY THROUGH --------------------------------------
    Each wave left one lane free, but a DIFFERENT one each time — and at 900
    units apart the free lanes never lined up, so the road became a solid wall
@@ -8245,6 +8301,23 @@ function trapWatch(dt){
        exceed the limit is what it meant (RLG-054). The speed test below still
        decides, so a Speeder in a lorry - capped under the limit - trips nothing. */
     for(const c of traffic){
+      /* ---- AND NEVER AN AMBULANCE ON A CALL (owner, 2026-09-07) ---------
+         "It should go without saying that the police will not try to engage an
+         ambulance."
+
+         IT DID NOT GO WITHOUT SAYING, because this loop asks only how fast a
+         car is going and an emergency ambulance is the fastest thing in the
+         traffic by design - a RACER at the vehicle's own ceiling, well over the
+         limit, every single time. A trap would have pulled one over on the
+         first pass, siren and all, which is the one thing everybody on the road
+         is supposed to be getting out of the way of.
+
+         THE TEST IS THE BAR, not the body. Anything carrying one is on a call
+         and is exempt from the limit, which is what a light bar MEANS - and it
+         stays true for whatever carries one next without this line being
+         revisited.
+         ---------------------------------------------------------------- */
+      if(c.emergency) continue;
       if(!(c.mind >= SPEEDER)) continue;
       if(Math.abs(k.z - c.z) > 2200) continue;
       if((c.spd || c.cruise || 0) > MAX_SPD * SPEED_LIMIT){
@@ -11604,6 +11677,8 @@ let towOverride = -1;               /* -1 = off; a harness may force a tow */
 /* debug only: a pinned road curvature, or null for the real road (RLG-048) */
 let curveHold = null;
 let horning = false, hornCool = 0, bustT = 0, behindT = 2, slowFor = 0, audioTick = 0, bendT = 0, skySmooth = 0, pushK = 0;
+/* how long until the next ambulance is called out - see `spawnEmergency` */
+let ambT = 0;
 
 /* ---- rubber on the road --------------------------------------------------
    One system for every car out here. A mark is a short world-space segment at
@@ -14417,6 +14492,18 @@ function step(dt){
     if(k.wreck > 0) continue;
     if(k.z > pos - 400) scatter(0.90, k.z, k.x);
   }
+  /* ---- AND SO DOES AN AMBULANCE ON A CALL (owner, 2026-09-07) -----------
+     "the siren works just like the police version as far as moving people out
+     of the way." Literally the same call, at the same 90%, from where the
+     ambulance is - `scatter` has taken an origin and a lateral position since
+     the NPC cruisers were given sirens, so there was nothing to build here
+     beyond asking it. The authority to move traffic comes from the BAR, and
+     an ambulance has one.
+     ------------------------------------------------------------------- */
+  for(const c of traffic){
+    if(!c.emergency) continue;
+    if(c.z > pos - 400) scatter(0.90, c.z, c.x);
+  }
 
   /* ---- SERVING A PENALTY, AND THE WORLD KEEPS GOING (owner, 2026-09-06) ---
      "When the player gets the 2 seconds penalty, the world shouldn't freeze.
@@ -14668,6 +14755,20 @@ function step(dt){
       if(traffic.length < 26) spawnBehind();
     }
   } else behindT = 0.4;
+  /* ---- AND AN AMBULANCE ON A CALL, ON ITS OWN CLOCK ---------------------
+     Not tied to how fast you are going, unlike the spawner above it: an
+     ambulance comes through whatever you are doing. One roughly every minute
+     and a half to three minutes, and never more than one at a time - two
+     sirens at once is a road accident rather than an emergency, and the
+     scatter would be asked twice for the same lane.
+     ------------------------------------------------------------------- */
+  if(!held && !CFG.circuitOnly){
+    ambT -= dt;
+    if(ambT <= 0){
+      if(traffic.some(c => c.emergency)) ambT = 8;
+      else ambT = spawnEmergency() ? rnd(90, 190) : 6;
+    }
+  }
   if(autoHold > 0) autoHold -= dt;
   /* ---- THE FIELD DOES WHAT YOU DO ------------------------------------
      On a GRID it stands still on the line ([[RLG-118]]) while everything else
@@ -15207,7 +15308,12 @@ function step(dt){
         if(d < bestD && d < 9000){ bestD = d; bestZ = z; bestX = x; }
       };
       for(const r of racers) look(r.z, r.x, r.spd);
-      for(const c of traffic) if(c.mind >= SPEEDER) look(c.z, c.x, c.spd);
+      /* an ambulance on a call is exempt here for the same reason it is exempt
+         at a speed trap, and this is the site that would actually have LOOKED
+         like a bug: a cruiser picks the nearest thing over 0.44 and an emergency
+         ambulance is faster than that by design, so a patrol would have dropped
+         a real pursuit to chase the ambulance it was making way for */
+      for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency) look(c.z, c.x, c.spd);
       k.tz = bestZ; k.tx = bestX;
       k.onPlayer = (bestZ === pz);
     }
@@ -15552,6 +15658,15 @@ function step(dt){
     const gap = Math.abs(k.z - pz);
     if(gap < 7000) near = Math.max(near, 1 - gap/7000);
   }
+  /* the same measurement for an ambulance on a call, kept apart from the
+     cruisers' because the two sound different and the LOUDER one is what you
+     hear - see `sirenVoice` */
+  var ambNear = 0;
+  for(const c of traffic){
+    if(!c.emergency) continue;
+    const gap = Math.abs(c.z - pz);
+    if(gap < 7000) ambNear = Math.max(ambNear, 1 - gap/7000);
+  }
   /* rate of deceleration as a fraction of the hardest the brakes can pull,
      so the screech follows what the car is doing rather than what the pedal is */
   const lost = Math.max(0, prevSpd - spd);
@@ -15580,7 +15695,7 @@ function step(dt){
   /* once the run is over the car makes no noise — see `coasting` */
   if(coasting){ snd.quiet(); }
   else snd.drive(revFrac * MAX_SPD, MAX_SPD, offRoad, nosOn, near,
-            Math.max(decel, pScrub * 0.9), slipT || 0);
+            Math.max(decel, pScrub * 0.9), slipT || 0, false, ambNear);
 
   /* ---- stopping with the law behind you --------------------------------
      Braking to a halt is free on an empty road and fatal in a pursuit. A
@@ -18744,9 +18859,15 @@ function drawReverse(box){
   }
 }
 
-function drawCopLights(box, phase, spr){
+/* `scheme` is the vehicle's own `BAR_SCHEME` entry. It was hardcoded to the
+   police blue-and-red pair, which is right for a cruiser and wrong for the only
+   other thing in the game that carries a bar: a medical scheme is RED AT BOTH
+   ENDS, and the bloom was painting one side of an ambulance police blue. The
+   wash further down was fixed for exactly this and this half was missed. */
+function drawCopLights(box, phase, spr, scheme){
   if(!box || box.w < 8) return;
   const on = Math.sin(phase) > 0;
+  const SC = scheme || BAR_SCHEME.police;
   /* ---- THE SPRITE'S OWN BAR, ALTERNATING (RLG-053) ----------------------
      Blue one beat, red the next, each lit where the sprite drew it. The bloom
      stays here because it is atmosphere rather than a lamp - it belongs to the
@@ -18757,7 +18878,10 @@ function drawCopLights(box, phase, spr){
     if(box.w > 26){
       const cxp = box.x + box.w*(on ? -0.105 : 0.105);
       const y = box.y - box.h*0.90, r = box.w*0.60;
-      const glow = on ? 'rgba(77,140,255,' : 'rgba(255,43,74,';
+      /* the scheme's own declared wash pair, which is exactly the two colours
+         the bar is flashing - blue then red on a cruiser, red then red on an
+         ambulance, and nothing here has to know which it is looking at */
+      const glow = 'rgba(' + (on ? SC.wash[0] : SC.wash[1]) + ',';
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       const g = ctx.createRadialGradient(cxp, y, 0, cxp, y, r);
@@ -19008,6 +19132,15 @@ function paintBucket(list, onRoad){
          ------------------------------------------------------------- */
       if(it.o.blink > 0 && box && box.w >= 10 && Math.sin(blinkPhase) > 0)
         lampsLit(box, img, [it.o.blinkDir < 0 ? 'turn.l' : 'turn.r'], 1, 2);
+      /* ---- AND THE BAR, IF IT IS ON A CALL (owner, 2026-09-07) ---------
+         The SAME painter the cruisers use, given the ambulance's sprite and
+         its own bar scheme - which is what makes the lights read as lights
+         rather than as a second drawing of some. `barPhase` is per vehicle,
+         so two of them on one road are not in step, and the ambulance going
+         quietly back to the station has no `emergency` and stays dark.
+         ------------------------------------------------------------- */
+      if(it.o.emergency)
+        drawCopLights(box, sirenPhase + (it.o.barPhase || 0), img, BAR_SCHEME.medical);
     } else if(it.kind==='k'){
       /* a SUPER CRUISER is a MATADOR in force colours — same two paints the
          driveable cruiser gets, so the fleet reads as one force */
@@ -25009,6 +25142,22 @@ requestAnimationFrame(frameLoop);
   API.topOf = function(t){
     const k = String(t || '').toUpperCase();
     return { traffic: TYPE_VMAX[t], garage: BODY[k] ? BODY[k].vmax : undefined };
+  };
+  /* ---- CALL ONE OUT NOW ---------------------------------------------------
+     The ambulance's own clock runs at a minute and a half to three minutes, so a
+     harness that waited for one would be a five-minute test of a random number.
+     This is the SAME `spawnEmergency` the clock calls - not a second way of
+     making one, which would prove only that the harness can build a car.
+     -------------------------------------------------------------------- */
+  API.callAmbulance = function(){ return spawnEmergency(); };
+  /* what is on a call right now, and what the road is doing about it */
+  API.emergency = function(){
+    const list = traffic.filter(c => c.emergency);
+    return { count: list.length,
+             scattered: scattered,
+             cars: list.map(c => ({ z: Math.round(c.z - pos), x: +(c.x || 0).toFixed(3),
+                                    spd: Math.round(c.spd || 0), mind: c.mind,
+                                    type: c.type })) };
   };
   API.damage = function(){ return +dmg.toFixed(2); };
   /* damage is capped at 100, so a harness staging a hundred collisions stops being able to

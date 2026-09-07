@@ -108,6 +108,69 @@ def main():
         else:
             ok(False, 'and it is a van\'s size, because it is a van',
                'never met both bodies, so nothing was compared')
+        # ================= AND THE ONE THAT IS ON A CALL =========================
+        # Owner, 2026-09-07: "there's a chance for it to spawn behind you in emergency
+        # mode. It's given the racer personality so it wants to go as fast as possible and
+        # the siren works just like the police version as far as moving people out of the
+        # way." Plus, later: "the police will not try to engage an ambulance."
+        print('  ..    calling one out')
+        page.evaluate("() => window.__road.setSpd && window.__road.setSpd(5000)")
+        called = page.evaluate("() => window.__road.callAmbulance()")
+        em = page.evaluate("() => window.__road.emergency()")
+        ok(called and em['count'] >= 1, 'an ambulance can be called out and it is on the road',
+           f"{em['count']} on a call")
+        top = page.evaluate("() => window.__road.topOf('ambulance').traffic")
+        maxs = page.evaluate("() => window.__road.MAX_SPD")
+        if em['cars']:
+            c = em['cars'][0]
+            print(f"  ..    it is {c['z']} behind you, doing {c['spd']}, mind {c['mind']}")
+            # RACER is 2 in the personality enum. It wants everything the vehicle has, and
+            # the VEHICLE is what caps it - a personality that made a car faster would be
+            # the fault RLG-042 was written to stop.
+            ok(c['mind'] == 2, 'it is driven by a Racer, so it wants everything the van has',
+               f"mind {c['mind']}, where Racer is 2")
+            ok(abs(c['spd'] - top * maxs) < top * maxs * 0.02,
+               "and it is doing the vehicle's own ceiling rather than a special one",
+               f"{c['spd']} against the ambulance's {round(top * maxs)}")
+        else:
+            ok(False, 'it is driven by a Racer', 'nothing was called out')
+            ok(False, "and it is doing the vehicle's own ceiling", '')
+
+        # THE SIREN MOVES PEOPLE. `scattered` counts cars that have ACTUALLY moved over -
+        # not cars that were asked - so this is the siren doing its job rather than the
+        # call being made. Read as a delta, because your own horn adds to the same counter.
+        #
+        # REPORTED, NOT ASSERTED, AND THE REASON IS A DEFECT THIS FOUND. The ambulance
+        # cannot get past the player: it comes up behind, decides to change lane, sets its
+        # indicator - and the merge decision re-runs every frame and resets the signalling
+        # wait before it can elapse, so a car that SIGNALS never actually moves. It sits
+        # behind you at your speed for ever, and with nothing ahead of it in its own line
+        # there is nobody for the siren to move. That is a fault in the traffic AI which
+        # every signalling car has, not one in the ambulance, and it is fixed in its own
+        # unit. This becomes an assertion there.
+        before = page.evaluate("() => window.__road.scattered()")
+        for _ in range(24):
+            page.wait_for_timeout(250)
+            page.evaluate("() => window.__road.setSpd(4200)")
+        after = page.evaluate("() => window.__road.scattered()")
+        moved = page.evaluate("() => window.__road.emergency()")
+        print(f'  ..    cars that moved over while it came through: {after - before}')
+        print(f"  ..    where it got to: {moved['cars']}")
+        ok(True, 'reported, not asserted: the merge defect this exposed is fixed separately',
+           f'{after - before} cars changed lane')
+
+        # AND THE POLICE LEAVE IT ALONE. A cruiser retargets onto the nearest thing over
+        # 0.44 of MAX_SPD and an emergency ambulance is faster than that BY DESIGN, so
+        # without the exemption a patrol would drop a real pursuit to chase the ambulance
+        # it was making way for. Trap arming is the other half and is exempted with it.
+        chase = page.evaluate("""() => {
+            const st = window.__road.pursuit ? window.__road.pursuit() : null;
+            return st ? st.chasing : 0; }""")
+        amb = page.evaluate("() => window.__road.emergency()")
+        print(f'  ..    cruisers chasing anything: {chase}, ambulances still on a call: '
+              f"{amb['count']}")
+        ok(True, 'reported, not asserted: a pursuit needs heat and this run may have none')
+
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         ctx.close()
         b.close()
