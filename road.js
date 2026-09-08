@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.31';
+window.ROAD_BUILD = '0.13.32';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16115,6 +16115,45 @@ function step(dt){
        somebody else's.
        ------------------------------------------------------------------- */
     want = Math.min(want, copTop(k));
+    /* ---- AND IT LIFTS FOR WHAT IT CANNOT GO ROUND (RLG-158) -------------
+       Owner, 2026-09-07: the police "need to be just as interested in
+       navigating the traffic as they are stopping and arresting you".
+
+       THE DODGE STEERED AND NEVER LIFTED. Everything below this reads the road
+       ahead and picks a LINE around it, and that was the whole repertoire: the
+       cruiser's speed came from the chase and from nothing else, so a lorry
+       with cars either side - a gap that no line can find - was driven into at
+       full chase speed. Steering is half of navigating traffic and this is the
+       other half.
+
+       IT FOLLOWS CLOSER THAN A CIVILIAN DOES, deliberately. A police car in a
+       pursuit tailgates, and a cruiser that kept a civilian's margin would drop
+       out of the chase every time it met a slow car. The distances here are
+       about two thirds of the ones in the traffic follower.
+       ---------------------------------------------------------------- */
+    /* THE REACH IS A TIME, NOT A DISTANCE, and that is the difference between
+       this working and this reading as though it does. The first version looked
+       2,400 units ahead - which sounds a long way and is under half a second at
+       a chase speed of 150mph. A cruiser closing on a lorry 40mph slower needs
+       to begin lifting seconds out, so the window is a bit over a second of the
+       cruiser's OWN road, and what triggers the lift is the time to contact
+       rather than the gap. */
+    const reach = Math.max(2400, k.spd * 1.25);
+    let room = reach, lead = 0;
+    for(const c of traffic){
+      const gap = (c.z - k.z) - (c.len + k.len)/2;
+      if(gap <= -200 || gap > reach) continue;
+      if(Math.abs(c.x - k.x) > (c.w + k.w)/2 + 0.02) continue;
+      if(gap < room){ room = gap; lead = c.spd; }
+    }
+    const capTraffic = (v) => {
+      if(room >= reach) return v;
+      if(room < 260) return Math.min(v, lead);
+      /* how long until it arrives, at the speed it is asking for */
+      if(room / Math.max(1, v - lead) > 1.2) return v;
+      return Math.min(v, lead + room * 0.55);
+    };
+    want = capTraffic(want);
     const kWas = k.spd;
     /* a cruiser is a CRUISER and an interceptor is a SUPERCRUISER - they were
        both accelerating through the player's gearbox too (RLG-042) */
@@ -16127,8 +16166,32 @@ function step(dt){
     /* The floor of 2000 meant a cruiser could never actually stop, so it
        could not surround a stationary car — it just circled past forever.
        When you are stopped, so are they. */
-    const boxing = spd < MAX_SPD*0.10;
-    k.spd = clamp(k.spd, boxing ? -2600 : 2000, copTop(k));
+    /* ---- SURROUND AND SLOW, RATHER THAN WAIT FOR A STOP (RLG-158) ------
+       Owner, 2026-09-07: "their main method of attack should be to surround you
+       and slow you down so that you get arrested/busted."
+
+       THE BOX ONLY EXISTED FOR A CAR THAT HAD ALREADY STOPPED. It was written
+       to make the BUSTED rule reachable - brake to zero and the cruisers used
+       to drive off over the horizon - so it asked whether the player was below
+       a tenth of top speed. That makes surrounding the CONSEQUENCE of stopping
+       rather than the method of causing it, which is the opposite way round
+       from what the owner asked for.
+
+       So a cruiser that has caught up takes its station at any speed. Only the
+       ability to REVERSE is still kept for the standstill: a car backing up at
+       150mph is not a manoeuvre, it is a bug.
+       ---------------------------------------------------------------- */
+    const stopped = spd < MAX_SPD*0.10;
+    const boxing = stopped || (aggro && k.onPlayer !== false && Math.abs(dz) < 2600);
+    /* KEPT ON THE CAR so a check can ask whether the box is on rather than infer
+       it from where the cruiser happens to be. Positions are the RESULT of the
+       decision and several other things produce the same ones - the cooling
+       phase already stations a cruiser off to one side - so a check reading
+       positions alone cannot tell the box from a car that peeled off. */
+    k.boxing = boxing;
+    k.station = boxing ? (k.box === undefined ? -1 : k.box) : -1;
+    k.spd = clamp(k.spd, stopped ? -2600 : 2000, copTop(k));
+    k.spd = capTraffic(k.spd);
     k.z += k.spd*dt;
     /* and it steers at whatever it is chasing, not always at you */
     if(k.tx !== undefined && !k.onPlayer && isFinite(k.tx))
@@ -16152,6 +16215,21 @@ function step(dt){
          overshot frozen four thousand units up the road, unable to come back,
          so the box never closed. */
       k.spd = spd + clamp((holdDz - dz)*1.6, -2600, 2600);
+      /* ---- AND THE ONE IN FRONT IS A ROLLING BLOCK (RLG-158) ----------
+         "Slow you down so that you get arrested." Holding station ahead at
+         exactly your speed slows nobody: it is a car you follow. Once it is
+         genuinely in front it runs a little under you, so staying on the
+         throttle means going through it and lifting is the cheaper answer -
+         which is the whole mechanism the owner described, and it is what
+         hands the flankers a car slow enough to hold.
+
+         ONLY THE FRONT ONE, and only while it is really ahead. A flanker that
+         did this would simply drop back out of the box, and a blocker applying
+         it from behind would be braking for nothing.
+         ------------------------------------------------------------- */
+      if(k.box === 2 && !stopped && dz > 300)
+        k.spd = Math.min(k.spd, spd * 0.90);
+      k.spd = capTraffic(k.spd);
     }
 
     // read the road ahead and pick a line around it. Skill rises with heat,
@@ -25774,6 +25852,11 @@ requestAnimationFrame(frameLoop);
              radio:    by('radio'),
              fromTrap: by('trap'),
              fromPatrol: by('patrol'),
+             /* how many have taken a station around the player rather than
+                merely following them, and the widest one - RLG-158 */
+             boxing:   live.filter(k => k.boxing).length,
+             boxWide:  live.reduce((m, k) => k.boxing
+                         ? Math.max(m, Math.abs(k.x - playerX)) : m, 0),
              chasers:  live.filter(k => !k.trap && !k.superc).length,
              supers:   live.filter(k => k.superc).length,
              cap:      dispatchCap(),

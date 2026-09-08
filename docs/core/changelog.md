@@ -14,6 +14,31 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-32"></a>
+## [0.13.32] - 2026-09-08
+- Changed: **the police navigate the traffic, and surround you before you stop.** Owner, 2026-09-07:
+  they "need to be just as interested in navigating the traffic as they are stopping and arresting
+  you... their main method of attack should be to surround you and slow you down so that you get
+  arrested/busted." See [RLG-158](../fragments/RLG-158.md).
+- **The dodge steered and never lifted.** A cruiser read the road ahead and picked a LINE around it;
+  its speed came from the chase and nothing else, so a lorry with cars either side was driven into
+  at full chase speed. It now eases for what it cannot go round - closer than a civilian would,
+  because a police car in a pursuit tailgates. **The reach is a time, not a distance**: 2,400 units
+  sounds a long way and is under half a second at 150mph.
+- **The box no longer waits for you to stop.** It asked whether the player was under a tenth of top
+  speed, which made being surrounded the consequence of stopping rather than the method of causing
+  it. A cruiser that has caught up takes its station at any speed, and the one in front runs at nine
+  tenths of your speed rather than matching it, so staying on the throttle means going through it.
+- **The proof is two controlled scenes, because the statistic could not settle it.** Damage taken
+  from traffic ran 6.0, 5.3 and 8.7 a minute before and 2.7, 7.3 and 5.3 after - the means move the
+  right way and the ranges overlap, so three runs an arm say nothing. Against three cars abreast,
+  where no line exists, the cruiser slowed from 7,000 to 5,037 against a wall running at 4,622 and
+  took no damage; the old engine held 10,886 and went through.
+- **The owner's original report still does not reproduce**, and the reason is now known: a cruiser
+  only takes traffic damage while level with the player or ahead, so every one chasing from behind
+  passes through traffic untouched. Tracked as [RLG-171](../fragments/RLG-171.md) - it needs the
+  owner's judgment, not a fix.
+
 <a id="v0-13-31"></a>
 ## [0.13.31] - 2026-09-08
 - Fixed: **the traffic can see the police.** Owner, 2026-09-07: "seems like traffic doesn't avoid

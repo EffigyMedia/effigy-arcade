@@ -176,13 +176,156 @@ def main():
            % (met['slowed'], free['slowed'], met['moved'], free['moved']))
         # AND IT DOES NOT ARRIVE ANYWAY. A driver that lifts and then drives into the
         # back of it has not avoided anything.
-        # AND IT DOES NOT ARRIVE ANYWAY. A driver that lifts or edges over and then
-        # drives into the back of it has not avoided anything - so the meeting has to
-        # be got THROUGH, not merely started.
-        ok(met['hits'] == 0, 'and it never occupies the same road as the cruiser',
-           '%d frames inside it' % met['hits'])
+        # OVERLAP IS PRINTED AND NOT ASSERTED, deliberately. It stays at or near zero on
+        # the engine that CANNOT see the police - a 120ms sample steps over the few
+        # frames of contact and the collision code resolves the rest - so it separates
+        # nothing, and an assertion that cannot fail on a broken engine is worse than no
+        # assertion at all. It is here because a large number would mean something.
+        print('  ..    (diagnostic, not an assertion: %d frames inside the cruiser)'
+              % met['hits'])
         ok(met['passed'], 'and the approach actually completed',
            'the car never reached the cruiser, so nothing was avoided')
+        # ================= THE OTHER SIDE: THE POLICE (RLG-158) =================
+        # Owner, 2026-09-07: the police "need to be just as interested in navigating the
+        # traffic as they are stopping and arresting you".
+        #
+        # THE DODGE STEERED AND NEVER LIFTED. A cruiser read the road ahead and picked a
+        # LINE around it, and its speed came from the chase and from nothing else - so a
+        # car it could not go round was driven into at full chase speed.
+        #
+        # THIS IS A CONTROLLED FORCED LIFT, and the wall is what makes it evidence. A
+        # cruiser given a gap will steer through it and prove nothing about lifting, so
+        # the lane it is in is blocked and BOTH neighbours are blocked too. The only
+        # answer left is the throttle.
+        #
+        # A STATISTIC WAS TRIED FIRST AND COULD NOT SETTLE IT: damage events taken from
+        # traffic over ninety seconds of pursuit ran 6.0, 5.3 and 8.7 a minute before the
+        # change and 2.7, 7.3 and 5.3 after. The means move the right way and the ranges
+        # overlap, so three runs an arm say nothing - the same trap RLG-056 records.
+        WALL = """([back]) => {
+          const R = window.__road;
+          clearInterval(window.__hold);
+          const pz = R.pos + R.PLAYER_Z;
+          R.copsClear();
+          // THE TRAFFIC IS NOT PARKED OUT OF THE WAY FIRST. `parkTraffic` puts cars
+          // far enough up the road that the culler takes them, so the array was empty
+          // by the time the wall was built out of it.
+          const wall = R.traffic.slice(0, 3);
+          if(wall.length < 3) return null;
+          const lanes = [-0.66, 0, 0.66];
+          wall.forEach((c, i) => { c.x = lanes[i]; c.z = pz - back + 5200;
+                                   c.spd = c.cruise = 0.30 * R.MAX_SPD; });
+          window.__wall = wall;
+          const k = { z: pz - back, x: 0, spd: 0.80 * R.MAX_SPD, wreck: 0, ang: 0,
+                      grace: 0, cool: 0, side: 1, w: 0.27, len: 400, phase: 0, dmg: 0,
+                      from: 'test', onPlayer: true, tz: pz, tx: 0 };
+          R.cops().push(k);
+          window.__cop = k;
+          window.__hold = setInterval(() => {
+            R.setSpd(0.92 * R.MAX_SPD);
+            // the wall holds its speed and its lanes; nothing else is on the road
+            for(const c of R.traffic){
+              if(wall.indexOf(c) >= 0){ c.spd = c.cruise = 0.30 * R.MAX_SPD; }
+              else { c.z = R.pos + 26000; c.x = 2.4; }
+            }
+          }, 8);
+          return true;
+        }"""
+        COPWATCH = """() => {
+          const k = window.__cop, w = window.__wall;
+          if(!k) return null;
+          let inside = false, gap = 1e9;
+          for(const c of w){
+            const d = (c.z - k.z) - (c.len + k.len) / 2;
+            if(d < gap) gap = d;
+            if(Math.abs(c.x - k.x) < (c.w + k.w) / 2
+               && Math.abs(c.z - k.z) < (c.len + k.len) / 2) inside = true;
+          }
+          return { spd: Math.round(k.spd), dmg: Math.round(k.dmg || 0),
+                   wreck: +(k.wreck || 0).toFixed(2), gap: Math.round(gap),
+                   wallSpd: Math.round(w[0].spd), inside: inside };
+        }"""
+
+        # THE ROAD HAS TO REPOPULATE FIRST. The approach above pushed every other car
+        # far enough up the road to be culled, so the array is empty when this starts -
+        # it is refilled by DRIVING, which is what lays the next wave.
+        page.evaluate('() => { clearInterval(window.__hold);'
+                      ' window.__hold = setInterval(() => window.__road.setSpd('
+                      '0.6 * window.__road.MAX_SPD), 50); }')
+        for _ in range(60):
+            page.wait_for_timeout(250)
+            if page.evaluate('() => window.__road.traffic.length') >= 4:
+                break
+        ok(page.evaluate(WALL, [9000]) is True, 'the forced-lift scene was built',
+           '%d cars on the road' % page.evaluate('() => window.__road.traffic.length'))
+        page.wait_for_timeout(200)
+        opened = page.evaluate(COPWATCH)
+        hit = 0
+        slowest = opened['spd']
+        for _ in range(70):
+            page.wait_for_timeout(100)
+            w = page.evaluate(COPWATCH)
+            if w['inside']:
+                hit += 1
+            slowest = min(slowest, w['spd'])
+        end = page.evaluate(COPWATCH)
+        page.evaluate('() => clearInterval(window.__hold)')
+        print('  ..    a cruiser closing on three cars abreast: opened at %d, slowed to %d,'
+              ' the wall runs at %d'
+              % (opened['spd'], slowest, end['wallSpd']))
+        print('  ..    %d frames inside the wall, %d damage taken' % (hit, end['dmg']))
+
+        # IT HAS TO LIFT TO THE WALL'S OWN SPEED, near enough. A cruiser that merely
+        # eases a little and still arrives has not navigated anything.
+        ok(slowest <= end['wallSpd'] * 1.25,
+           'a cruiser lifts for traffic it cannot go round',
+           'slowed to %d against a wall running at %d' % (slowest, end['wallSpd']))
+        ok(end['dmg'] == 0 and end['wreck'] <= 0,
+           'and it does not destroy itself on it',
+           '%d damage, wreck %s' % (end['dmg'], end['wreck']))
+
+        # ---- AND THE BOX DOES NOT WAIT FOR YOU TO STOP (RLG-158) ---------------
+        # Owner, 2026-09-07: "their main method of attack should be to surround you and
+        # slow you down so that you get arrested/busted." The box was written to make
+        # the BUSTED rule reachable and asked whether the player was under a tenth of
+        # top speed - which makes being surrounded the CONSEQUENCE of stopping rather
+        # than the method of causing it.
+        #
+        # THE FLAG IS READ, NOT THE POSITIONS. Where a cruiser sits is the result of the
+        # decision, and several other things put one off to the side - the cooling phase
+        # already stations a cruiser wide. A check reading positions could not tell the
+        # box from a car that had peeled off.
+        page.evaluate("""() => {
+          const R = window.__road;
+          clearInterval(window.__hold);
+          const pz = R.pos + R.PLAYER_Z;
+          R.copsClear();
+          for(let i = 0; i < 3; i++)
+            R.cops().push({ z: pz - 300 + i * 200, x: 0, spd: 0.9 * R.MAX_SPD, wreck: 0,
+                            ang: 0, grace: 0, cool: 0, side: 1, w: 0.27, len: 400,
+                            phase: 0, dmg: 0, from: 'test', onPlayer: true, tz: pz, tx: 0 });
+          window.__hold = setInterval(() => {
+            R.setSpd(0.85 * R.MAX_SPD);
+            for(const k of R.cops()){ k.cool = 0; k.onPlayer = true; k.tz = R.pos + R.PLAYER_Z; }
+          }, 8);
+        }""")
+        boxed = 0
+        wide = 0.0
+        for _ in range(40):
+            page.wait_for_timeout(100)
+            c = page.evaluate('() => window.__road.copCensus()')
+            boxed = max(boxed, c.get('boxing', 0))
+            wide = max(wide, c.get('boxWide', 0) or 0)
+        page.evaluate('() => clearInterval(window.__hold)')
+        moving = page.evaluate('() => Math.round(window.__road.spd)')
+        px = page.evaluate('() => +window.__road.playerX.toFixed(2)')
+        # the widest station is a DISTANCE FROM THE PLAYER, so it is only readable
+        # next to where the player was - a car pinned wide of a player who has drifted
+        # to the far lane is a large number and an ordinary station
+        print('  ..    at %d units a second, %d cruisers took a station, the widest %.2f'
+              ' lanes from a player sitting at %.2f' % (moving, boxed, wide, px))
+        ok(boxed >= 1, 'the police take stations around a car that is still moving',
+           '%d on station at %d units a second' % (boxed, moving))
         ok(errs == [], 'no page errors', errs[0][:120] if errs else '')
         ctx.close()
         b.close()
