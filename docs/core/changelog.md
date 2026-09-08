@@ -14,6 +14,26 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-31"></a>
+## [0.13.31] - 2026-09-08
+- Fixed: **the traffic can see the police.** Owner, 2026-09-07: "seems like traffic doesn't avoid
+  crashing into the police either, so it's two-sided." Every avoidance sweep read `traffic`, then
+  the PLAYER as a named special case, and `cops` not at all - so a cruiser was invisible to every
+  civilian on the road, and a pursuit ploughed a furrow through the traffic instead of parting it.
+  Four sweeps now read the police too: is this lane clear, would moving there close the road, how
+  fast is that lane, and what am I about to drive into the back of.
+- **A cruiser is a third list, not a third behaviour.** Nothing about how civilians drive changed -
+  same margins, same urgency, same corridor guarantee. Only what they can see. See
+  [RLG-159](../fragments/RLG-159.md).
+- **The proof is a controlled approach**, because two statistics measured nothing first. A cruiser
+  is parked in one lane, one car is put behind it closing, and the road is swept of everything
+  else: the car moved 0.78 of a lane to go round and never occupied the same road, where the engine
+  before the change moved 0.00 and drove straight on.
+- **The police crashing into traffic does not reproduce here**, and that is recorded rather than
+  claimed either way: zero cruisers put out by traffic over ninety seconds of pursuit, and zero
+  again across five conditions from one star at half speed to five at nine tenths. That is a fact
+  about the harness, not evidence about the device. `tools/twoway-test.py` is new.
+
 <a id="v0-13-30"></a>
 ## [0.13.30] - 2026-09-08
 - Added: **a radar detector for what is ahead.** Owner, 2026-09-07: a detector "for upcoming speed

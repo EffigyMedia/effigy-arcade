@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.30';
+window.ROAD_BUILD = '0.13.31';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7874,14 +7874,24 @@ function laneClear(c, tx, urgency){
      goes to zero - a gap that is not there is still not there. */
   const k = urgency === undefined ? 1 : Math.max(0.35, urgency);
   const needF = 2600 * k, needB = 1500 * k;
-  for(const o of traffic){
-    if(o === c) continue;
-    if(Math.abs(o.x - tx) > (o.w + c.w)/2 + 0.05) continue;
+  /* ---- AND A POLICE CAR OCCUPIES A LANE LIKE ANYTHING ELSE (RLG-159) ----
+     Owner, 2026-09-07: "seems like traffic doesn't avoid crashing into the
+     police either, so it's two-sided." Every sweep in this file read `traffic`
+     and then the PLAYER as a special case, and `cops` not at all - so a cruiser
+     was invisible to every car on the road, and a pursuit ploughed a furrow
+     through the traffic instead of parting it. The police are a third list of
+     cars in the same lanes, and they are read here for the same reason the
+     player is.
+     ------------------------------------------------------------------- */
+  const taken = (o) => {
+    if(Math.abs(o.x - tx) > (o.w + c.w)/2 + 0.05) return false;
     const dz = o.z - c.z;
-    if(dz > -needB && dz < needF) return false;
+    if(dz > -needB && dz < needF) return true;
     /* closing fast from behind counts as occupied even when it is not yet */
-    if(dz <= -needB && dz > -6000 && o.spd > c.spd + 900) return false;
-  }
+    return dz <= -needB && dz > -6000 && o.spd > c.spd + 900;
+  };
+  for(const o of traffic){ if(o !== c && taken(o)) return false; }
+  for(const o of cops){ if(o.wreck <= 0 && taken(o)) return false; }
   const pdz = (pos + PLAYER_Z) - c.z;
   if(Math.abs(playerX - tx) < (0.26 + c.w)/2 + 0.05 && pdz > -needB && pdz < needF) return false;
   return true;
@@ -7916,6 +7926,13 @@ function wouldBlock(c, tx){
     if(Math.abs(o.z - c.z) > 2400) continue;
     near.push(o);
   }
+  /* a cruiser standing in the road narrows the corridor exactly as a lorry
+     does, and the guarantee this function protects is about WIDTH (RLG-159) */
+  for(const o of cops){
+    if(o.wreck > 0) continue;
+    if(Math.abs(o.z - c.z) > 2400) continue;
+    near.push(o);
+  }
   if(!near.length) return false;
   near.push({ x: tx, w: c.w });                 /* us, where we want to be */
   return widestGap(near) < 0.40;                /* a margin over the 0.34 limit */
@@ -7926,13 +7943,16 @@ function wouldBlock(c, tx){
    pulling out to sit beside the one it was already following. */
 function laneSpeed(c, tx){
   let v = c.cruise;
-  for(const o of traffic){
-    if(o === c) continue;
-    if(Math.abs(o.x - tx) > (o.w + c.w)/2 + 0.05) continue;
+  const slower = (o) => {
+    if(Math.abs(o.x - tx) > (o.w + c.w)/2 + 0.05) return;
     const dz = o.z - c.z;
-    if(dz <= 0 || dz > 6000) continue;
+    if(dz <= 0 || dz > 6000) return;
     v = Math.min(v, o.spd);
-  }
+  };
+  for(const o of traffic){ if(o !== c) slower(o); }
+  /* pulling out to sit behind a cruiser is no better than pulling out to sit
+     behind a lorry, so the police count toward how fast a lane is (RLG-159) */
+  for(const o of cops){ if(o.wreck <= 0) slower(o); }
   const pdz = (pos + PLAYER_Z) - c.z;
   if(Math.abs(playerX - tx) < (0.26 + c.w)/2 + 0.05 && pdz > 0 && pdz < 6000) v = Math.min(v, spd);
   return v;
@@ -15699,15 +15719,22 @@ function step(dt){
     }
 
     // a slower car ahead in the same tyre tracks
-    for(const o of traffic){
-      if(o === c) continue;
+    const follow = (o) => {
       const dz = o.z - c.z;
-      if(dz <= 0 || dz > 5000) continue;
-      if(Math.abs(o.x - c.x) > (o.w + c.w)/2 + 0.03) continue;
+      if(dz <= 0 || dz > 5000) return;
+      if(Math.abs(o.x - c.x) > (o.w + c.w)/2 + 0.03) return;
       const gap = dz - (o.len + o.len)/2;
-      if(gap > 2200) continue;
+      if(gap > 2200) return;
       want = Math.min(want, gap < 420 ? 0 : o.spd + gap * 0.35);
-    }
+    };
+    for(const o of traffic){ if(o !== c) follow(o); }
+    /* ---- AND A POLICE CAR IS ONE OF THEM (RLG-159) --------------------
+       This is the loop that stops a car driving into the back of the thing in
+       front of it, and it read only `traffic`. A cruiser slowing across the
+       lanes to box the player was therefore something the road could not see,
+       and the cars behind it simply drove through it.
+       ---------------------------------------------------------------- */
+    for(const o of cops){ if(o.wreck <= 0) follow(o); }
 
     /* ---- AND BEHIND YOU ---------------------------------------------------
        This loop only ever looked at other TRAFFIC, so a car came up behind a
