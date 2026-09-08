@@ -118,6 +118,28 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   background:linear-gradient(90deg,#ff8a3d 0,#ff8a3d var(--fill,0%),
              rgba(255,238,222,.34) var(--fill,0%),rgba(255,238,222,.34) 100%);
   -webkit-background-clip:text;background-clip:text }
+/* ---- the radar detector: four bars that fill toward the contact (RLG-164) -
+   Owner, 2026-09-07: a detector "for upcoming speed traps and traffic cops,
+   just like it was done in the original Need for Speed games".
+
+   IT SHARES THE STAT PANEL'S SHAPE so it reads as part of the same row rather
+   than as a thing bolted on, and it is only in the DOM row while there is
+   something to warn about - the engine hides the wrapper. The bars are `i`
+   elements, which the stat panel already styles as a small unit; these are
+   given a size of their own because they are marks rather than text. */
+#radar{ display:flex;flex-direction:row;justify-content:center;
+  gap:calc(3px * var(--ark-ui,1));line-height:1;
+  height:calc(19px * var(--ark-ui,1));align-items:flex-end }
+#radar i{ display:block;width:calc(5px * var(--ark-ui,1));
+  height:calc(9px * var(--ark-ui,1));margin:0;
+  background:rgba(255,238,222,.22);border-radius:1px }
+/* each bar is taller than the last, so the row reads as a ramp even before any
+   of it lights - a flat row of four says nothing about which end is worse */
+#radar i:nth-child(2){ height:calc(13px * var(--ark-ui,1)) }
+#radar i:nth-child(3){ height:calc(16px * var(--ark-ui,1)) }
+#radar i:nth-child(4){ height:calc(19px * var(--ark-ui,1)) }
+#radar i.on{ background:#ffb347;box-shadow:0 0 10px rgba(255,179,71,.55) }
+#radar i.hot{ background:#ff5a3d;box-shadow:0 0 12px rgba(255,90,61,.65) }
 .stat span{display:block;font-size:calc(8.5px * var(--ark-ui,1));font-weight:700;letter-spacing:.22em;color:var(--dim)}
 .stat b{font-family:var(--disp);font-weight:800;font-size:calc(26px * var(--ark-ui,1));line-height:1.05;
   font-variant-numeric:tabular-nums;letter-spacing:.01em}
@@ -907,6 +929,7 @@ body.titling #veil h1{display:none}
              RACE it comes back, because how far is left is the whole point. -->
         <div class="stat c" id="clockWrap"><span>TIME</span><b id="clock">60</b></div>
         <div class="stat c" id="wantedWrap" hidden><span>WANTED</span><b id="wanted"></b></div>
+        <div class="stat c" id="radarWrap" hidden><span>RADAR</span><b id="radar"></b></div>
         <div class="stat c" id="distWrap" hidden><span>TO GO</span><b id="dist">0.0<i>MI</i></b></div>
         <div class="stat c" id="placeWrap" hidden><span>PLACE</span><b id="place">12/12</b></div>
       </div>

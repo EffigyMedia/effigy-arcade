@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.29';
+window.ROAD_BUILD = '0.13.30';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -295,6 +295,8 @@ function addHeat(n, why){
 let heatWhy = '';
 /* the position the per-mile charge was last billed at - see HEAT_PER_MILE */
 let heatMiZ = 0;
+/* the detector: how strong the nearest contact is, and the beep's clock */
+let radarUp = 0, radarBeepT = 0;
 /* HOW LONG OUTRUNNING THEM TAKES, as a tunable with a committed default rather
    than a number edited in place. Thirty seconds clear of every cruiser drops one
    star; five stars therefore take two and a half minutes of clean driving to
@@ -370,6 +372,32 @@ const HEAT_TAKEDOWN = 35;   /* a cruiser goes down and it was your doing */
    earn nothing.
    -------------------------------------------------------------------- */
 const HEAT_PER_MILE = 2;
+/* ---- AND A DETECTOR SEES THEM COMING (owner, 2026-09-07, RLG-164) ------
+   "We could add a radar detector element for upcoming speed traps and
+   traffic cops, just like it was done in the original Need for Speed games."
+
+   IT ANSWERS A MEASURED PROBLEM rather than adding an ornament. Losing a
+   pursuit takes a long clean run, and at speed you meet the next trap or
+   patrol before that run is finished - so the escape the owner made the main
+   mechanism was hard to complete by driving alone. A warning turns that from
+   a surprise into a CHOICE: lift now, or risk it.
+
+   THE RANGE IS THE SPAWN HORIZON, and it is written as that rather than as a
+   number of its own. Police are placed no nearer than OUT_OF_SIGHT, so a
+   detector that reaches exactly that far can never have one appear INSIDE its
+   cone with no approach - every contact enters from the far edge and closes.
+   A larger range would reintroduce the pop this project has fought elsewhere,
+   in a gauge instead of in the scenery. At 150mph it is about six and a half
+   seconds of warning, and about five at the top end of the fastest car.
+
+   IT IS ALWAYS FITTED. The ruling left open whether it should be earned; a
+   thing you unlock needs a garage card, a price and a save field, none of
+   which were asked for, and the detector is an AID TO READING THE ROAD rather
+   than a performance part. Recorded as decided-for-now, not as settled.
+   -------------------------------------------------------------------- */
+const RADAR_RANGE = OUT_OF_SIGHT;
+/* the beep interval at the far edge and at the moment of arrival */
+const RADAR_SLOW = 0.90, RADAR_FAST = 0.16;
 /* how long after losing them before the total starts falling */
 const COOL_GRACE   = 3;
 const HEAT_COOL = 30;
@@ -652,6 +680,24 @@ var snd = {
                   gain:0.185, cutoff:1200 });
     AR.sfx.tone({ t:t+0.028, freq:1560, to:1180, dur:0.090, type:'sine',
                   gain:0.095, verb:0.25 });
+  },
+
+  /* ---- THE DETECTOR'S BEEP (RLG-164) ------------------------------------
+     ONE SHORT PIP, PITCHED BY HOW NEAR THE CONTACT IS. It is deliberately not
+     the loud-hailer below: that bark says something has ALREADY happened, and
+     a warning that sounds like a consequence teaches the player the wrong
+     thing. This is a clean sine pip, quiet, of the kind a dashboard box makes.
+
+     THE PITCH DOES THE SAME WORK THE RATE DOES. Rate alone reads as "more
+     often" rather than "nearer", and the two together are what a detector
+     sounds like. It stays inside an octave, from about 1.1kHz to 2.2kHz, so
+     the top of it is still a pip and not a shriek.
+     ------------------------------------------------------------------- */
+  radar: function(up){
+    if(!AR) return;
+    const u = Math.max(0, Math.min(1, up || 0));
+    AR.sfx.tone({ freq: 1100 * Math.pow(2, u), dur: 0.045, type:'sine',
+                  gain: 0.030 + 0.030 * u, cutoff: 4200 });
   },
 
   warnCop: function(){
@@ -15424,6 +15470,48 @@ function step(dt){
       if(heat !== was) flashWarn(heat > 0 ? 'HEAT ' + heat : 'CLEAN');
     }
   }
+  /* ---- THE DETECTOR (RLG-164) ------------------------------------------
+     The nearest thing ahead that can catch you, in the window the gauge can
+     see. BOTH KINDS COUNT, because the ruling names both: a parked trap
+     watching the road, and a patrol driving in traffic that has not engaged
+     yet. A trap that has already fired is no longer a warning, and a patrol
+     that has become a cruiser is a pursuit rather than something ahead - so
+     both drop out of the sweep the moment they stop being a thing to avoid.
+
+     STRENGTH IS A DISTANCE, NOT A COUNT. Two traps abreast are no more
+     dangerous than one, and a gauge that added them would read as though the
+     road were worse than it is.
+     ------------------------------------------------------------------- */
+  if(!optEasy && !CFG.circuitOnly){
+    const pz = pos + PLAYER_Z;
+    let near = RADAR_RANGE;
+    for(const k of cops){
+      if(!k.trap || !k.armed || k.wreck > 0) continue;
+      const dz = k.z - pz;
+      if(dz > 0 && dz < near) near = dz;
+    }
+    for(const c of traffic){
+      if(!c.patrol) continue;
+      const dz = c.z - pz;
+      if(dz > 0 && dz < near) near = dz;
+    }
+    radarUp = near < RADAR_RANGE ? 1 - near / RADAR_RANGE : 0;
+    /* ---- AND IT BEEPS FASTER AS IT CLOSES ------------------------------
+       The rate is the reading. A bar chart says how near something is only
+       if you look at it, and this game is played with both thumbs on the
+       road - so the interval carries the same number to the ears, from
+       nearly a second apart at the far edge down to a chatter on arrival.
+       The pitch rises with it, which is what makes the last few beeps read
+       as urgent rather than merely frequent.
+       ---------------------------------------------------------------- */
+    if(radarUp > 0){
+      radarBeepT -= dt;
+      if(radarBeepT <= 0){
+        radarBeepT = RADAR_SLOW + (RADAR_FAST - RADAR_SLOW) * radarUp;
+        snd.radar(radarUp);
+      }
+    } else radarBeepT = 0;
+  } else radarUp = 0;
   /* AND THE MILEPOST MOVES WHETHER OR NOT ANY OF THAT RAN. It is outside the
      block deliberately: with HOT PURSUIT off, or during the count-in, nothing
      above executes - and a milepost left behind would bill every mile driven in
@@ -22643,6 +22731,26 @@ function hud(){
       $('wanted').innerHTML = stars;
     }
   }
+  /* ---- AND THE DETECTOR IS FOUR BARS (RLG-164) -------------------------
+     A row that fills toward the contact. It is shown only while there IS one,
+     because a gauge reading empty for most of a run is furniture - and the
+     thing it is for is drawing the eye at the moment something appears.
+
+     FOUR BARS, NOT A CONTINUOUS FILL. The player has to read it in a glance
+     while steering, and a count is read faster than a length. The last bar is
+     the one that means lift now, so it is the only one that turns red.
+     ------------------------------------------------------------------ */
+  const rw = $('radarWrap');
+  if(rw){
+    const lit = radarUp > 0 ? Math.max(1, Math.ceil(radarUp * 4)) : 0;
+    rw.hidden = !lit;
+    if(lit){
+      let bars = '';
+      for(let i = 1; i <= 4; i++)
+        bars += '<i class="' + (i <= lit ? (i === 4 ? 'on hot' : 'on') : '') + '"></i>';
+      $('radar').innerHTML = bars;
+    }
+  }
   const active = cops.some(k=>k.wreck<=0 && k.onPlayer !== false);
   $('pursuit').className = active ? 'on' : '';
   $('pursuit').textContent = 'PURSUIT \u00D7'+cops.filter(k=>k.wreck<=0 && k.onPlayer !== false).length +
@@ -25169,6 +25277,12 @@ requestAnimationFrame(frameLoop);
     heatPts = clamp(v, 0, HEAT_MAX);
     heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
     return Math.round(heatPts);
+  };
+  /* what the detector can see, so a check reads the gauge's own number rather
+     than re-deriving it from the cop list and proving its own arithmetic */
+  API.radar = function(){
+    return { up: +radarUp.toFixed(3), range: RADAR_RANGE,
+             bars: radarUp > 0 ? Math.max(1, Math.ceil(radarUp * 4)) : 0 };
   };
   API.heatPoints = function(){
     return { pts: Math.round(heatPts), stars: heat, max: HEAT_MAX,

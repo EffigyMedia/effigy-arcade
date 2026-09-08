@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-30"></a>
+## [0.13.30] - 2026-09-08
+- Added: **a radar detector for what is ahead.** Owner, 2026-09-07: a detector "for upcoming speed
+  traps and traffic cops, just like it was done in the original Need for Speed games". Four bars
+  under the mirror fill toward the nearest thing that can catch you, and they cover BOTH kinds the
+  ruling names - a parked trap and a patrol still driving in traffic - which live in two different
+  lists, so a detector that swept one would look finished while being half built.
+- **It answers a measured problem rather than adding an ornament.** Losing a pursuit takes a long
+  clean run, and at speed you meet the next trap before that run is finished, so the escape is hard
+  to complete by driving alone. A warning turns that from a surprise into a choice: lift, or risk it.
+- **The range is the spawn horizon**, written as such rather than as a number of its own. Police are
+  placed no nearer, so every contact enters the cone from the far edge and closes - a longer reach
+  would let one appear inside it with no approach. About a quarter of a mile: six and a half seconds
+  of warning at 150mph. See [RLG-164](../fragments/RLG-164.md).
+- **The beep rate is the reading.** The game is played with both thumbs on the road, so the interval
+  carries the same number to the ears - nearly a second apart at the far edge, a chatter on arrival -
+  and the pitch rises with it. It is a clean pip, deliberately not the loud-hailer bark, because a
+  warning that sounds like a consequence teaches the wrong thing.
+- It is **always fitted**. Whether it should be earned was left open in the ruling and is recorded as
+  decided-for-now: an unlock needs a garage card, a price and a save field, none of which were asked
+  for, and this is an aid to reading the road rather than a performance part.
+
 <a id="v0-13-29"></a>
 ## [0.13.29] - 2026-09-08
 - Added: **a pursuit you stay in earns heat by the mile.** Owner, 2026-09-08: "we can also
