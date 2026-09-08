@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.27';
+window.ROAD_BUILD = '0.13.28';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -294,8 +294,9 @@ function addHeat(n, why){
 }
 let heatWhy = '';
 /* HOW LONG OUTRUNNING THEM TAKES, as a tunable with a committed default rather
-   than a number edited in place. Twelve seconds clear of every cruiser drops one
-   star; five stars therefore take a minute of clean driving to shed. */
+   than a number edited in place. Thirty seconds clear of every cruiser drops one
+   star; five stars therefore take two and a half minutes of clean driving to
+   shed. */
 /* ---- THE WANTED LEVEL IS POINTS, AND THE STARS ARE A VIEW OF THEM --------
    Owner, 2026-09-07: "instead of a single instance of something raising it one
    star, we could do heat POINTS - and every instance of speeding where a new cop
@@ -315,8 +316,26 @@ let heatWhy = '';
 
    THE THREE EARNING EVENTS ARE THE OWNER'S OWN, and the rates say what each is
    worth relative to the others: being seen is the common one, taking a cruiser
-   out is the deliberate one, and running a roadblock sits between them. Two
+   out is the deliberate one, and running a roadblock sits between them. Five
    sightings make a star.
+
+   THE RATES AND THE DECAY MOVED TOGETHER (owner, 2026-09-08: "incidents should be
+   worth FEWER points so the stars climb more slowly and hot pursuit lasts
+   longer"). They shipped at 50/70/80 against a star of 100, which made two
+   sightings a star and put the fifth star within reach of a single bad minute.
+   Cutting the earners alone would have been worse than leaving them: at the old
+   decay of 8.33 points a second, a 20-point sighting was undone in under three
+   seconds of clean road and the level would never have climbed at all.
+
+   SO THE LEVER THAT MOVED WITH THEM IS HEAT_COOL, not PTS_PER_STAR. A star is
+   the unit the meter is drawn in and the API reports, so rescaling it would move
+   every rate against nothing; HEAT_COOL is stated in SECONDS TO SHED A STAR,
+   which is the exact thing the owner asked to lengthen. Raising it from 12 to 30
+   holds what an incident is WORTH in seconds of running almost unchanged - a
+   sighting cost 6.0 seconds of cooling before and costs 6.0 now, a roadblock 8.4
+   against 9.0, a takedown 9.6 against 10.5 - while the incidents needed for a
+   star go from two to five. The economy keeps its shape and only its grain
+   changed, which is what a retune should look like.
 
    NOTE "A NEW COP SEES YOU SPEEDING". The same cruiser watching you for a minute
    is one instance and not sixty, which is why these are hung on the moments a
@@ -324,12 +343,12 @@ let heatWhy = '';
    ------------------------------------------------------------------------ */
 const PTS_PER_STAR = 100;
 const HEAT_MAX     = 5 * PTS_PER_STAR;
-const HEAT_SEEN    = 50;    /* a new cop catches you over the limit */
-const HEAT_BLOCK   = 70;    /* you go through a roadblock */
-const HEAT_TAKEDOWN = 80;   /* a cruiser goes down and it was your doing */
+const HEAT_SEEN    = 20;    /* a new cop catches you over the limit */
+const HEAT_BLOCK   = 30;    /* you go through a roadblock */
+const HEAT_TAKEDOWN = 35;   /* a cruiser goes down and it was your doing */
 /* how long after losing them before the total starts falling */
 const COOL_GRACE   = 3;
-const HEAT_COOL = 12;
+const HEAT_COOL = 30;
 /* how far you have to get before a cruiser has LOST you rather than merely being
    behind you. Well inside the 34,000 at which one is culled - see the cooling
    test, which is the only thing that reads it. */
@@ -15351,9 +15370,14 @@ function step(dt){
        This dropped a whole star every twelve clear seconds and stopped at one,
        so there was no such thing as being clean and the level moved in steps you
        could not be part-way through. It bleeds away continuously now, at a
-       star's worth per those same twelve seconds, after a short grace - and it
-       reaches zero, which is the state the owner asked for and the old model had
-       no way to express.
+       star's worth every HEAT_COOL seconds after a short grace - and it reaches
+       zero, which is the state the owner asked for and the old model had no way
+       to express.
+
+       NOTE THAT NOTHING COOLS DURING A PURSUIT. `coolT` is reset to zero on any
+       frame a live cruiser is on you and inside LOST_AT, so the decay below is
+       the price of a CLEAN road rather than a clock that runs against the
+       player while the chase is on.
        ---------------------------------------------------------------- */
     if(coolT > COOL_GRACE && heatPts > 0){
       const was = heat;

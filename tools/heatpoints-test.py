@@ -102,17 +102,43 @@ def main():
            '%d points against %d to a star' % (one['pts'], one['perStar']))
 
         # ---- AND IT BLEEDS AWAY TO NOTHING ---------------------------------------
-        page.evaluate('() => { const R = window.__road; R.heat(3); R.copsClear(); }')
+        # A CLEAN ROAD HAS TO STAY CLEAN, AND CLEARING IT FROM HERE DOES NOT DO THAT.
+        # Nothing cools while a live cruiser is on you: the engine resets the cooling
+        # clock on any such frame and then serves the grace again. Dispatch fires every
+        # six to fourteen seconds at three stars, so a driver that clears the road four
+        # times a second still leaves each new cruiser alive for a frame, and each one
+        # costs the whole grace. Measured, that ran the decay at about a third of its
+        # stated rate - which read as a broken tunable and was a leaky harness. The
+        # sweeper runs INSIDE the page instead, faster than the frame it has to beat.
+        # AND THE RUN HAS TO OUTLIVE THE COOLING. Shedding three stars takes longer
+        # than the sixty seconds a run starts with, and a parked car reaches no
+        # checkpoint to buy more - so the clock expired, the update stopped, and both
+        # the total and the cooling clock froze mid-fall. Traced: 350 points fell to
+        # 162 and then sat there unchanged for another two minutes. That read exactly
+        # like a broken tunable. `setTimed(false)` is the affordance for it (RLG-125).
+        page.evaluate('() => { const R = window.__road; R.setTimed(false);'
+                      ' R.heat(3); R.copsClear();'
+                      ' window.__sweep = setInterval(() => { R.copsClear(); R.setSpd(0); }, 4); }')
         page.wait_for_timeout(200)
         before = page.evaluate('() => window.__road.heatPoints()')
         seen = []
-        # LONG ENOUGH TO ACTUALLY GET THERE. Three stars is 350 points and the decay
-        # is 8.33 a second, so reaching zero takes 42 seconds - the first version watched
-        # for 35 and reported a failure that was only impatience.
-        for _ in range(210):
-            page.evaluate('() => { const R = window.__road; R.setSpd(0); R.copsClear(); }')
+        # LONG ENOUGH TO ACTUALLY GET THERE, AND IT ASKS THE ENGINE HOW LONG THAT IS.
+        # The first version watched for 35 seconds and reported a failure that was only
+        # impatience; the second hardcoded 210 quarter-seconds against a decay of 8.33 a
+        # second, which was the same mistake one retune away from biting. The decay is a
+        # tunable, so the budget is computed from it: the points on the clock divided by
+        # the rate they leave at, plus the grace, plus half again for slack.
+        need = (before['pts'] / max(0.01, before['rates']['decayPerSec'])
+                + before['rates']['grace'])
+        rounds = int(need * 1.5 / 0.25) + 8
+        print('  ..    %d points at %s/s: watching for %ds'
+              % (before['pts'], before['rates']['decayPerSec'], rounds * 0.25))
+        for _ in range(rounds):
             page.wait_for_timeout(250)
             seen.append(page.evaluate('() => window.__road.heatPoints()'))
+            if seen[-1]['pts'] == 0:
+                break
+        page.evaluate('() => clearInterval(window.__sweep)')
         end = seen[-1]
         mids = [h['pts'] for h in seen]
         print('  ..    from %d points, cooling ran to %d' % (before['pts'], end['pts']))

@@ -14,6 +14,29 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-28"></a>
+## [0.13.28] - 2026-09-08
+- Changed: **an incident is worth less, and cooling is slower by the same measure.** Owner,
+  2026-09-08: incidents should be worth fewer points, so the stars climb more slowly and a hot
+  pursuit lasts longer. Being seen by a new cop falls from 50 points to **20**, running a roadblock
+  from 70 to **30**, and putting a cruiser out from 80 to **35**. A star is still 100 points, so a
+  star is now **five sightings instead of two**.
+- **The decay moved with them, and it had to.** At the old 8.33 points a second a 20-point sighting
+  was undone in under three seconds of clean road, so cutting the earners alone would have stopped
+  the level climbing at all. The lever is `HEAT_COOL`, which is stated in seconds to shed a star:
+  **12 becomes 30**, so the total bleeds at 3.33 a second and five stars take two and a half minutes
+  of clean road rather than one.
+- **What an incident is WORTH in seconds of running is almost unchanged** - a sighting cost 6.0
+  seconds of cooling before and costs 6.0 now, a roadblock 8.4 against 9.0, a takedown 9.6 against
+  10.5. The economy keeps its shape; only its grain changed. See [RLG-169](../fragments/RLG-169.md).
+- Fixed: **two pursuit harnesses were being killed by the run clock.** A car parked for a
+  measurement reaches no checkpoint, so the sixty seconds a run starts with expire and the update
+  stops - freezing the point total and the cooling clock mid-fall. It read as a broken tunable: 350
+  points fell to 162 and sat there for two more minutes. `heat-test.py` and `heatpoints-test.py` now
+  turn the clock off, and their cooling waits are computed from the tunable instead of hardcoded
+  against the old one. That also cleared a super-cruiser check which was already red before this
+  work.
+
 <a id="v0-13-27"></a>
 ## [0.13.27] - 2026-09-08
 - Added: **the wanted level is a point total, and it can fall to empty.** Owner, 2026-09-07:

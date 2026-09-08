@@ -86,6 +86,14 @@ def main():
         pg.wait_for_timeout(200)
         pg.click('[data-act="drive"]')
         pg.wait_for_timeout(1500)
+        # AND THE RUN HAS TO OUTLIVE THE CHECKS. This car is parked for most of the
+        # harness, so it reaches no checkpoint and buys no seconds; when the sixty the
+        # run starts with are gone the update stops, and the cooling clock and the point
+        # total freeze exactly where they stood. That reads as a tunable that stopped
+        # working - a whole star of cooling went missing that way, with the harness
+        # blaming the engine. `setTimed(false)` is the affordance for it (RLG-125), and
+        # the clock is nothing this check is asking about.
+        pg.evaluate('() => window.__probe.road.setTimed(false)')
         st = pg.evaluate('() => window.__probe.road.pursuit()')
         ok(not st['easy'], 'the pursuit system is running', str(st))
 
@@ -112,12 +120,23 @@ def main():
            'went from %d to %d' % (start, mid['heat']))
 
         # ---- AND IT COOLS WHEN NOBODY IS ON YOU -------------------------------------
+        # THE WAIT IS ASKED FOR, NOT ASSUMED. `coolNeeds` is HEAT_COOL - the seconds a
+        # star takes to bleed away - and it is a tunable the owner moves. This waited a
+        # flat fourteen seconds, which was two clear of the twelve it was written
+        # against; the retune to thirty turned that into a red check reporting a working
+        # engine. A budget keyed to a tunable has to read the tunable.
         pg.evaluate('() => window.__probe.road.heat(4)')
-        hold(14000)
+        needs = pg.evaluate('() => window.__probe.road.pursuit()')['coolNeeds']
+        # half a star's worth is enough to cross a boundary: heat(4) lands mid-band, so
+        # the level steps down after HALF a star of cooling, plus the grace and slack.
+        wait1 = int((needs * 0.5 + 6) * 1000)
+        hold(wait1)
         cool = pg.evaluate('() => window.__probe.road.pursuit()')
-        print('      heat 4 -> %d after 14s clear of every cruiser' % cool['heat'])
+        print('      heat 4 -> %d after %ds clear of every cruiser (a star is %ds)'
+              % (cool['heat'], wait1 // 1000, needs))
         ok(cool['heat'] < 4, 'outrunning them cools the wanted level',
-           'still %d after 14s with %d chasing' % (cool['heat'], cool['chasing']))
+           'still %d after %ds with %d chasing'
+           % (cool['heat'], wait1 // 1000, cool['chasing']))
 
         # ---- AND A CRUISER YOU HAVE LEFT BEHIND IS NOT CHASING YOU ------------------
         # Owner, 2026-09-07: the main way to lose the police and the wanted level is
@@ -157,8 +176,13 @@ def main():
         # inverted, which is the one reason a green assertion may be turned round - and it
         # is written down here rather than quietly edited, because "the check went red and
         # the fix was to change the check" is the shape that hides a real regression.
+        #
+        # AND THIS BUDGET IS ASKED FOR TOO. heat(1) lands one and a half stars' worth on
+        # the clock, so reaching nothing takes one and a half times HEAT_COOL plus the
+        # grace. The flat thirty seconds here was sized against a twelve-second star and
+        # left 84 points on the board at thirty.
         pg.evaluate('() => window.__probe.road.heat(1)')
-        hold(30000)
+        hold(int((needs * 1.5 + 8) * 1000))
         floor = pg.evaluate('() => window.__probe.road.pursuit()')
         ok(floor['heat'] == 0 and floor['pts'] == 0,
            'and it falls all the way to empty, which it could not before',
