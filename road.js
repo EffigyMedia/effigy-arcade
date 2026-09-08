@@ -442,14 +442,45 @@ const HEAT_COOL = 30;
    behind you. Well inside the 34,000 at which one is culled - see the cooling
    test, which is the only thing that reads it. */
 const LOST_AT = 12000;
-/* ---- WHAT IT TAKES TO PULL A CRUISER OFF SOMEBODY ELSE ----------------
-   Owner, 2026-09-08. Two numbers, and they are a WINDOW and a MARGIN rather
-   than one distance, because the rule is an event: you went past it, and you
-   were going faster than the car it already had. At 200mph a car covers 2,600
-   units in a tenth of a second, so 3,000 is about the moment of going by.
+/* ---- ONE ENGAGEMENT, ONE TARGET, PERMANENTLY (RLG-173) -----------------
+   Owner, 2026-09-08: "whenever a cop engages a target it continues to engage
+   that target until that target either pulls over voluntarily, is forced to
+   stop due to entrapment, or fails to keep up with its target and it
+   disengages and pulls back over to make a new trap. Having it retarget
+   something else because it is slightly faster while cool I think will just
+   break this illusion."
+
+   THIS REPLACED A SWITCHING RULE, and the two cannot both be true. The day
+   before, a cruiser could be pulled off its car by a faster offender going
+   past - `COP_PASS_BY` and `COP_SWITCH_MPH`, now deleted. That was written to
+   stop a cruiser adopting the player from half a mile back, which it did, but
+   it kept the underlying idea that a pursuit is a comparison re-run every 1.4
+   seconds. The owner's rule is that a pursuit is a COMMITMENT: a cruiser picks
+   once and lives with it.
+
+   IT ALSO DISSOLVES THE PROBLEM RLG-173 WAS OPENED FOR rather than patching
+   it. The worry was that a field of rivals would consume the traps and leave
+   none for the player to meet. Under a giving-up cruiser that parks again, the
+   population is CONSERVED - a trap that leaves comes back as a trap somewhere
+   else - so the road cannot be emptied of them by anybody's driving.
    -------------------------------------------------------------------- */
-const COP_PASS_BY = 3000;      /* how close counts as going past it */
-const COP_SWITCH_MPH = 10;     /* and how much faster than its current car */
+/* how far ahead its target has to get before a cruiser is losing the chase.
+   Deliberately larger than `LOST_AT`: that is the distance at which a cruiser
+   stops holding your heat up, and giving up must be the slower of the two, or
+   the cop parks in the same breath that it stops counting. */
+const COP_GIVE_UP = 20000;
+/* and for how long, so a crest or a corner that briefly opens the gap is not
+   the end of a pursuit. Five seconds of steadily losing ground is a cruiser
+   that is genuinely beaten rather than one that is merely behind. */
+const COP_GIVE_UP_T = 5.0;
+/* ---- AND THE ROAD IS LAID THICKLY WITH THEM ---------------------------
+   Owner, in the same ruling: "the simplest solution is to have many speed
+   traps." The base is what an unwanted driver meets; heat adds to it up to the
+   cap. Both are tunables and the base is the one to move first - it decides
+   how often a clean drive is watched at all.
+   -------------------------------------------------------------------- */
+const TRAPS_BASE = 4;          /* parked and waiting at no heat at all */
+const TRAPS_MAX  = 8;          /* and the most the road ever holds */
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
@@ -15838,8 +15869,11 @@ function step(dt){
      ------------------------------------------------------------------- */
   if(roadFurniture && !optEasy && nextCopT <= 0){
     const parked = cops.filter(k => k.trap).length;
-    if(parked < Math.min(4, 2 + Math.floor(heat/2))) spawnTrap();
-    nextCopT = Math.max(3.0, rnd(9, 16) - heat*0.8);
+    if(parked < Math.min(TRAPS_MAX, TRAPS_BASE + Math.floor(heat/2))) spawnTrap();
+    /* laid more quickly as well as more thickly, or the cap is a number the
+       road never reaches: at nine to sixteen seconds apart a drive is over
+       before the fourth one is down */
+    nextCopT = Math.max(2.0, rnd(5, 10) - heat*0.6);
   }
   /* ---- THE THIRD SOURCE, AND IT IS THE ONE HEAT ACTUALLY DRIVES ---------
      Owner, 2026-09-07, settling the first finding of the police audit: "Police
@@ -16360,22 +16394,53 @@ function step(dt){
     if(k.grace>0) k.grace -= dt;
     if(k.cool>0)  k.cool  -= dt;
 
+    /* ---- A PARKED TRAP IS SCENERY, AND IT WAS NOT (RLG-173) -------------
+       THE DEFECT THIS RULING WAS ACTUALLY ABOUT, and it is not where the
+       fragment looked. `trapWatch` sweeps `traffic` only, so reading that
+       function says a rival goes past a trap for free - which is true, and is
+       not the whole story. A trap is a cop in the `cops` array, and this loop
+       had no `k.trap` guard at all: an armed trap ran the same retarget sweep
+       as a cruiser every 1.4 seconds, took whatever it found, and drove off.
+       The floor under a cruiser's speed is 2,000 units, so it did not even
+       need a target to creep off its post.
+
+       A trap now decides nothing and moves nowhere. It is tripped by
+       `trapWatch` and by nothing else. The collision work further down still
+       runs, because a trap parked on the verge is a solid object you can hit.
+       ------------------------------------------------------------------ */
+    const parked = k.trap && k.armed;
+
     /* ---- THE LAW IS NOT ONLY AFTER YOU ---------------------------------
        A cruiser chased `pz` and nothing else, so a speeding driver could sit at
        122mph three lanes over and be ignored. Now it picks the nearest
        SPEEDER — you, a rival on the grid, or a Speeder in the traffic — and runs
        that one down.
 
-       You are still the default and still weighted toward: a cop already on
-       you does not abandon the chase because a speeder went past. But if one is
-       genuinely nearer and genuinely quick, it goes.
+       You are still the default and still weighted toward, so a car with no
+       reason to prefer anybody takes you.
 
-       It also means a pursuit you started can be taken off you by somebody
-       else's driving, which is the best thing about it.
+       THE SENTENCE THAT USED TO FOLLOW THIS IS NO LONGER TRUE and is recorded
+       because it was believed for a day: "a pursuit you started can be taken
+       off you by somebody else's driving, which is the best thing about it."
+       The owner ruled the opposite on 2026-09-08 - a cruiser commits to one
+       car and keeps it - and this search now runs ONCE per pursuit rather than
+       every 1.4 seconds. What is written above is therefore about the FIRST
+       choice a cruiser makes, and there is no second one.
        ------------------------------------------------------------------ */
     if(k.retarget === undefined) k.retarget = 0;
     k.retarget -= dt;
-    if(k.retarget <= 0){
+    /* ---- AND IT ONLY EVER LOOKS ONCE (RLG-173) --------------------------
+       `k.engaged` is the commitment. A cruiser that has picked somebody does
+       not run this search again for as long as it holds them, so nothing on
+       the road can take its attention - not a faster car, not the player, not
+       a rival. It looks again only after it has GIVEN UP, and by then it is a
+       parked trap and this is skipped for a different reason.
+
+       A PARKED TRAP IS EXCLUDED TOO, which is the fix in the block above: a
+       trap that ran this search adopted the first speeder within 9,000 units
+       and left its post.
+       ------------------------------------------------------------------ */
+    if(!parked && !k.engaged && k.retarget <= 0){
       k.retarget = 1.4;
       /* ---- AND A CLEAN DRIVER IS NOT A TARGET (owner, 2026-09-08) --------
          "There's STILL an overwhelming amount of cops just coming back at me
@@ -16421,42 +16486,82 @@ function step(dt){
          drop them for you from most of a mile back. That is the pile-up again
          with a speed test in front of it.
 
-         SO THE SWITCH IS AN EVENT, NOT A COMPARISON. A cruiser already on
-         somebody keeps them unless you GO PAST IT - alongside, within the window
-         a car covers in about a fifth of a second at speed - and you are doing
-         more than the car it is already chasing by a clear margin. That is a
-         cop watching a faster offender go by, which is the only reason it should
-         look up. Ten miles an hour is the margin: enough that drawing level at a
-         similar speed does not take the pursuit off somebody.
+         THE ANSWER THAT SHIPPED WAS AN EVENT RATHER THAN A COMPARISON: a
+         cruiser kept its car unless you went past it within about a fifth of a
+         second's travel AND were ten miles an hour quicker. It lasted a day.
+
+         THE OWNER REPLACED IT THE SAME DAY with something simpler and
+         stronger: "having it retarget something else because it is slightly
+         faster while cool I think will just break this illusion." There is now
+         NO switch of any kind - see the commitment rule at `COP_GIVE_UP`. This
+         is kept because the reasoning below it still explains why the player
+         must not be every cruiser's standing candidate, which the first choice
+         still has to get right.
 
          A CRUISER WITH NOBODY IS UNAFFECTED. `onPlayer` is undefined on a fresh
          dispatch, so a car sent by the radio still finds you the ordinary way -
          and one already on YOU keeps you, which is what makes the bust reachable.
          ---------------------------------------------------------------- */
       const worth = heat > 0 || spd > MAX_SPD * SPEED_LIMIT || k.onPlayer === true;
-      let mayTake = worth;
-      if(worth && k.onPlayer === false && k.tSpd !== undefined){
-        const alongside = Math.abs(k.z - pz) < COP_PASS_BY;
-        mayTake = alongside && spd > k.tSpd + MAX_SPD * COP_SWITCH_MPH / 200;
-      }
-      let bestZ = mayTake ? pz : -1e9, bestX = playerX;
-      let bestD = mayTake ? Math.abs(k.z - pz) * 0.55 : 1e9;
-      let bestS = mayTake ? spd : 0;
-      const look = (z, x, sp) => {
+      /* ---- A CAR SENT FOR YOU IS SENT FOR YOU (RLG-173) ----------------
+         THE ONE PLACE WHERE PERMANENT ENGAGEMENT NEEDED SOMETHING ADDED
+         rather than taken away, and it is a judgement rather than a quoted
+         instruction. A radio dispatch exists because of the player's heat and
+         nothing else. While a cruiser re-picked every 1.4 seconds it did not
+         matter which car it happened to take first; now that its first choice
+         is its only choice, a dispatched car that opens on a passing NPC is
+         spent, and a wanted level buys nothing. So a dispatched car takes you
+         and does not search.
+
+         THE SUPER CRUISER IS THE SAME CAR AND THE MEASUREMENT PROVED IT. It is
+         sent only when you are at heat three AND have gone 170 past a trap
+         (RLG-030), so it exists for one driver by definition. Left to search,
+         it took whatever speeder was nearest, followed it off the road, gave up
+         and parked: heat-test went from FOUR interceptors on you to NONE, and
+         the two hardest-earned conditions in the police system bought nothing
+         at all. That is what a commitment rule costs if the first choice is
+         left to chance, and it is why this exception exists.
+         -------------------------------------------------------------- */
+      if((k.from === 'radio' || k.superc) && worth){
+        k.tz = pz; k.tx = playerX; k.tSpd = spd;
+        k.tgt = null; k.onPlayer = true; k.engaged = true;
+        k.commits = (k.commits || 0) + 1;
+      } else {
+      let bestZ = worth ? pz : -1e9, bestX = playerX;
+      let bestD = worth ? Math.abs(k.z - pz) * 0.55 : 1e9;
+      let bestS = worth ? spd : 0;
+      /* ---- WHICH CAR, NOT WHERE IT WAS (RLG-173) -----------------------
+         THE COMMITMENT MADE A SNAPSHOT INTO A BUG. While this search re-ran
+         every 1.4 seconds, keeping only the target's POSITION was enough: the
+         next sweep refreshed it. A cruiser that never searches again would
+         have driven at a point on the road the car left seconds ago, stopped
+         there, and looked like it had forgotten what it was doing.
+
+         So the car itself is remembered. `null` is the player, who is not in
+         any array. Everything else is the very object out of `racers` or
+         `traffic`, and losing it from the road is one of the ways a pursuit
+         ends.
+         -------------------------------------------------------------- */
+      let bestO = worth ? null : undefined;
+      const look = (o, z, x, sp) => {
         /* a target with a bad number in it poisons `k.x` and every gradient
            drawn from it — one NaN in a chase turns the whole frame black */
         if(!isFinite(z) || !isFinite(x) || !isFinite(sp)) return;
         if(sp < MAX_SPD * 0.44) return;      /* not speeding, not interesting */
         const d = Math.abs(k.z - z);
-        if(d < bestD && d < 9000){ bestD = d; bestZ = z; bestX = x; bestS = sp; }
+        if(d < bestD && d < 9000){ bestD = d; bestZ = z; bestX = x; bestS = sp; bestO = o; }
       };
-      for(const r of racers) look(r.z, r.x, r.spd);
+      /* A RIVAL IS POLICED LIKE ANYBODY ELSE. The owner was asked whether the
+         police should ignore racers and answered that they never said racers
+         were exempt - what had to be protected was the TRAP, and the parked
+         guard above is what protects it. */
+      for(const r of racers) look(r, r.z, r.x, r.spd);
       /* an ambulance on a call is exempt here for the same reason it is exempt
          at a speed trap, and this is the site that would actually have LOOKED
          like a bug: a cruiser picks the nearest thing over 0.44 and an emergency
          ambulance is faster than that by design, so a patrol would have dropped
          a real pursuit to chase the ambulance it was making way for */
-      for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency && !c.patrol) look(c.z, c.x, c.spd);
+      for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency && !c.patrol) look(c, c.z, c.x, c.spd);
       /* ---- A SEARCH THAT FINDS NOBODY CHANGES NOTHING --------------------
          `bestZ` is left at -1e9 when the sweep turns up no candidate - the road
          is empty, or the only speeder is out of range. Writing that through
@@ -16481,15 +16586,114 @@ function step(dt){
         k.tz = k.z + 4000; k.tx = k.x; k.tSpd = 0; k.onPlayer = false;
       } else if(bestZ !== -1e9){
         k.tz = bestZ; k.tx = bestX;
-        /* HOW FAST THE THING IT IS CHASING IS GOING, kept on the car, because
-           the switch above is a comparison against it and reconstructing it
-           later would mean guessing which target the last search settled on */
+        /* HOW FAST THE THING IT IS CHASING IS GOING, kept on the car. It is no
+           longer read to decide a switch - there are no switches - but the
+           giving-up rule needs to know whether the cruiser is losing ground,
+           and a chase log is unreadable without it. */
         k.tSpd = bestS;
-        k.onPlayer = (bestZ === pz);
+        k.tgt = bestO;                       /* null is you; anything else is the car */
+        k.onPlayer = (bestO === null);
+        /* AND THAT IS THE COMMITMENT MADE. From here the car is not offered
+           another target until it gives up and parks. */
+        k.engaged = true;
+        /* ---- HOW MANY TIMES THIS CAR HAS CHOSEN (RLG-173) --------------
+           A COUNTER, BECAUSE THE RULE IS OTHERWISE UNCHECKABLE FROM OUTSIDE.
+           A cruiser reaching the player is legitimate when it gave up, parked,
+           and caught them afterwards, and illegitimate when it was simply
+           taken off the car it had - and the two look identical in a sample of
+           the state, which is how a first version of the check called three
+           rules working in sequence a failure. They differ in exactly one way:
+           the legitimate path is a SECOND commitment. So the car counts them.
+           ------------------------------------------------------------- */
+        k.commits = (k.commits || 0) + 1;
+      }
+      }
+    }
+    /* ---- WHERE ITS CAR IS NOW (RLG-173) --------------------------------
+       Read fresh every frame from the car it committed to, so the pursuit
+       tracks rather than driving at a memory. `k.tgt` is null for the player,
+       who is not in any array.
+       ------------------------------------------------------------------ */
+    let lostIt = false;
+    if(!parked && k.engaged){
+      if(k.onPlayer){ k.tz = pz; k.tx = playerX; k.tSpd = spd; }
+      else if(k.tgt && !k.tgt.dead && (racers.indexOf(k.tgt) >= 0 || traffic.indexOf(k.tgt) >= 0)){
+        k.tz = k.tgt.z; k.tx = k.tgt.x; k.tSpd = k.tgt.spd;
+      } else {
+        /* the car it was chasing is off the road - culled behind, wrecked, or
+           pulled into the cops array itself. There is nothing left to chase. */
+        lostIt = true;
       }
     }
     const tz = (k.tz === undefined) ? pz : k.tz;
     const dz = k.z - tz;
+    /* ---- AND WHEN IT CANNOT KEEP UP, IT GIVES UP AND PARKS (RLG-173) ----
+       The third ending the owner named, and the one that makes permanent
+       engagement survivable: a cruiser that is simply beaten stops chasing,
+       pulls onto the verge, and becomes a speed trap again.
+
+       IT IS A SUSTAINED LOSS, NOT A DISTANCE. A crest, a corner or a slower
+       lane opens twenty thousand units for a moment on a road that draws
+       thirty thousand, so a bare distance test ends pursuits that are still
+       live. Five seconds of it is a cruiser that has been left behind.
+
+       WHY THIS CONSERVES THE TRAPS. The cruiser is not culled and not
+       replaced - it is the same car, back on the verge with its radar on. So
+       the number of traps on the road cannot be driven down by the field, the
+       traffic or the player, which is the whole of what RLG-173 asked for.
+       ------------------------------------------------------------------ */
+    if(!parked && k.engaged){
+      /* `dz` is the cruiser MINUS the target, so a target up the road is a
+         negative number and being left behind is dz going more negative */
+      if(-dz > COP_GIVE_UP) k.giveUp = (k.giveUp || 0) + dt;
+      else k.giveUp = 0;
+      /* ---- THE OTHER TWO ENDINGS THE OWNER NAMED ---------------------
+         "until that target either pulls over voluntarily, is forced to stop
+         due to entrapment, or fails to keep up". The first two look identical
+         from the cruiser's seat and are the same test: the car it was chasing
+         is stopped, and the cruiser is on top of it. The job is done and the
+         car goes back to watching the road.
+
+         THE PLAYER IS EXCLUDED, and that is not an oversight. You stopping
+         with a cruiser on you is the BUSTED rule, which is decided elsewhere
+         and must not be pre-empted by the cruiser parking up and losing
+         interest - that would make the arrest unreachable, which is a hole
+         this file has fallen into once already.
+         -------------------------------------------------------------- */
+      const stoppedOut = !k.onPlayer && k.tSpd !== undefined
+                         && k.tSpd < MAX_SPD * 0.06 && Math.abs(dz) < 3600;
+      /* ---- AND A WANTED DRIVER IS NOT GIVEN UP ON (RLG-173) -----------
+         THE SECOND JUDGEMENT IN THIS RULING AND IT IS THE OWNER'S TO
+         OVERTURN. Taken literally, giving up applies to the player as much as
+         to anybody, and measuring it showed what that costs: at heat five and
+         160mph, interceptors reached 13,700 of their 14,566 ceiling while they
+         were close, then fell into the traffic behind - where the cruiser's own
+         traffic-following rule caps them at about 7,700 - and gave up in waves.
+         heat-test went from FOUR interceptors on the road to NONE, so the two
+         hardest-earned conditions in the police system bought nothing.
+
+         AND PARKING ONE THERE ACHIEVES NOTHING ANYWAY. A cruiser that has lost
+         you is more than 20,000 units back and is culled at 34,000, so it
+         becomes a trap you will never see, three seconds before it is deleted.
+
+         SO A CAR ON A DRIVER WHO IS STILL WANTED KEEPS COMING, and is dropped
+         the old way - left behind and culled - which is the mechanism the owner
+         already chose for losing the police (2026-09-07). The moment the heat
+         is gone it can give up like anybody else. Every other pursuit obeys the
+         ruling as written.
+         -------------------------------------------------------------- */
+      const stillWanted = k.onPlayer === true && heat > 0;
+      if(!stillWanted && (lostIt || stoppedOut || k.giveUp > COP_GIVE_UP_T)){
+        k.engaged = false; k.giveUp = 0; k.tgt = undefined;
+        k.tz = undefined; k.tx = undefined; k.tSpd = undefined; k.onPlayer = undefined;
+        k.trap = true; k.armed = true; k.boxing = false; k.station = -1;
+        /* back on whichever verge it is nearer, facing the traffic, engine off */
+        k.side = k.x < 0 ? -1 : 1;
+        k.x = k.side * 1.16;
+        k.spd = 0;
+        continue;
+      }
+    }
     // run it down, hold station beside you, lunge, then peel off and reset
     const aggro = k.cool <= 0;
     const wantDz = aggro ? 120 : 900;
@@ -16589,7 +16793,15 @@ function step(dt){
        150mph is not a manoeuvre, it is a bug.
        ---------------------------------------------------------------- */
     const stopped = spd < MAX_SPD*0.10;
-    const boxing = stopped || (aggro && k.onPlayer !== false && Math.abs(dz) < 2600);
+    /* A PARKED TRAP MUST NOT JOIN THE BOX, and it did. `onPlayer` is undefined
+       on a car that has never chosen anybody, and `!== false` is true of
+       undefined - so a trap the player drove up to took a station, was given a
+       speed built from the PLAYER'S, and picked a line onto the road. The
+       speed clamp further up held it still, which is why this looked like
+       nothing worse than a parked car reporting 93mph, but the steering had no
+       such guard. */
+    const boxing = !parked
+                   && (stopped || (aggro && k.onPlayer !== false && Math.abs(dz) < 2600));
     /* KEPT ON THE CAR so a check can ask whether the box is on rather than infer
        it from where the cruiser happens to be. Positions are the RESULT of the
        decision and several other things produce the same ones - the cooling
@@ -16597,11 +16809,13 @@ function step(dt){
        positions alone cannot tell the box from a car that peeled off. */
     k.boxing = boxing;
     k.station = boxing ? (k.box === undefined ? -1 : k.box) : -1;
-    k.spd = clamp(k.spd, stopped ? -2600 : 2000, copTop(k));
-    k.spd = capTraffic(k.spd);
+    /* THE FLOOR OF 2,000 IS WHY A TRAP CREPT. Every cruiser is held above about
+       26mph so it can never quite stop, which is right for a car in a pursuit
+       and is exactly wrong for one parked on the grass. */
+    k.spd = parked ? 0 : capTraffic(clamp(k.spd, stopped ? -2600 : 2000, copTop(k)));
     k.z += k.spd*dt;
     /* and it steers at whatever it is chasing, not always at you */
-    if(k.tx !== undefined && !k.onPlayer && isFinite(k.tx))
+    if(!parked && k.tx !== undefined && !k.onPlayer && isFinite(k.tx))
       k.x += clamp(k.tx - k.x, -1.6*dt, 1.6*dt);
     if(!isFinite(k.x)) k.x = playerX;
     const kdx = k.x - (k.lastX === undefined ? k.x : k.lastX);
@@ -26643,6 +26857,36 @@ requestAnimationFrame(frameLoop);
     return { cruiser: row('CRUISER', live.filter(k => !k.superc)),
              superCruiser: row('SUPERCRUISER', live.filter(k => k.superc)),
              aiTop: +AI_TOP.toFixed(1) };
+  };
+  /* ---- A TRAP, PUT THERE BY THE ROAD'S OWN SPAWNER (RLG-173) ----------
+     A check about what a parked trap DOES must not build the trap itself, or it
+     measures the harness. `spawnTrap` places it on the verge at a random 35,000
+     to 52,000 units ahead, exactly as the road does, and this only calls it.
+     -------------------------------------------------------------------- */
+  API.spawnTrap = function(){ spawnTrap(); return cops.filter(k => k.trap).length; };
+  /* what every police car on the road is doing, WITH ITS POST AND ITS TARGET.
+     `copCensus` counts traps and `copState` reports damage; neither can answer
+     whether a trap is still standing where it was put, which is the whole of
+     what RLG-173 is about. */
+  API.trapWatchState = function(){
+    return cops.filter(k => k.trap || k.from === 'trap').map(k => ({
+      trap: !!k.trap, armed: !!k.armed,
+      dz: Math.round(k.z - (pos + PLAYER_Z)),
+      /* THE ABSOLUTE POSITION, because `dz` moves when the PLAYER moves and a
+         check for "it never left its post" reading `dz` is reading the driver */
+      z: Math.round(k.z),
+      spd: Math.round(k.spd || 0),
+      /* the target the retarget sweep last settled on, and how fast it is -
+         undefined means the sweep has never found anybody */
+      tz: k.tz === undefined ? null : Math.round(k.tz - (pos + PLAYER_Z)),
+      tSpd: k.tSpd === undefined ? null : Math.round(k.tSpd),
+      onPlayer: k.onPlayer === undefined ? null : !!k.onPlayer
+    }));
+  };
+  /* where the rivals are, so a check can say whether a trap's target IS one */
+  API.rivalState = function(){
+    return racers.map(r => ({ dz: Math.round(r.z - (pos + PLAYER_Z)),
+                              spd: Math.round(r.spd || 0) }));
   };
   API.placePatrol = function(dz){
     const z = pos + PLAYER_Z + (dz === undefined ? 4000 : dz);

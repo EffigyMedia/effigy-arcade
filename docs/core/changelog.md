@@ -14,6 +14,33 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-42"></a>
+## [0.13.42] - 2026-09-08
+- Changed: **one engagement, one target, permanently.** Owner, 2026-09-08: "whenever a cop engages a
+  target it continues to engage that target until that target either pulls over voluntarily, is
+  forced to stop due to entrapment, or fails to keep up with its target and it disengages and pulls
+  back over to make a new trap. Having it retarget something else because it is slightly faster while
+  cool I think will just break this illusion." A cruiser now searches ONCE, at the start of a
+  pursuit, and holds that car until one of those three endings. The event switch that shipped the
+  day before is gone, and so are `COP_PASS_BY` and `COP_SWITCH_MPH`. See
+  [RLG-173](../fragments/RLG-173.md).
+- Added: **a cruiser that cannot keep up gives up and parks as a new speed trap.** Twenty thousand
+  units of ground lost, held for five seconds, and it pulls onto the verge and re-arms. This is what
+  makes the trap population self-sustaining: a trap that leaves comes back as a trap somewhere else,
+  so the field cannot empty the road of them.
+- Fixed: **a speed trap was not parked.** The owner reported cruisers driving along the side of the
+  road rather than sitting on it, and the cause was that nothing kept a trap out of the main cruiser
+  update: an armed trap ran the pursuit search every 1.4 seconds, took whatever speeder it found, and
+  the 2,000-unit floor under every cruiser's speed moved it off its post even when it found nobody.
+  It joined the box as well, because a car that has never chosen a target has `onPlayer` undefined
+  and the box test asked whether it was *not* the player. Measured at 93mph while parked; now zero
+  drift over twelve seconds.
+- Fixed: **a dispatched car is dispatched for you.** With the first choice now the only choice, an
+  interceptor that opened on a passing NPC was spent - measured, heat five with the 170-past-a-trap
+  condition earned put FOUR interceptors on the road before and NONE after. A radio car and a super
+  cruiser take the player without searching, and a pursuit of a driver who is still wanted is never
+  given up on: it is dropped the old way, left behind and culled.
+
 <a id="v0-13-41"></a>
 ## [0.13.41] - 2026-09-08
 - Changed: **a cruiser keeps the car it is chasing unless you go past it faster.** Owner,

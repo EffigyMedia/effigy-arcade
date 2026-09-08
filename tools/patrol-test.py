@@ -310,6 +310,18 @@ def main():
             if(dz > e.maxAhead) e.maxAhead = dz;
           }
           return window.__log; }"""
+        # ---- AND THE ROAD IS CLEARED FIRST, WHICH IT WAS NOT ------------------
+        # THE WATCHER TAGS A CAR THE FIRST TIME IT SEES IT and calls that position its
+        # birthplace. That is right for a car that arrives during the watch and wrong
+        # for one that was already out there: a cruiser standing ahead of the player at
+        # the first sample is recorded as having been BORN ahead, which is the exact
+        # thing being asserted against. It passed for as long as the road happened to
+        # be quiet at that moment, and started failing the day the traps were laid more
+        # thickly - one cruiser reported "born +891 from trap" on an engine whose
+        # arrivals were all correct. So the road is emptied and only genuine arrivals
+        # are counted.
+        page.evaluate("() => { const R = window.__road; R.copsClear();"
+                      " R.clearCopOrigins(); }")
         page.evaluate("() => { const R = window.__road; R.setTimed(false);"
                       " window.__ah = setInterval(() => { R.heat(4);"
                       " R.setSpd(0.72 * R.MAX_SPD); }, 200); }")
@@ -363,10 +375,18 @@ def main():
           const npc = R.traffic[0];
           if(!npc) return false;
           npc.mind = 1; npc.z = pz + dz + 600; npc.x = 0.30;
+          /* ---- STAGED AS A COMMITTED CRUISER (RLG-173) ------------------
+             `engaged` and `tgt` are the commitment, and a hand-built cop without
+             them is a state the engine can no longer produce: a car holding a
+             target that has not chosen it. Staged that way this check measured
+             a cruiser making its FIRST choice with the player speeding past,
+             which it is entitled to take. The claim is about a cruiser that has
+             already chosen, so the staging has to be one. */
           const k = { z: pz + dz, x: 0.30, spd: npc.spd, wreck: 0, ang: 0, grace: 9,
                       cool: 0, side: 1, w: 0.27, len: 400, phase: 0, dmg: 0,
                       from: 'test', onPlayer: false, tz: npc.z, tx: npc.x,
-                      tSpd: npc.spd, retarget: 0 };
+                      tSpd: npc.spd, retarget: 0,
+                      tgt: npc, engaged: true, commits: 1 };
           R.cops().push(k);
           window.__k = k;
           window.__hold = setInterval(() => {
