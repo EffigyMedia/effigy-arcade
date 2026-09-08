@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.21';
+window.ROAD_BUILD = '0.13.22';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10157,7 +10157,10 @@ const BIOMES = {
                  INSIDE the event and the cap governs what little the bore does
                  outside it - two numbers answering two questions, and RLG-143
                  says so explicitly. */
-              profile: { ramp:0.16, rise:-0.34 },
+              /* the bridge's shape negated, and retuned with it for the same
+                 reason - see the bridge. A bore still drops less than a span
+                 rises, which is the ruling this pair was built on. */
+              profile: { rise:-0.24 },
               /* ---- AND IT LASTS A TUNNEL'S LENGTH (RLG-112) -----------
                  It was the ordinary roll, six and a half to twelve miles - at
                  the speed the interstate is actually driven, two and a half to
@@ -10349,7 +10352,12 @@ const BIOMES = {
      ------------------------------------------------------------------ */
   BRIDGE:   { name:'BRIDGE',   temp:0.55, vary:0.25, precip:0.38, bias:0.45,
               hill:0.10, bend:0.08, span:1.7, passage:1,
-              profile: { ramp:0.16, rise:0.50 },
+              /* `ramp` is no longer read - the ramp is a quarter of a mile, stated
+                 as a distance in `profileSlope`. `rise` came down from 0.50 to
+                 hold the deck at the height it already had: a constant ramp
+                 gains more than the old easing one did over the same ground, and
+                 raising the bridge was not what the owner asked for. */
+              profile: { rise:0.43 },
               /* ---- IT IS OVER WATER, ON BOTH SIDES (RLG-112) ------------
                  `overWater` is the whole of the water cheat: the place's GROUND
                  is sea, full width, so the road is painted over it exactly as
@@ -10986,10 +10994,50 @@ const smoothAt = (t, c, b) => {
   const a = clamp((t - c) / b + 0.5, 0, 1);
   return a * a * (3 - 2 * a);
 };
+/* ---- A QUARTER MILE OF RAMP, AND IT IS A DISTANCE (owner, 2026-09-07) ----
+   "It should be a sharp ramp up for maybe a quarter of a mile, then absolutely
+   flat for the duration of the bridge, and then for the quarter mile before
+   transitioning into the next biome, the sharp ramp down."
+
+   THE SHAPE WAS ALREADY RAMP-FLAT-RAMP AND IT WAS STILL WRONG, which is worth
+   saying plainly because the old comment here claimed exactly what the owner was
+   asking for. Measured on the shipping build: the climb took 0.34 of a mile, the
+   deck was properly flat for 60 per cent of the crossing, and the descent took
+   another 0.34. Two things were off, and neither was the arrangement.
+
+   FIRST, THE RAMP WAS A SHARE OF THE CROSSING rather than a length. `ramp` was
+   0.16 - sixteen per cent of however long the bridge happened to be - so a
+   longer bridge got a longer climb, and the owner's "maybe a quarter of a mile"
+   cannot be expressed that way at all. It is a distance now, and a bridge of any
+   length gets the same ramp with more deck in the middle.
+
+   SECOND, AND THIS IS THE ONE YOU SEE: the ramp was almost entirely EASING. The
+   smoothing width was 0.55 of the ramp itself, so the slope spent the whole
+   climb rising to its peak and falling away again and was never steady - a long
+   soft hump rather than a ramp. Measured as height gained per step: 0.50, 7.26,
+   9.12, 4.17. That is a bell. A ramp is a constant slope with its corners taken
+   off, which is 0.18 rather than 0.55, and now reads 3.9, 9.5, 9.5, 3.5.
+
+   THE DECK HEIGHT IS DELIBERATELY UNCHANGED. A shorter, harder ramp climbing to
+   a different height would be a second change riding along with this one, and
+   the owner asked about the shape. `rise` is retuned so the deck lands where it
+   already did.
+   ------------------------------------------------------------------------ */
+/* A FUNCTION AND NOT A CONST, for the reason this file already carries against
+   `sirenVoiceFor`: `MILE` is declared several thousand lines further down, and a
+   `const` up here evaluates at load and reaches into its temporal dead zone. It
+   threw on the first frame and took the whole cabinet to a blank screen - the
+   second time that hazard has bitten in this file, so the note is repeated here
+   where the next person will be standing. */
+function rampLen(){ return 0.25 * MILE; }
 /* rise through the first ramp, dead flat across the deck, fall through the
-   last. `t` is the fraction through the event. */
-function profileSlope(t, P){
-  const r = P.ramp, b = r * 0.55;
+   last. `t` is the fraction through the event and `len` is how long it is, in
+   world units, because the ramp is a distance rather than a proportion. */
+function profileSlope(t, P, len){
+  const RL = rampLen();
+  const r = clamp(RL / (len || RL * 4), 0.03, 0.42);
+  /* the corners taken off a constant slope, not a hump - see above */
+  const b = r * 0.18;
   return P.rise * (smoothAt(t, b*0.5, b) - smoothAt(t, r, b))
        - P.rise * (smoothAt(t, 1 - r, b) - smoothAt(t, 1 - b*0.5, b));
 }
@@ -11017,7 +11065,7 @@ function authoredSlope(z){
   if(t < 0 || t > 1) return null;
   /* 0 at each mouth, 1 once the event owns the road */
   const w = Math.min(1, Math.min(t, 1 - t) / EVENT_BLEND);
-  return { k: profileSlope(t, eventProfile), w: w };
+  return { k: profileSlope(t, eventProfile, eventLen), w: w };
 }
 /* ---- WHICH SIDE THE WATER IS ON (RLG-059) --------------------------------
    Rolled when a place is chosen, not when it is drawn: the coast has to be on
@@ -24347,7 +24395,7 @@ requestAnimationFrame(frameLoop);
     let h = 0;
     out.push(0);
     for(let i = 1; i <= n; i++){
-      h += profileSlope((i - 0.5) / n, B.profile) * (step / BEND_STEP);
+      h += profileSlope((i - 0.5) / n, B.profile, len) * (step / BEND_STEP);
       out.push(+h.toFixed(3));
     }
     return out;

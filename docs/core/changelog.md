@@ -14,6 +14,34 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-22"></a>
+## [0.13.22] - 2026-09-07
+- Fixed: **getting onto a bridge is a sharp ramp, a flat deck, and a sharp ramp.** Owner,
+  2026-09-07: "a sharp ramp up for maybe a quarter of a mile, then absolutely flat for the duration
+  of the bridge, and then for the quarter mile before transitioning into the next biome, the sharp
+  ramp down." The tunnel is that shape inverted and moves with it.
+- **The arrangement was already right and it was still wrong**, which is worth saying because the
+  old comment here claimed exactly what the owner asked for. Measured on the shipping build: the
+  climb took 0.34 of a mile, the deck *was* properly flat for 60% of the crossing, and the descent
+  took another 0.34. Two things were off, and neither was the arrangement.
+- **The ramp was a share of the crossing, not a length.** Sixteen per cent of however long the
+  bridge happened to be - so a longer bridge got a longer climb, and "a quarter of a mile" could not
+  be expressed at all. It is a distance now; a longer bridge gets more deck instead.
+- **And the ramp was almost entirely easing.** The smoothing width was 0.55 of the ramp itself, so
+  the slope spent the whole climb rising to a peak and falling away and was never steady - a soft
+  hump rather than a ramp. Height gained per step ran **0.50, 7.26, 9.12, 4.17**; a bell. With the
+  corners taken off a constant slope instead, **5 of 6 ramp steps now sit within 15% of the
+  steepest, against 3 of 8 before.**
+- **The deck height is deliberately unchanged** - 42.4 against the old 42.3, and the bore at -23.3
+  against -23.7. A constant ramp gains more over the same ground, so `rise` came down to hold the
+  summit where it was; raising the bridge was not what was asked for.
+- `bridge-test` gained the profile checks and they were watched failing on the old build, on both
+  places at once. Two earlier versions of the shape check were discarded first: trimming a fixed
+  number of corner steps reads the tunnel and the bridge as different shapes, because where the
+  rounding falls on a 40-step grid is arbitrary. See [UNT-194](../fragments/UNT-194.md).
+- Known red and **not caused by this**: `bridge-test`'s "water to left AND right in comparable
+  amounts" fails identically with this change stashed.
+
 <a id="v0-13-21"></a>
 ## [0.13.21] - 2026-09-07
 - Removed: **the PIT manoeuvre.** Owner, 2026-09-07: "I don't think there is enough collision

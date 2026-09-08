@@ -752,6 +752,64 @@ def main():
                   'the coast put %d orange pixels in the glass' % mc['px'])
         settle(page, 'BRIDGE')
 
+        # ---- THE SHAPE OF GETTING ONTO IT (owner, 2026-09-07) ---------------------
+        # "It should be a sharp ramp up for maybe a quarter of a mile, then absolutely
+        # flat for the duration of the bridge, and then for the quarter mile before
+        # transitioning into the next biome, the sharp ramp down."
+        #
+        # THE ARRANGEMENT WAS ALREADY RIGHT AND THE SHAPE WAS NOT, which is why this
+        # reads the ramp's PROFILE rather than merely checking there is one. The old
+        # build climbed, held level and descended exactly as it should - but over 0.34 of
+        # a mile, and as a soft hump rather than a ramp: height gained per step ran 0.50,
+        # 7.26, 9.12, 4.17, which is a bell. A ramp is a constant slope.
+        for key, sign in (('BRIDGE', 1), ('TUNNEL', -1)):
+            prof = page.evaluate('(k) => window.__probe.road.riseProfile(k, 40)', key)
+            span = page.evaluate('(k) => window.__probe.road.placeSpan(k)', key)['stated']
+            if not prof:
+                res.check(False, '%s states a profile' % key, 'none found')
+                continue
+            step = [prof[i + 1] - prof[i] for i in range(len(prof) - 1)]
+            flat = [i for i, v in enumerate(step) if abs(v) < 0.02]
+            moving = [v for v in step if abs(v) >= 0.02]
+            climb = [v for v in step if v * sign > 0.02]
+            # the ramp, as a fraction of the crossing and then as miles
+            ramp_steps = len(moving) / 2.0
+            ramp_miles = span * ramp_steps / len(step)
+            print('    %-7s ramp %.2f mi each end, deck flat for %d of %d steps, '
+                  'steepest step %.2f' % (key, ramp_miles, len(flat), len(step),
+                                          max(abs(v) for v in step)))
+            # 0.32 AND NOT 0.40. The old build's bridge ramped over 0.34 of a mile and
+            # passed a looser tolerance, which made the length half of this change
+            # unassertable - the ramp used to be a SHARE of the crossing, sixteen per
+            # cent, so a longer bridge got a longer climb and "a quarter of a mile"
+            # could not be expressed at all. It is a distance now and the check says so.
+            res.check(0.18 <= ramp_miles <= 0.32,
+                      '%s ramps over about a quarter of a mile' % key,
+                      '%.2f miles' % ramp_miles)
+            res.check(len(flat) >= len(step) * 0.5,
+                      'and %s is dead flat for the length of the crossing' % key,
+                      '%d of %d steps level' % (len(flat), len(step)))
+            # A CONSTANT SLOPE, WHICH IS WHAT "SHARP" MEANS HERE. On the old easing the
+            # ramp's own steps varied by a factor of eighteen, 0.50 against 9.12. A ramp
+            # with its corners taken off varies by about two.
+            # HOW MUCH OF THE RAMP IS AT FULL SLOPE, which is what "sharp" means and
+            # what a bell can never satisfy. Trimming a fixed number of corner steps was
+            # tried first and does not work: where the rounding lands relative to this
+            # forty-step grid is arbitrary, so the tunnel kept one corner and the bridge
+            # did not, and the same engine read as two different shapes.
+            #
+            # A constant ramp spends nearly all of itself at its own slope. A smoothed
+            # hump - which is what shipped until 2026-09-07 - spends almost none of
+            # itself there, because the peak is a single instant in the middle.
+            peak = max(abs(v) for v in climb) if climb else 0
+            atfull = [v for v in climb if peak and abs(v) >= peak * 0.85]
+            share = len(atfull) / len(climb) if climb else 0
+            print('        %s: %d of %d ramp steps within 15%% of the steepest'
+                  % (key, len(atfull), len(climb)))
+            res.check(len(climb) >= 3 and share >= 0.5,
+                      'and the %s ramp is a steady slope rather than a hump' % key,
+                      '%d of %d ramp steps are at full slope' % (len(atfull), len(climb)))
+
         errs = page.evaluate("() => window.__probe.errors")
         res.check(not errs, 'no page errors', '; '.join(errs[:3]))
         browser.close()
