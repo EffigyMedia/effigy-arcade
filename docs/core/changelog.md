@@ -14,6 +14,25 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-35"></a>
+## [0.13.35] - 2026-09-08
+- Changed: **clouds read as clouds.** Owner, 2026-09-07: "clouds don't read as clouds - fluffy white
+  in clear skies, light snow storms, and dark thunder storms." The cover had a NUMBER and no FORM,
+  so a sky with more cloud in it read as a flatter colour rather than as more cloud.
+- **The three the owner named are one thing seen three ways**, driven by two values that already
+  existed - how stormy it is and whether the precipitation is snow. Clear is piled and white, snow
+  is a low flat pale lid, thunder is dark and heavy. See [RLG-167](../fragments/RLG-167.md).
+- **A cumulus is a cluster, not an ellipse.** One ellipse is a smudge at any size; four overlapping
+  circles along a flat base is a cloud at any size, and the underside is drawn darker because a
+  cloud is lit from above. The wash is squared against the cover now, so a light day is shapes on
+  open sky rather than a grey film with shapes on it.
+- **Three statistics were needed before one measured cloud.** Contrast across a row scored an EMPTY
+  sky at 85, because the horizon glow is radial; neighbour-to-neighbour scored an empty sky at 1.39
+  and an overcast one at 1.43, because the sun is a small disc with hard edges. What works is
+  comparing two skies, where the sun and the gradient subtract away exactly, and measuring how
+  patchy the difference is WITHIN each row. `tools/cloud-test.py` is new and it falsifies: with the
+  shapes removed the score drops from 0.61-0.95 to 0.30-0.39.
+
 <a id="v0-13-34"></a>
 ## [0.13.34] - 2026-09-08
 - Added: **a deer crosses a forest road, very rarely.** Owner, 2026-09-01: "in the forest biome I'd

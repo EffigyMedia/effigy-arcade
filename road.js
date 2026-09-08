@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.34';
+window.ROAD_BUILD = '0.13.35';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -17680,28 +17680,104 @@ function drawSky(){
      The bands are wide, slow and few. Cloud at this distance has no detail worth
      drawing - what says overcast is that the sky stops being a clean gradient.
      ------------------------------------------------------------------- */
+  /* ---- AND A CLOUD HAS A SHAPE (owner, 2026-09-07, RLG-167) ------------
+     "Clouds don't read as clouds - fluffy white in clear skies, light snow
+     storms, and dark thunder storms."
+
+     THE COVER WAS A NUMBER WITH NO FORM. What stood here was a full-sky wash
+     plus five soft ellipses, so a sky with more cloud in it read as a FLATTER
+     COLOUR rather than as more cloud - which is the owner's sentence exactly.
+     A number and a shape are different things and only the number existed.
+
+     THE THREE THE OWNER NAMED ARE ONE THING SEEN THREE WAYS, not three
+     effects, so they are one painter driven by two values that already exist:
+     `storm`, which is how black it is, and `snowy`, which says the precipitation
+     is snow. Between them they place a cloud on two axes - how HIGH it piles and
+     how DARK it is:
+
+         clear       piled and white, the shapes you look up at on a good day
+         light snow  low and soft, the flat pale lid a snow sky has
+         thunder     dark and heavy, sitting on top of you
+
+     A CUMULUS IS A CLUSTER, NOT AN ELLIPSE, and that is the whole of why the old
+     one did not read: one ellipse is a smudge at any size, and three or four
+     overlapping circles with a flat base is a cloud at any size. The base is
+     drawn darker than the top for the same reason - a cloud is lit from above,
+     and the flat grey underside is what the eye names.
+
+     THE WASH DOES NOT GO AWAY, it stops being the whole story. It is squared
+     against the cover now, so a light day is shapes on open sky rather than a
+     grey film with shapes on it, while a heavy one still closes the sky over.
+     ------------------------------------------------------------------- */
   if(cloud > 0.02){
-    const dark = mix3(hex3('#8f9db0'), hex3('#141821'), clamp(storm, 0, 1));
-    const lit  = mix3(hex3('#e6edf6'), hex3('#39424f'), clamp(storm*0.8 + n*0.7, 0, 1));
+    const hard = clamp(storm, 0, 1);              /* 0 fair, 1 thunder */
+    const lid  = clamp(snowy ? 1 : 0, 0, 1);      /* a snow sky is a flat lid */
+    const dark = mix3(hex3('#8f9db0'), hex3('#141821'), hard);
+    const lit  = mix3(hex3('#e6edf6'), hex3('#39424f'), clamp(hard*0.8 + n*0.7, 0, 1));
     ctx.save();
-    ctx.globalAlpha = clamp(cloud * 0.80, 0, 0.92);
+    /* SQUARED, so a quarter of cover is a sixteenth of a wash. The old linear
+       version put a visible grey over the whole sky at cover 0.15, which is the
+       lightest a place ever rolls - there was no such thing as a clear day. */
+    ctx.globalAlpha = clamp(cloud * cloud * 0.95, 0, 0.92);
     const cg = ctx.createLinearGradient(0, 0, 0, horizon);
     cg.addColorStop(0,   rgb(mix3(dark, hex3('#05070c'), n)));
     cg.addColorStop(0.62, rgb(mix3(lit,  hex3('#0a0d14'), n)));
     cg.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = cg;
     ctx.fillRect(0, 0, W, horizon + 2);
-    /* a few banks drifting across, so the cover moves with the road */
-    ctx.globalAlpha = clamp(cloud * 0.5, 0, 0.6);
-    ctx.fillStyle = rgb(mix3(lit, hex3('#0b0e15'), n));
-    for(let i = 0; i < 5; i++){
-      const bw = W * (0.55 + (i % 3) * 0.30);
-      const bx = ((i * 0.37 + dist * 0.0009 * (0.5 + i * 0.12)) % 1.6 - 0.3) * W - camX * W * 0.02;
-      const by = horizon * (0.10 + i * 0.13);
-      const bh = horizon * (0.10 + (i % 2) * 0.05);
+
+    /* the top of a cloud takes the light, the underside is the flat grey the
+       eye reads as weather - and both go to night with everything else */
+    const top  = rgb(mix3(mix3(hex3('#ffffff'), hex3('#4a5361'), hard),
+                          hex3('#10141c'), n * 0.92));
+    const base = rgb(mix3(mix3(hex3('#c3cedd'), hex3('#232935'), hard),
+                          hex3('#080b11'), n * 0.92));
+
+    /* HOW MANY, AND HOW HIGH THEY SIT. Cover decides the count, so a clear sky
+       is two or three and an overcast one is a crowd; the snow lid pulls them
+       DOWN toward the horizon and flattens them, because that is what a snow
+       sky is - a low ceiling rather than a set of shapes. */
+    const nP = Math.round(3 + cloud * 9);
+    const pile = (1 - lid * 0.72) * (1 - hard * 0.25);   /* how much they billow */
+    ctx.globalAlpha = clamp(0.30 + cloud * 0.55, 0, 0.92);
+    for(let i = 0; i < nP; i++){
+      /* the drift is per-cloud and slow, and it wraps well outside the frame so
+         nothing is ever seen to appear */
+      const sp  = 0.5 + (i % 4) * 0.16;
+      const bx  = (((i * 0.311 + dist * 0.00055 * sp) % 1.7) - 0.35) * W
+                  - camX * W * 0.02;
+      const band = (i % 5) / 4;                    /* which height it sits at */
+      const by  = horizon * (0.10 + band * 0.44 + lid * 0.26);
+      /* SMALLER THAN THEY WERE. The first version ran to a fifth of the screen a
+         cloud and drew a handful of them, and one bank filled a third of the sky -
+         which reads as a thing near the car rather than as weather miles away.
+         Distance is what makes a cloud a cloud, so they are smaller and there are
+         more; the snow lid still spreads them, because a lid IS one wide cloud. */
+      const bw  = W * (0.11 + (i % 3) * 0.065) * (1 + lid * 0.85);
+      const bh  = bw * (0.30 + 0.24 * ((i * 7) % 3) / 2) * pile + 2;
+      /* ---- THE CLUSTER ------------------------------------------------
+         Four lobes along a flat base, the middle two taller, which is the
+         silhouette a fair-weather cumulus has. Drawn as one path so the
+         overlaps do not show as seams when the whole thing is translucent.
+         ------------------------------------------------------------- */
+      const lobes = [[-0.36, 0.52], [-0.08, 0.92], [0.22, 0.80], [0.44, 0.46]];
+      ctx.fillStyle = top;
       ctx.beginPath();
-      ctx.ellipse(bx + bw / 2, by, bw / 2, bh / 2, 0, 0, 6.2832);
+      for(const [ox, oy] of lobes){
+        const r = bh * oy;
+        ctx.moveTo(bx + bw * (0.5 + ox) + r, by);
+        ctx.arc(bx + bw * (0.5 + ox), by, r, 0, 6.2832);
+      }
+      /* the flat bottom, which is what makes it a cloud and not a bush */
+      ctx.rect(bx + bw * 0.10, by, bw * 0.82, bh * 0.42);
       ctx.fill();
+      /* and the shaded underside, a shallow slab along that base */
+      ctx.fillStyle = base;
+      ctx.globalAlpha = clamp((0.30 + cloud * 0.55) * (0.55 + hard * 0.35), 0, 0.92);
+      ctx.beginPath();
+      ctx.ellipse(bx + bw * 0.50, by + bh * 0.34, bw * 0.44, bh * 0.20, 0, 0, 6.2832);
+      ctx.fill();
+      ctx.globalAlpha = clamp(0.30 + cloud * 0.55, 0, 0.92);
     }
     ctx.restore();
   }
@@ -24772,6 +24848,11 @@ requestAnimationFrame(frameLoop);
   };
   API.redline = function(){ return redline(); };
   API.setWet = function(v){ wet = wetTarget = v; };
+  /* WHICH KIND of precipitation, forced. `setSky` can make a sky black and
+     `setWet` can make it fall, but nothing could say it was SNOW - and a snow
+     sky is one of the three forms RLG-167 names, so a check that could not ask
+     for one could only ever photograph two of the three. */
+  API.setSnowy = function(v){ snowy = v ? 1 : 0; return snowy; };
   /* ---- THE LIVE ROLL, AGAINST THE LIVE PLACE (RLG-109) -----------------
      `rollMomentsFor` above re-runs the model for a STATED place at a STATED
      temperature, which is the right shape for asking what the model does — and
