@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.36';
+window.ROAD_BUILD = '0.13.37';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -11509,6 +11509,11 @@ let sideRoll = 1;
    and every further point lands on the same pixel.
    ------------------------------------------------------------------------ */
 const FAR_SEA_STEPS = 24, FAR_SEA_STEP = 12;
+/* the road's own walk to the horizon (RLG-101). Finer than the sea's, because
+   the road is a narrowing ribbon rather than a fill and its edges have to stay
+   smooth as they converge - a coarse step shows as a faceted cone. */
+const FAR_ROAD_STEPS = 30, FAR_ROAD_STEP = 1;
+let farRoad = { drew:false, walked:0 };
 /* ---- HOW MUCH HAZE THE WATER HAS TAKEN BY THE END OF THE DRAW ----------
    MEASURED, NOT CHOSEN, and swept inside single frames because this world
    cannot be compared across runs: the road is generated per load and the day is
@@ -21706,6 +21711,112 @@ function draw(){
      road and verge are drawn over it, exactly as they would be in life.
      ------------------------------------------------------------------- */
   drawHaze();
+  /* ---- AND THE ROAD'S OWN BAND GOES AFTER THE HAZE, NOT BEFORE IT ------
+     The sea's band is painted before `drawHaze` and takes the wash as paint.
+     The ROAD cannot be, and the reason is the join: the drawn road is painted
+     after the haze and does not take it, so a band painted before it arrives a
+     different colour and the seam is a TONE STEP. Measured at 46 of a possible
+     441 with the band on the sky's side of the haze, and it is the one fault
+     the sea's own band had - the ruling said to expect it here for exactly this
+     reason. On this side of the haze the two are painted into the same air.
+     ------------------------------------------------------------------- */
+  /* ---- AND THE ROAD RUNS ON TO THE HORIZON TOO (owner, 2026-08-31) -----
+     RLG-101: "another thing that would be really cool is if we did the same
+     thing for the highway, so that the highway is interpreted and drawn to the
+     horizon."
+
+     THE SAME MOVE AS THE SEA, ON THE THING THE VIEW IS BUILT AROUND. The road
+     is drawn for DRAW segments and stops short of the skyline, and the band
+     above it is filled by `groundBase` with the far verge's colour - so the
+     tarmac ended and the land carried on, and the road never reached the
+     vanishing point it is drawn toward.
+
+     THE TARMAC AND NOT THE MARKINGS, which the ruling worked out in advance and
+     this build agrees with. Carrying the surface on is a polygon; carrying the
+     lane markings on is a strobing pattern that has to keep its phase, and a
+     marking that arrives out of phase reads worse than no marking at all. Past
+     this distance a marking is under a pixel wide and the honest render is
+     none, which is what the draw distance has been saying implicitly all along.
+
+     ONE CONSTRUCTION, NOT TWO. Exactly as with the sea: the band walks on in
+     the same steps the road walks in, asking `proj` the same question the drawn
+     slices ask, until it reaches the horizon. There is no extrapolation and no
+     estimated angle, so there is nothing for a join to disagree with - and the
+     failure mode of a point the projection will not give is a shorter walk.
+
+     THE VANISHING POINT IS EXACT AND HAS NO WIDTH. At infinite distance the
+     perspective term goes to zero, so both edges of the road arrive at the same
+     place: the centre of the screen, shifted by the view offset and the bend.
+     The polygon closes to a point there, which is what a road does.
+
+     AND THE CORNER CAP MATTERS HERE IN A WAY IT DID NOT FOR THE SEA. Past about
+     ninety degrees the road leaves the frame, so a walk that followed a hard
+     bend would paint tarmac across the sky. The walk stops when the centreline
+     has gone a screen's width outside the frame.
+
+     THE TONE IS THE MEAN OF THE TWO, WHICH IS WHERE THE SEAM WOULD HAVE BEEN.
+     The drawn road alternates a dark and a light block every RUMBLE segments,
+     and at the far edge those blocks are sub-pixel - so the eye reads their
+     average. Filling the band with either one on its own would put a tone step
+     at the join, which is exactly the fault the sea's own band had, found by
+     measurement rather than by eye.
+     ------------------------------------------------------------------- */
+  farRoad = { drew:false, walked:0 };
+  {
+    const fa = proj(0, fFar*SEG);
+    farRoad.faOk = !!(fa && fa.ok);
+    farRoad.faY = fa ? +fa.y.toFixed(1) : null;
+    farRoad.hz = horizon;
+    if(fa && fa.ok && fa.y > horizon + 0.5){
+      const vx = W/2 + viewShift + bendPx(fFar*SEG);
+      const pts = [];
+      let lastY = fa.y;
+      /* ---- THE STEPS GROW, THEY ARE NOT EVEN ---------------------------
+         Beyond the draw distance the projection compresses hard: the band
+         between the last drawn slice and the skyline is a few dozen pixels,
+         and most of it belongs to the first few segments past the edge. With
+         an even stride of eight segments the FIRST step already landed inside
+         a quarter-pixel of the horizon and every point was rejected - the walk
+         emitted nothing on most frames and the band came out as one straight
+         cone, which is the thing this was built to stop being. A square-law
+         stride puts points at 1, 4, 9, 16 segments out, which is where the
+         pixels actually are. */
+      for(let k = 1; k <= FAR_ROAD_STEPS; k++){
+        const q = proj(0, (fFar + k*k*FAR_ROAD_STEP) * SEG);
+        if(!q || !q.ok) continue;
+        /* it has to be rising toward the horizon and not past it */
+        if(!(q.y < lastY - 0.05 && q.y > horizon + 0.05)) continue;
+        /* and the road has to still be on the screen (the corner cap) */
+        if(Math.abs(q.x - W/2) > W) break;
+        pts.push(q);
+        lastY = q.y;
+      }
+      ctx.fillStyle = mixRGB(tarmacTone(false, 0, false), 0.5,
+                             tarmacTone(true, 0, false));
+      ctx.beginPath();
+      ctx.moveTo(fa.x - fa.w, fa.y);
+      for(const q of pts) ctx.lineTo(q.x - q.w, q.y);
+      ctx.lineTo(vx, horizon);
+      for(let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x + pts[i].w, pts[i].y);
+      ctx.lineTo(fa.x + fa.w, fa.y);
+      ctx.closePath();
+      ctx.fill();
+      farRoad.drew = true;
+      farRoad.walked = pts.length;
+      farRoad.joinY = +fa.y.toFixed(1);
+      farRoad.joinW = +fa.w.toFixed(2);
+      farRoad.vx = +vx.toFixed(1);
+      farRoad.joinX = +fa.x.toFixed(1);
+      /* the polygon's own apex, so a check can assert that the band CLOSES at
+         the vanishing point on the horizon rather than infer it from pixels -
+         up there the ribbon is two or three pixels wide and a sample placed by
+         interpolation lands on the verge too often to be evidence */
+      farRoad.topY = horizon;
+      farRoad.topW = 0;
+      farRoad.horizon = horizon;
+    }
+  }
+
   /* the bore goes over the sky, the skyline and the haze, and UNDER the road -
      you are inside it, and the tarmac is still lit (RLG-105) */
   drawWorld();          /* buckets the sprites */
@@ -26614,6 +26725,7 @@ requestAnimationFrame(frameLoop);
   /* what the far band decided this frame, for a harness that has to answer why
      the sea did or did not reach the horizon */
   API.farSea = function(){ return farSea; };
+  API.farRoad = function(){ return farRoad; };
   /* which side the water is on, so a check reads it rather than assuming (RLG-093) */
   API.seaSide  = function(){ return sideRoll; };   /* the old name, kept: harnesses use it */
   API.sideRoll = function(){ return sideRoll; };

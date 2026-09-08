@@ -14,6 +14,30 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-37"></a>
+## [0.13.37] - 2026-09-08
+- Added: **the road runs to the horizon as one body of tarmac.** Owner, 2026-08-31: "another thing
+  that would be really cool is if we did the same thing for the highway, so that the highway is
+  interpreted and drawn to the horizon." The road stopped short of the skyline and the band above it
+  was filled with the far verge's colour, so the tarmac ended and the land carried on.
+- **The tarmac and not the markings**, which the ruling worked out in advance. Carrying the surface
+  is a polygon; carrying the lane markings is a strobing pattern that has to keep its phase, and
+  past this distance a marking is under a pixel wide anyway. One construction, not two: the band
+  walks on in the same steps the road walks in and closes to a point at the vanishing point. See
+  [RLG-101](../fragments/RLG-101.md).
+- **The steps had to grow rather than be even.** Beyond the draw distance the projection compresses
+  hard, so an even stride put the first point inside a quarter-pixel of the horizon and every point
+  was rejected - the band came out as one straight cone, which is the thing it was built not to be.
+- **And it belongs on the road's side of the haze.** The sea's band is painted before the haze and
+  takes the wash as paint; the road cannot be, because the drawn road is painted after it - a band
+  on the sky's side arrived a different colour and the seam was a tone step of 46. The ruling
+  predicted that seam and gave the reason.
+- **The tone step across the join is printed rather than asserted, and the harness says why.** Four
+  sampling schemes were tried and each measured something other than the seam - the lane markings,
+  the rumble strip, the verge, and the band on both sides - and the last one still swung 34, 84 and
+  39 across three runs of one unchanged build. `tools/farroad-test.py` asserts what is stable and
+  falsifies on it. **The join needs judging on a device.**
+
 <a id="v0-13-36"></a>
 ## [0.13.36] - 2026-09-08
 - Fixed: **stars belong to a clear night.** Owner, 2026-09-01: "can the clear night sky have stars?"
