@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.26';
+window.ROAD_BUILD = '0.13.27';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -282,9 +282,53 @@ let dist, score, combo, comboTime, heat, heatT, runTopMph = 0;
 /* how long nobody has been on you, and whether a trap has caught you at 170.
    Both are the pursuit's memory rather than the clock's (RLG-030). */
 let coolT = 0, supersEarned = false;
+/* the point total behind the stars, and the only thing that is written */
+let heatPts = 0;
+/* one way in, so the cap, the star count and the cooling clock cannot disagree */
+function addHeat(n, why){
+  if(optEasy) return;
+  heatPts = clamp(heatPts + n, 0, HEAT_MAX);
+  heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
+  coolT = 0;                       /* seen again: the cooling clock restarts */
+  if(why) heatWhy = why;
+}
+let heatWhy = '';
 /* HOW LONG OUTRUNNING THEM TAKES, as a tunable with a committed default rather
    than a number edited in place. Twelve seconds clear of every cruiser drops one
    star; five stars therefore take a minute of clean driving to shed. */
+/* ---- THE WANTED LEVEL IS POINTS, AND THE STARS ARE A VIEW OF THEM --------
+   Owner, 2026-09-07: "instead of a single instance of something raising it one
+   star, we could do heat POINTS - and every instance of speeding where a new cop
+   sees you speeding, or you being directly responsible for a cop getting
+   destroyed, or you running a roadblock, adds to these points. Cooling off
+   removes these points, so your wanted level can go down to empty as well."
+
+   `heatPts` IS THE TRUTH AND `heat` IS DERIVED FROM IT. That is deliberate and
+   is what made this a small change rather than a wide one: a dozen places read
+   `heat` to decide how thickly traps are laid, when a roadblock may go up, when
+   an interceptor is dispatched and how well a cruiser drives, and every one of
+   them goes on reading the same number meaning the same thing. Only its source
+   moved.
+
+   AND IT CAN NOW REACH EMPTY, which the old one could not - it floored at one,
+   so there was no such thing as being clean. Zero stars is a real state.
+
+   THE THREE EARNING EVENTS ARE THE OWNER'S OWN, and the rates say what each is
+   worth relative to the others: being seen is the common one, taking a cruiser
+   out is the deliberate one, and running a roadblock sits between them. Two
+   sightings make a star.
+
+   NOTE "A NEW COP SEES YOU SPEEDING". The same cruiser watching you for a minute
+   is one instance and not sixty, which is why these are hung on the moments a
+   trap arms or a patrol engages rather than on a per-frame test.
+   ------------------------------------------------------------------------ */
+const PTS_PER_STAR = 100;
+const HEAT_MAX     = 5 * PTS_PER_STAR;
+const HEAT_SEEN    = 50;    /* a new cop catches you over the limit */
+const HEAT_BLOCK   = 70;    /* you go through a roadblock */
+const HEAT_TAKEDOWN = 80;   /* a cruiser goes down and it was your doing */
+/* how long after losing them before the total starts falling */
+const COOL_GRACE   = 3;
 const HEAT_COOL = 12;
 /* how far you have to get before a cruiser has LOST you rather than merely being
    behind you. Well inside the 34,000 at which one is culled - see the cooling
@@ -8539,8 +8583,7 @@ function patrolWatch(){
     });
     snd.warnCop();
     flashWarn('PATROL ENGAGED');
-    heat = Math.min(5, heat + 1);
-    coolT = 0;                        /* seen again: the cooling clock restarts */
+    addHeat(HEAT_SEEN, 'patrol');
     patrolsWoken++;
   }
 }
@@ -8558,8 +8601,7 @@ function trapWatch(dt){
       k.spd = spd * 0.55;
       snd.warnCop();
       flashWarn('SPEED TRAP');
-      heat = Math.min(5, heat + 1);
-      coolT = 0;                       /* seen again: the cooling clock restarts */
+      addHeat(HEAT_SEEN, 'trap');
       /* ---- AND HOW FAST YOU WENT PAST IT IS REMEMBERED (RLG-030) ------
          Owner: a super cruiser is dispatched only at heat three and above AND
          after you have gone past a trap at 170. So the trap records the speed
@@ -8808,7 +8850,7 @@ function reset(){
   if(mode === 'race') buildField();
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
-  dist=0; score=0; combo=0; comboTime=0; heat=1; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
+  dist=0; score=0; combo=0; comboTime=0; heat=0; heatPts=0; heatWhy=''; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
   coolT=0; supersEarned=false;
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
@@ -15305,9 +15347,19 @@ function step(dt){
                                   && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
     if(chased) coolT = 0;
     else coolT += dt;
-    if(coolT > HEAT_COOL && heat > 1){
-      coolT = 0; heat--;
-      flashWarn('HEAT ' + heat);
+    /* ---- AND IT FALLS AS POINTS, TO NOTHING (owner, 2026-09-07) --------
+       This dropped a whole star every twelve clear seconds and stopped at one,
+       so there was no such thing as being clean and the level moved in steps you
+       could not be part-way through. It bleeds away continuously now, at a
+       star's worth per those same twelve seconds, after a short grace - and it
+       reaches zero, which is the state the owner asked for and the old model had
+       no way to express.
+       ---------------------------------------------------------------- */
+    if(coolT > COOL_GRACE && heatPts > 0){
+      const was = heat;
+      heatPts = Math.max(0, heatPts - (PTS_PER_STAR / HEAT_COOL) * dt);
+      heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
+      if(heat !== was) flashWarn(heat > 0 ? 'HEAT ' + heat : 'CLEAN');
     }
   }
   nextCopT -= dt; nextBlockT -= dt; nextCrateT -= dt; nextChaseT -= dt;
@@ -16184,6 +16236,8 @@ function step(dt){
     if(!b.hit && !held && Math.abs(b.z - pz) < 420){
       iframe = Math.max(iframe, 0.6);
       b.hit = true;
+      /* running one is the owner's third earning event - see `addHeat` */
+      addHeat(HEAT_BLOCK, 'roadblock');
       let clean = true;
       for(const p of b.parts){
         if(p.cop) continue;
@@ -16332,7 +16386,7 @@ function wreckCop(k, how){
   k.wreck = WRECK_SECS; k.spd *= 0.55;
   snd.copDown();
   /* taking one out is the other way to earn heat (RLG-030, owner 2026-08-30) */
-  if(!optEasy){ heat = Math.min(5, heat + 1); coolT = 0; }
+  addHeat(HEAT_TAKEDOWN, 'takedown');
   /* the crate: a proper repair and a proper slug of nitrous, which is what
      makes it worth crossing the road for - and no slug at all for a car with
      nowhere to put it (RLG-107) */
@@ -22501,9 +22555,23 @@ function hud(){
     const on = !optEasy;
     ww.hidden = !on;
     if(on){
+      /* ---- FIVE STARS, ALWAYS, FILLING BY POINTS (RLG-163) --------------
+         Owner, 2026-09-07: five outline stars that fill in, "and the gradient
+         fill is your current amount of heat points". The star the total is
+         part-way through is filled from the LEFT by how far into it you are, so
+         the row moves continuously rather than snapping a whole star at a time.
+         Every star is always present, so the row never changes width - which is
+         what made it read as vertical at one star and horizontal after.
+         --------------------------------------------------------------- */
+      const into = heatPts % PTS_PER_STAR;
       let stars = '';
-      for(let i = 1; i <= 5; i++)
-        stars += (i <= heat) ? '\u2605' : '<span class="off">\u2605</span>';
+      for(let i = 1; i <= 5; i++){
+        if(i <= heat) stars += '<b class="on">★</b>';
+        else if(i === heat + 1 && into > 0)
+          stars += '<b class="part" style="--fill:' +
+                   Math.round(into / PTS_PER_STAR * 100) + '%">★</b>';
+        else stars += '<b class="off">★</b>';
+      }
       $('wanted').innerHTML = stars;
     }
   }
@@ -25013,11 +25081,28 @@ requestAnimationFrame(frameLoop);
   API.bodyKey = function(){ return optBody; };
   API.launchKick = function(){ return launchKick; };
   API.cops = function(){ return cops; };
-  API.heat = function(v){ if(v!==undefined) heat=v; return heat; };
+  /* the SETTER still speaks in stars, because every harness does - it lands the
+     total in the middle of that star's band so a check can hold a level without
+     sitting on a boundary the decay will cross */
+  API.heat = function(v){
+    if(v!==undefined){
+      heatPts = clamp((v + 0.5) * PTS_PER_STAR, 0, HEAT_MAX);
+      heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
+    }
+    return heat;
+  };
+  API.heatPoints = function(){
+    return { pts: Math.round(heatPts), stars: heat, max: HEAT_MAX,
+             perStar: PTS_PER_STAR, into: Math.round(heatPts % PTS_PER_STAR),
+             why: heatWhy,
+             rates: { seen:HEAT_SEEN, block:HEAT_BLOCK, takedown:HEAT_TAKEDOWN,
+                      decayPerSec: +(PTS_PER_STAR / HEAT_COOL).toFixed(2),
+                      grace: COOL_GRACE } };
+  };
   /* the pursuit's whole state, so a check can watch heat be EARNED rather than
      read the number back out of the setter it just called (RLG-030) */
   API.pursuit = function(){
-    return { heat:heat, cool:+coolT.toFixed(2), earned:supersEarned,
+    return { heat:heat, pts:Math.round(heatPts), cool:+coolT.toFixed(2), earned:supersEarned,
              chasing:cops.filter(k => k.wreck<=0 && k.onPlayer !== false).length,
              supers:cops.filter(k => k.superc && k.wreck<=0).length,
              coolNeeds:HEAT_COOL, easy:!!optEasy };

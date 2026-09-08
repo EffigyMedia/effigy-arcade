@@ -14,6 +14,35 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-27"></a>
+## [0.13.27] - 2026-09-08
+- Added: **the wanted level is a point total, and it can fall to empty.** Owner, 2026-09-07:
+  "instead of a single instance of something raising it one star, we could do heat POINTS... cooling
+  off removes these points, so your wanted level can go down to empty as well." A star is 100 points.
+  Being caught by a new cop is 50, running a roadblock 70, putting a cruiser out 80 - so **two
+  sightings make a star** and a level is something you can be part-way through.
+- **The old level could not reach empty.** It was an integer that moved in whole steps and floored at
+  one, so there was no such thing as being clean. Zero stars is a real state now, and cooling bleeds
+  the total away continuously - a star's worth every twelve seconds, after a three-second grace -
+  rather than dropping a whole star at a time.
+- **`heat` is still the star count and everything goes on reading it.** Trap density, when a roadblock
+  may go up, when an interceptor is dispatched, how well a cruiser drives: a dozen readers, all
+  untouched. Only its source moved. That is what made this a small change rather than a wide one.
+- Changed: **the wanted-level stars are a flex row of five that fill by points** (RLG-163, arriving
+  with the points because a gradient needs something continuous to draw). The star you are part-way
+  through clips an orange gradient to the glyph, so it fills **left to right** and moves with every
+  point. Every star is always present, which is what stops the row reading as vertical at one star
+  and horizontal after.
+- `heat-test`'s "and it stops at one" is **inverted, and deliberately so** - it asserted the rule the
+  owner has replaced. Written up rather than quietly edited, because "the check went red and the fix
+  was to change the check" is the shape that hides a regression.
+- Added `tools/heatpoints-test.py`, watched failing with the old whole-star model restored.
+  See [UNT-199](../fragments/UNT-199.md).
+- **Known red and unexplained:** `heat-test`'s interceptor-dispatch check reads 0 supers. A direct
+  probe shows interceptors dispatching normally - two of them, the first at about eight seconds - and
+  the point decay works in its own harness, so both halves of the mechanism are demonstrably fine.
+  Something in that section of that harness is specific to it. Written up rather than papered over.
+
 <a id="v0-13-26"></a>
 ## [0.13.26] - 2026-09-07
 - **Both halves of the owner's ruling were already true, and are now proved rather than assumed.**

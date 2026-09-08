@@ -147,11 +147,22 @@ def main():
            'a cruiser you have left behind stops holding the wanted level up',
            'the clock read %.2f with one still on the road' % far['cool'])
 
-        # ---- AND IT NEVER FALLS BELOW ONE -------------------------------------------
+        # ---- AND IT FALLS ALL THE WAY TO NOTHING ------------------------------------
+        # THIS ASSERTED THE OPPOSITE UNTIL 2026-09-07 and it was right to, for the model
+        # it was written against: `heat` was an integer that floored at ONE, so there was
+        # no such thing as being clean and "it stops at one" was the rule.
+        #
+        # The owner replaced that model: "cooling off removes these points, so your wanted
+        # level can go down to empty as well." The check is inverted because the RULE was
+        # inverted, which is the one reason a green assertion may be turned round - and it
+        # is written down here rather than quietly edited, because "the check went red and
+        # the fix was to change the check" is the shape that hides a real regression.
         pg.evaluate('() => window.__probe.road.heat(1)')
-        hold(14000)
+        hold(30000)
         floor = pg.evaluate('() => window.__probe.road.pursuit()')
-        ok(floor['heat'] == 1, 'and it stops at one', str(floor['heat']))
+        ok(floor['heat'] == 0 and floor['pts'] == 0,
+           'and it falls all the way to empty, which it could not before',
+           '%d stars, %d points' % (floor['heat'], floor['pts']))
 
         # ---- A SUPER CRUISER IS EARNED TWICE OVER -----------------------------------
         # Heat five at full speed is not enough on its own: the 170 past a trap is an
@@ -161,14 +172,20 @@ def main():
         # check would be measuring the game undoing its own setup.
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"
                     " R.heat(5); R.earnSupers(false); }")
-        hold(9000, 0.80, clear=False)
+        # SIXTEEN SECONDS, NOT NINE. An interceptor needs four unbroken seconds above
+        # 150mph before the first one is sent, and `spawnSuper` then puts the counter
+        # back to 2.2 so they arrive staggered rather than four at once - so nine
+        # seconds catches the first one only if the run starts fast, and this check read
+        # 0 supers on one run and 4 on the next for that reason alone. Measured with a
+        # probe holding 0.82: the first arrives at about eight seconds.
+        hold(16000, 0.80, clear=False)
         no_ev = pg.evaluate('() => window.__probe.road.pursuit()')
         print('      heat 5 at 160mph, no trap earned: %d supers' % no_ev['supers'])
         ok(no_ev['supers'] == 0, 'no super cruiser without the 170 past a trap', str(no_ev))
 
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"
                     " R.heat(5); R.earnSupers(true); }")
-        hold(9000, 0.80, clear=False)
+        hold(16000, 0.80, clear=False)
         yes_ev = pg.evaluate('() => window.__probe.road.pursuit()')
         print('      with the trap earned: %d supers' % yes_ev['supers'])
         ok(yes_ev['supers'] > 0, 'and one is dispatched once it has been', str(yes_ev))
