@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.23';
+window.ROAD_BUILD = '0.13.24';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -19200,7 +19200,12 @@ function noteSprite(o, why){
   drawBrow = null; drawCut = 0; drawPx = 0;
 }
 
-function drawSprite(img, worldX, worldZ, worldW, alpha, flip){
+/* `beneath` is called with the sprite's box at the moment it is known and BEFORE
+   the image goes down, so a caller can paint under the car. See `damageFxOn`:
+   the player's plume is drawn before the player and hidden by its own body, and
+   nothing else could do that without either re-deriving the box or drawing the
+   car twice. */
+function drawSprite(img, worldX, worldZ, worldW, alpha, flip, beneath){
   drawWhy = 'drawn';
   /* A painter with no entry for a body renders nothing, and RLG-041 lists that
      as one of the candidates for the reported pop. Under the watch it is named
@@ -19338,6 +19343,7 @@ function drawSprite(img, worldX, worldZ, worldW, alpha, flip){
     ctx.save();
     /* keep what is ABOVE the crest line; the ground in front covers the rest */
     ctx.beginPath(); ctx.rect(0, 0, W, gate.clip); ctx.clip();
+    if(beneath) beneath({x:p.x, y:p.y, w, h});
     if(alpha!==undefined){ ctx.globalAlpha=alpha; }
     if(flip){
     /* a left-hand corner is a right-hand one seen from the other side — one
@@ -19356,6 +19362,7 @@ function drawSprite(img, worldX, worldZ, worldW, alpha, flip){
     drawWhy = 'clipped';
     return {x:p.x, y:p.y, w, h};
   }
+  if(beneath) beneath({x:p.x, y:p.y, w, h});
   if(alpha!==undefined){ ctx.globalAlpha=alpha; }
   ctx.drawImage(img, p.x - w/2, p.y - h, w, h);
   ctx.globalAlpha=1;
@@ -19592,7 +19599,7 @@ function paintBucket(list, onRoad){
          ------------------------------------------------------------- */
       const box = drawSprite(RIVAL_SP[(r.body||'MATADOR')+'|'+r.paint+(r.striped?'|S':'')]
                           || RIVAL_SP[(r.body||'MATADOR')+'|'+r.paint] || SP.player,
-                             r.x, r.z, r.w, r.wreck>0?0.85:1);
+                             r.x, r.z, r.w, r.wreck>0?0.85:1, false, damageFxOn(r));
       noteSprite(r);
       /* a boosting rival wears the same flame the player does, drawn additively
          over its sprite. Small cars far up the road are skipped: below about
@@ -19601,8 +19608,6 @@ function paintBucket(list, onRoad){
       /* and its damage, the same plume the player wears - see `damageFx`.
          Skipped on the far small ones, where the smoke would be wider than the
          car and read as fog on the road rather than as a hurt vehicle. */
-      if(box && (r.dmg || 0) > 25 && box.w > 12)
-        damageFx(box.x, box.y - box.h*0.5, box.w, box.h, r.dmg);
       if(box && r.nosOn && box.w > 10){
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -19645,7 +19650,8 @@ function paintBucket(list, onRoad){
          usually solid long before it passes, but a slow one on a fast road can
          still be fading when it comes alongside, and it must not change how
          solid it is at the moment it crosses from one view to the other. */
-      const box = drawSprite(img, it.o.x, it.o.z, it.o.w, arriveFade(it.o));
+      const box = drawSprite(img, it.o.x, it.o.z, it.o.w, arriveFade(it.o), false,
+                             damageFxOn(it.o));
       noteSprite(it.o);
       /* Tail lights on the same schedule the street lamps use, and BRIGHT the
          moment a car is actually shedding speed. Same rule for everything on
@@ -19661,6 +19667,15 @@ function paintBucket(list, onRoad){
          ------------------------------------------------------------- */
       if(it.o.blink > 0 && box && box.w >= 10 && Math.sin(blinkPhase) > 0)
         lampsLit(box, img, [it.o.blinkDir < 0 ? 'turn.l' : 'turn.r'], 1, 2);
+      /* ---- AND TRAFFIC WEARS ITS DAMAGE TOO (owner, 2026-09-07) --------
+         It never has. `hurtTraffic` has kept a `dmg` counter and set `dead` on
+         every civilian car since they were given hardiness, and no painter ever
+         asked - so a lorry you had put into the barrier rolled to the shoulder
+         looking showroom fresh. The rivals and the cruisers both had this and
+         the traffic was simply missed.
+
+         Same gate as everything else: over a quarter damaged, and big enough on
+         screen that the plume is not wider than the car. */
       /* ---- AND THE BAR, IF IT IS ON A CALL (owner, 2026-09-07) ---------
          The SAME painter the cruisers use, given the ambulance's sprite and
          its own bar scheme - which is what makes the lights read as lights
@@ -19674,11 +19689,10 @@ function paintBucket(list, onRoad){
       /* a SUPER CRUISER is a MATADOR in force colours — same two paints the
          driveable cruiser gets, so the fleet reads as one force */
       const spr = it.o.superc ? (SP.superCop || SP.cop) : SP.cop;
-      const box = drawSprite(spr, it.o.x, it.o.z, it.o.w, it.o.wreck>0?0.85:1);
+      const box = drawSprite(spr, it.o.x, it.o.z, it.o.w, it.o.wreck>0?0.85:1, false,
+                             damageFxOn(it.o));
       noteSprite(it.o);
       /* a cruiser that has been leaned on shows it, like everything else */
-      if(box && (it.o.dmg || 0) > 25 && box.w > 12)
-        damageFx(box.x, box.y - box.h*0.5, box.w, box.h, it.o.dmg);
       drawCopLights(box, sirenPhase + it.o.phase, spr);
       /* backing up: white reverse lamps, low and inboard on the tail */
       if(it.o.spd < -60 && it.o.wreck <= 0) drawReverse(box);
@@ -19742,6 +19756,68 @@ let playerTurn = 0, blinkPhase = 0, blinkHold = false, playerScreen = null;
    save/rotate, so the particles are not caught in the car's lean; a sprite on
    the road has no such transform and simply calls it.
    ------------------------------------------------------------------------ */
+/* ---- A DESTROYED CAR IS THE MOST DAMAGED THING ON THE ROAD ---------------
+   Owner, 2026-09-07: "when a car is destroyed - police, traffic, doesn't matter -
+   the damage VFX go away. They need to keep their smoking fire, cause that is
+   the state of things."
+
+   IT WAS TRUE OF ALL THREE AND FOR THREE DIFFERENT REASONS, which is why one
+   answer is written here rather than three patches at the draw sites.
+
+     a cruiser   `hurtCop` sets `k.dmg = 0` in the same breath as taking it out,
+                 so the plume stopped at the exact moment it was most earned
+     a rival     `hurtRival` does the same
+     traffic     `hurtTraffic` keeps the damage, and NOTHING EVER DREW IT. A
+                 traffic car has never shown so much as a wisp, wrecked or not
+
+   Both zeroings are deliberate and correct for what they were written for - the
+   counter has to be clear before the car is put back in play - so this reads the
+   WRECK rather than fighting them. A car that is out is drawn at full damage
+   whatever its counter says, because that is what it looks like.
+   ---------------------------------------------------------------------- */
+function hurtLook(o){
+  if(!o) return 0;
+  return (o.wreck > 0 || o.dead) ? 100 : (o.dmg || 0);
+}
+/* ---- AND IT LEAVES THE SAME PLACE ON EVERY CAR (owner, 2026-09-07) -------
+   "The fire and smoke don't look the same on other cars than it does on mine.
+   Like layers are missing or its drawn location is wrong?"
+
+   BOTH, AND FROM ONE MISTAKE. `damageFx` takes the car's CENTRE and its BOTTOM -
+   the player passes `p.y + bump`, which is where its wheels are - and every
+   other caller passed `box.y - box.h*0.5`, half a car height above that.
+   `drawSprite` returns the same convention the player uses, so the halving was
+   never needed and had simply been copied from one call site to the next.
+
+   THAT MOVES THE PLUME AND THEN HIDES HALF OF IT, which is why the owner saw
+   two things wrong at once. The origin rises by half a car, and the clip that
+   keeps the smoke above the bonnet - `noseY - h*0.62` - rises with it, so the
+   bottom of the column is cut away as well as being in the wrong place.
+
+   One helper, so there is one answer and no fourth call site to get it wrong.
+   ---------------------------------------------------------------------- */
+/* ---- AND IT GOES UNDER THE CAR, NOT OVER IT (owner, 2026-09-07) ---------
+   "That's getting rendered in front of the car. We need it to be rendered
+   behind it."
+
+   The player has always had this right and the comment above its own call says
+   why: the plume is drawn BEFORE the car and clipped to above the roofline, so
+   the body hides the source and you never see where the smoke is coming from -
+   which is correct, because it is coming from an engine bay. Every other car
+   got its plume painted after its sprite, so the smoke sat in front of the
+   bodywork.
+
+   It is a `beneath` hook on `drawSprite` rather than a second draw of the car,
+   because the box is not known until the sprite is projected and re-deriving it
+   here would be a second copy of the sizing.
+   ---------------------------------------------------------------------- */
+function damageFxOn(o){
+  return function(box){
+    if(!box || box.w <= 12) return;
+    const look = hurtLook(o);
+    if(look > 25) damageFx(box.x, box.y, box.w, box.h, look);
+  };
+}
 function damageFx(cx, cy, w, h, dmg, lean){
   /* `lean` is how far the car is rolled into a corner, and only the PLAYER has
      one - a sprite on the road is drawn upright. It tilts the origin of the
@@ -25698,6 +25774,21 @@ requestAnimationFrame(frameLoop);
     return out;
   };
   /* the material coefficient on its own, for the record - never for the HUD */
+  /* ---- HOW HURT EVERY CAR ON THE ROAD LOOKS -------------------------------
+     `dmg` is the counter and `hurtLook` is what the painter draws, and they part
+     company at exactly the moment that matters: a car that is out has had its
+     counter cleared so it can be put back in play, and it is the most damaged
+     thing on the road. A check reads the second, because the first says a
+     wrecked cruiser is in perfect condition.
+     -------------------------------------------------------------------- */
+  API.hurtLooks = function(){
+    const row = (o, what) => ({ what: what, dmg: Math.round(o.dmg || 0),
+                                out: !!(o.wreck > 0 || o.dead),
+                                look: Math.round(hurtLook(o)) });
+    return traffic.map(c => row(c, 'traffic'))
+      .concat(cops.filter(k => !k.trap).map(k => row(k, 'cop')))
+      .concat(racers.map(r => row(r, 'rival')));
+  };
   API.hardyOf = function(k){ const B = BODY[k];
     return B && B.hardy !== undefined ? B.hardy : 1; };
   API.probeCop = function(hits, each){
@@ -25728,6 +25819,16 @@ requestAnimationFrame(frameLoop);
      crash was caused */
   API.forceWreck = function(){ wreck('TEST'); return wreckWait; };
   /* and damage a named rival, for the same reason */
+  /* the REAL damage path for a traffic car, for the reason `hurtCop` exists:
+     setting `dead` from outside skips `slide`, which `stepDeadTraffic` needs to
+     know which shoulder to coast to - and without it the car's x goes non-finite
+     and takes the tyre smoke's gradient down with it. That is a harness building
+     an impossible car, not a fault in the game, and it cost a debugging round. */
+  API.hurtTraffic = function(i, n){
+    const c = traffic[i]; if(!c) return null;
+    c.iframe = 0; hurtTraffic(c, n === undefined ? 50 : n);
+    return { dmg: Math.round(c.dmg || 0), dead: !!c.dead, look: Math.round(hurtLook(c)) };
+  };
   API.hurtRival = function(i, n){
     const r = racers[i]; if(!r) return null;
     r.iframe = 0; hurtRival(r, n === undefined ? 50 : n);

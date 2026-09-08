@@ -14,6 +14,31 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-24"></a>
+## [0.13.24] - 2026-09-07
+- Fixed: **a destroyed car keeps its smoke and fire.** Owner, 2026-09-07: "when a car is destroyed -
+  police, traffic, doesn't matter - the damage VFX go away. They need to keep their smoking fire,
+  cause that is the state of things." It was true of all three kinds for **two different reasons**:
+  taking a cruiser or a rival out clears its damage counter so it can be put back in play, so the
+  plume stopped at the exact moment it was most earned - and **traffic never had the effect at all.**
+  A lorry you had put into the barrier rolled to the shoulder looking showroom fresh.
+- One helper answers "how hurt does this car look", and it reads the **wreck** rather than the
+  counter. Both zeroings are correct for what they were written for and are untouched.
+- Fixed: **the plume sat half a car too high on everything except the player.** Owner: "the fire and
+  smoke don't look the same on other cars than it does on mine. Like layers are missing or its drawn
+  location is wrong?" Both, from one mistake - the painter takes the car's centre and its *bottom*,
+  and every caller but the player passed half a car height above that. It moves the origin **and**
+  raises the clip that keeps smoke above the bonnet, so the bottom of the column was cut away too.
+- Fixed: **the plume was drawn in front of the car.** Owner: "that's getting rendered in front of the
+  car. We need it to be rendered behind it." The player has always drawn its smoke *before* its body,
+  so the source is hidden - it is coming from an engine bay. `drawSprite` now takes a `beneath` hook
+  called with the box at the moment it is known, rather than re-deriving the geometry or drawing each
+  car twice.
+- Added `tools/wreck-fx-test.py`. See [UNT-196](../fragments/UNT-196.md).
+- Known flaky, re-run clean and **not caused by this**: `occlusion-test`'s lamp-clip check reported
+  0 of 34,538 on one run and 399 of 38,415 on the next, unchanged. It needs a road with a brow under
+  a lamp, and that is the road rather than the code.
+
 <a id="v0-13-23"></a>
 ## [0.13.23] - 2026-09-07
 - Fixed: **traffic behind you resolves out of the distance instead of appearing.** Owner,
