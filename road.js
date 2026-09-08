@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.38';
+window.ROAD_BUILD = '0.13.39';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8944,6 +8944,33 @@ function trapWatch(dt){
        for the `rogue` flag, which no longer exists; a driver who CHOOSES to
        exceed the limit is what it meant (RLG-054). The speed test below still
        decides, so a Speeder in a lorry - capped under the limit - trips nothing. */
+    /* ---- AND NEVER FROM UP THE ROAD (owner, 2026-09-08, RLG-157) --------
+       "There are still police coming from up ahead."
+
+       THIS LOOP WAS WHERE THEY CAME FROM, and it is the two rulings meeting
+       rather than either being wrong. A speed trap is parked 35,000 to 52,000
+       units AHEAD by its nature. RLG-046 says the police engage any car
+       breaking the limit and not only the player. So a trap far up the road
+       that spotted a speeding NPC left its post and became a MOVING police car
+       in front of you - chasing somebody else, and never once having come from
+       behind. Measured: three of fourteen cruisers in one run were trap-born
+       and first seen about 36,000 units ahead, already out of trap state.
+
+       RLG-157'S EXCEPTION IS A TRAP THAT ENGAGES YOU AS YOU PASS IT. It does
+       not stretch to one that sets off after somebody else while still up the
+       road, and RLG-157 is both the later ruling and the live complaint.
+
+       THE GATE IS THE ONE THE PLAYER'S OWN CASE ALREADY USES: a trap acts when
+       it is behind you, which is exactly when you have passed it. That keeps
+       RLG-046 whole - a speeding driver still gets pulled - and keeps the
+       arrival behind you, because a trap you have passed IS behind you. It
+       names no vehicle class and adds no second rule.
+
+       WHAT IT COSTS: you no longer watch somebody else get pulled over up
+       ahead. That is a real loss to the living road RLG-046 was for, and it is
+       the price of nothing arriving from in front.
+       ---------------------------------------------------------------- */
+    if(k.z <= pos + PLAYER_Z)
     for(const c of traffic){
       /* ---- AND NEVER AN AMBULANCE ON A CALL (owner, 2026-09-07) ---------
          "It should go without saying that the police will not try to engage an
@@ -16509,6 +16536,17 @@ function step(dt){
          ------------------------------------------------------------- */
       if(k.box === 2 && !stopped && dz > 300)
         k.spd = Math.min(k.spd, spd * 0.90);
+      /* ---- AND A CRUISER IS STILL A CRUISER (RLG-042, RLG-055) ---------
+         The station speed above is built from the PLAYER'S speed, and that was
+         harmless while the box only ever formed at a standstill - `spd` was
+         near zero and so was the result. Opening the box at ANY speed made it a
+         way round the car's own top end: measured at 16,393 against a ceiling
+         of 10,886, which is a patrol car keeping station with a supercar it
+         cannot catch. The standing ruling is that a supercar OUT-RUNNING a
+         cruiser is the point and is why the super cruiser exists, so the
+         station is clamped to what the car can actually do.
+         ------------------------------------------------------------- */
+      k.spd = Math.min(k.spd, copTop(k));
       k.spd = capTraffic(k.spd);
     }
 

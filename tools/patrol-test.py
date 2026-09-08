@@ -279,6 +279,59 @@ def main():
            'and it is set dressing - it never joins the pursuit',
            f"{rb['copsNamedBlock']} in the chase")
 
+        # ---- AND NOTHING ARRIVES FROM UP THE ROAD (RLG-157, owner 2026-09-08) ---
+        # "There are still police coming from up ahead." RLG-157 had no harness, which
+        # is why it could go wrong silently after being proved once by hand.
+        #
+        # THE TWO WAYS IT HAPPENS NEED SEPARATING, because they have different fixes: a
+        # cruiser can be BORN ahead of you, or it can be born behind and DRIVE in front.
+        # So every cruiser is tagged the frame it first exists and two facts are kept -
+        # where it arrived, and the furthest ahead it ever got.
+        #
+        # A SPEED TRAP IS PARKED AHEAD BY ITS NATURE and is the owner's own stated
+        # exception, so a cop still in trap state is not counted. What IS counted is a
+        # trap that has left its post: that is a moving police car, and where it started
+        # moving is the whole question.
+        #
+        # THE THRESHOLD IS ONE CAR LENGTH. A patrol is promoted the frame you draw level
+        # with it, which reads as +16 to +37 units - a tenth of a car - and calling that
+        # "ahead" would fail an engine that is behaving exactly as ruled.
+        WATCH = """() => {
+          const R = window.__road;
+          if(!window.__seen){ window.__seen = 0; window.__log = {}; }
+          const pz = R.pos + R.PLAYER_Z;
+          for(const k of R.cops()){
+            if(k.__id === undefined){
+              k.__id = ++window.__seen;
+              window.__log[k.__id] = { born: Math.round(k.z - pz), from: k.from || '?',
+                                       trap: !!k.trap, maxAhead: Math.round(k.z - pz) };
+            }
+            const e = window.__log[k.__id], dz = Math.round(k.z - pz);
+            if(dz > e.maxAhead) e.maxAhead = dz;
+          }
+          return window.__log; }"""
+        page.evaluate("() => { const R = window.__road; R.setTimed(false);"
+                      " window.__ah = setInterval(() => { R.heat(4);"
+                      " R.setSpd(0.72 * R.MAX_SPD); }, 200); }")
+        log = {}
+        for _ in range(200):
+            page.wait_for_timeout(150)
+            log = page.evaluate(WATCH)
+        page.evaluate("() => clearInterval(window.__ah)")
+        CAR = 400
+        rows = [r for r in log.values() if not r['trap']]
+        born = [r for r in rows if r['born'] > CAR]
+        drove = [r for r in rows if r['born'] <= CAR and r['maxAhead'] > CAR]
+        print('      %d cruisers that were not parked traps: %d arrived ahead, %d drove ahead'
+              % (len(rows), len(born), len(drove)))
+        for r in born[:4]:
+            print('        born %+d from %s' % (r['born'], r['from']))
+        ok(len(rows) >= 4, 'there were cruisers to watch', '%d seen' % len(rows))
+        ok(not born, 'no police arrive from up the road',
+           '; '.join('%+d from %s' % (r['born'], r['from']) for r in born[:4]))
+        ok(not drove, 'and none that arrived behind you gets in front of you',
+           '; '.join('%+d -> %+d' % (r['born'], r['maxAhead']) for r in drove[:4]))
+
         errs = errs + errs2 + errs3 + page.evaluate("() => []")
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         ctx.close()

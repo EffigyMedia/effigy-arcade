@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-39"></a>
+## [0.13.39] - 2026-09-08
+- Fixed: **no police arrive from up the road.** Owner, 2026-09-08: "there are still police coming
+  from up ahead." It was two rulings meeting rather than either being wrong. A speed trap is parked
+  35,000 to 52,000 units AHEAD by its nature, and [RLG-046](../fragments/RLG-046.md) says the police
+  engage any car breaking the limit and not only the player - so a trap far up the road that spotted
+  a speeding NPC left its post and became a MOVING police car in front of you, chasing somebody
+  else, having never come from behind. Measured: three of fourteen cruisers in one run were
+  trap-born and first seen about 36,000 units ahead, already out of trap state.
+- **The gate is the one the player's own case already uses**: a trap acts when it is behind you,
+  which is exactly when you have passed it. That keeps RLG-046 whole and keeps the arrival behind
+  you. It costs the sight of somebody else being pulled over up ahead. See
+  [RLG-157](../fragments/RLG-157.md).
+- Fixed: **a cruiser could exceed its own top speed**, which shipped this morning with the box at
+  speed. The station is built from the PLAYER'S speed, harmless while the box only formed at a
+  standstill and a way round the car's ceiling once it formed at any speed - measured at 16,393
+  against a ceiling of 10,886, a patrol car keeping station with a supercar it cannot catch. Both
+  police cars are back under their own ceilings.
+- `patrol-test.py` now asserts it. **RLG-157 had no harness**, which is why it could go wrong
+  silently after being proved once by hand - and the two ways it happens are separated, because a
+  cruiser born ahead and one that drives in front need different fixes.
+
 <a id="v0-13-38"></a>
 ## [0.13.38] - 2026-09-08
 - Changed: **a deer you hit is killed, and it costs the car properly.** Owner, 2026-09-08: "the deer
