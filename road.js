@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.28';
+window.ROAD_BUILD = '0.13.29';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -293,6 +293,8 @@ function addHeat(n, why){
   if(why) heatWhy = why;
 }
 let heatWhy = '';
+/* the position the per-mile charge was last billed at - see HEAT_PER_MILE */
+let heatMiZ = 0;
 /* HOW LONG OUTRUNNING THEM TAKES, as a tunable with a committed default rather
    than a number edited in place. Thirty seconds clear of every cruiser drops one
    star; five stars therefore take two and a half minutes of clean driving to
@@ -346,6 +348,28 @@ const HEAT_MAX     = 5 * PTS_PER_STAR;
 const HEAT_SEEN    = 20;    /* a new cop catches you over the limit */
 const HEAT_BLOCK   = 30;    /* you go through a roadblock */
 const HEAT_TAKEDOWN = 35;   /* a cruiser goes down and it was your doing */
+/* ---- AND STAYING IN ONE EARNS HEAT BY THE MILE (owner, 2026-09-08) ------
+   "We can also increment 2 heat per mile while actively pursued."
+
+   THE OTHER THREE ARE EVENTS AND THIS ONE IS A DISTANCE, which is the whole
+   point of it. The three above are things that HAPPEN - you are seen, you
+   run a block, you put a cruiser out - and a driver who is good enough can
+   hold a pursuit open without any of them occurring again. This is the floor
+   under that: a chase you stay in gets worse on its own, slowly, so it
+   cannot become a stalemate you are winning.
+
+   IT IS SLOW ON PURPOSE AND THE ARITHMETIC SAYS SO. At 150mph two points a
+   mile is one point every twelve seconds, so a star takes fifty miles and a
+   twenty-minute chase. It is pressure rather than a source: over a pursuit
+   of a minute or two it adds a few points to what the events earn, and it
+   only matters at all to a player who keeps one running.
+
+   ONLY WHILE ACTUALLY PURSUED. It accrues on the same `chased` test the
+   cooling clock uses - a live cruiser, on you, inside LOST_AT - so a parked
+   trap you have not tripped and a cruiser you have comprehensively lost both
+   earn nothing.
+   -------------------------------------------------------------------- */
+const HEAT_PER_MILE = 2;
 /* how long after losing them before the total starts falling */
 const COOL_GRACE   = 3;
 const HEAT_COOL = 30;
@@ -15364,6 +15388,20 @@ function step(dt){
        ------------------------------------------------------------------ */
     const chased = cops.some(k => k.wreck <= 0 && k.onPlayer !== false && !k.trap
                                   && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
+    /* ---- A CHASE YOU STAY IN GETS WORSE ON ITS OWN --------------------
+       Measured by the ROAD rather than by the clock, because the owner asked
+       for it by the mile and because a distance cannot be farmed by sitting
+       still. `heatMiZ` is the last position this was charged at and it is
+       carried over every frame, chased or not, so the miles you covered while
+       clean are never billed once a cruiser finds you again.
+
+       NO `why` IS PASSED. `heatWhy` names the last thing that RAISED the level
+       for the player to read, and a trickle charged sixty times a second would
+       overwrite a takedown or a roadblock within a frame of it happening.
+       ---------------------------------------------------------------- */
+    if(chased && pos > heatMiZ){
+      addHeat((pos - heatMiZ) / MILE * HEAT_PER_MILE);
+    }
     if(chased) coolT = 0;
     else coolT += dt;
     /* ---- AND IT FALLS AS POINTS, TO NOTHING (owner, 2026-09-07) --------
@@ -15386,6 +15424,12 @@ function step(dt){
       if(heat !== was) flashWarn(heat > 0 ? 'HEAT ' + heat : 'CLEAN');
     }
   }
+  /* AND THE MILEPOST MOVES WHETHER OR NOT ANY OF THAT RAN. It is outside the
+     block deliberately: with HOT PURSUIT off, or during the count-in, nothing
+     above executes - and a milepost left behind would bill every mile driven in
+     the meantime the moment a cruiser found the player again. Forty quiet miles
+     would have arrived as eighty points in one frame. */
+  heatMiZ = pos;
   nextCopT -= dt; nextBlockT -= dt; nextCrateT -= dt; nextChaseT -= dt;
   /* ---- A CIRCUIT IS NOT A HIGHWAY --------------------------------------
      Motorsport was running Interstate's whole world — civilian traffic, police,
@@ -25115,11 +25159,27 @@ requestAnimationFrame(frameLoop);
     }
     return heat;
   };
+  /* AND A CHECK CAN SET THE TOTAL IN POINTS. `API.heat` speaks in stars and
+     lands the total in the MIDDLE of that star's band, deliberately, so a check
+     holding a level does not sit on a boundary the decay will cross - which
+     means `heat(0)` is fifty points and there is no way to ask for nothing
+     through it. A rate charged in single points has to start from a known zero,
+     and inferring one by waiting for the decay measures the decay instead. */
+  API.heatSet = function(v){
+    heatPts = clamp(v, 0, HEAT_MAX);
+    heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
+    return Math.round(heatPts);
+  };
   API.heatPoints = function(){
     return { pts: Math.round(heatPts), stars: heat, max: HEAT_MAX,
              perStar: PTS_PER_STAR, into: Math.round(heatPts % PTS_PER_STAR),
              why: heatWhy,
+             /* THE MILE IS REPORTED IN BOTH HALVES - the points it is worth and
+                how many world units one is - because a check for a rate charged
+                by DISTANCE has to convert, and a harness that carries its own
+                copy of `MILE` is a second place for the number to be wrong. */
              rates: { seen:HEAT_SEEN, block:HEAT_BLOCK, takedown:HEAT_TAKEDOWN,
+                      perMile: HEAT_PER_MILE, mileUnits: Math.round(MILE),
                       decayPerSec: +(PTS_PER_STAR / HEAT_COOL).toFixed(2),
                       grace: COOL_GRACE } };
   };

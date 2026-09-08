@@ -153,6 +153,83 @@ def main():
            'and it reaches EMPTY, which the old level could not',
            '%d points, %d stars' % (end['pts'], end['stars']))
 
+        # ---- AND A PURSUIT YOU STAY IN EARNS BY THE MILE -------------------------
+        # Owner, 2026-09-08: "we can also increment 2 heat per mile while actively
+        # pursued." The other three earners are EVENTS; this one is a distance, and it
+        # is the floor under a chase a good driver could otherwise hold open forever
+        # without being seen again.
+        #
+        # BOTH ARMS ARE MEASURED, and the clean one is what makes this evidence. A rate
+        # that fires whether or not anyone is chasing would pass a check that only ever
+        # drives with a cruiser behind it - so the same distance is covered twice, once
+        # with the road empty and once with a cruiser pinned on the player, and the
+        # clean arm has to earn NOTHING.
+        def run_miles(units, chased):
+            page.evaluate("""([u, ch]) => {
+                const R = window.__road;
+                R.setTimed(false); R.copsClear(); R.heatSet(0);
+                window.__road.__z0 = R.pos;
+                // ONE CRUISER, PUT BACK EVERY TICK, AND NOTHING ELSE ON THE ROAD.
+                // The road is rebuilt rather than added to: a SPEED TRAP arms itself
+                // as the player passes and charges a 20-point sighting, which is ten
+                // miles of the rate under test arriving at random - it put 40 points
+                // into this measurement before the road was cleared this way.
+                const only = () => { const a = R.cops(); a.length = 0;
+                    a.push({ z: R.pos + 200, x: 0, spd: 0, wreck: 0, ang: 0,
+                      grace: 0, cool: 0, side: 1, w: 0.27, len: 400, phase: 0,
+                      dmg: 0, from: 'test', onPlayer: true }); };
+                window.__hold = setInterval(() => {
+                    R.setSpd(0.9 * R.MAX_SPD);
+                    // AND NOTHING MAY SEE THE PLAYER. This drives at 180mph past a
+                    // limit of 80, so an ordinary patrol promoted to a cruiser earns
+                    // a 20-point SIGHTING - ten miles' worth of the rate under test,
+                    // arriving at random. Parking the traffic far up the road is the
+                    // same affordance heat-test uses for the same reason.
+                    R.parkTraffic(9, 60000);
+                    // THE CRUISER IS PINNED ON THE PLAYER rather than driven. A cop
+                    // that has to keep up is a second thing being measured, and one
+                    // that falls behind LOST_AT stops the charge without saying so.
+                    if(ch) only(); else R.copsClear();
+                }, 4);
+            }""", [units, chased])
+            for _ in range(240):
+                page.wait_for_timeout(250)
+                if page.evaluate('() => window.__road.pos - window.__road.__z0') >= units:
+                    break
+            d = page.evaluate('() => ({ gone: window.__road.pos - window.__road.__z0,'
+                              ' pts: window.__road.heatPoints().pts,'
+                              ' why: window.__road.heatPoints().why,'
+                              ' chasing: window.__road.pursuit().chasing })')
+            page.evaluate('() => clearInterval(window.__hold)')
+            return d
+
+        mile = hp['rates']['mileUnits']
+        per = hp['rates']['perMile']
+        clean = run_miles(mile * 3, False)
+        print('  ..    %.2f miles with the road empty: %d points (last cause %r, %d chasing)'
+              % (clean['gone'] / mile, clean['pts'], clean['why'], clean['chasing']))
+        ok(clean['pts'] == 0, 'clean miles earn nothing', '%d points' % clean['pts'])
+
+        hot = run_miles(mile * 3, True)
+        want = hot['gone'] / mile * per
+        print('  ..    %.2f miles with a cruiser on you: %d points, %d expected'
+              ' (last cause %r, %d chasing)'
+              % (hot['gone'] / mile, hot['pts'], round(want), hot['why'], hot['chasing']))
+        # TWO ASSERTIONS, AND THE FIRST ONE IS WHY. Comparing the total against a rate
+        # read off the engine cannot fail when the rate is ZERO: it expects nothing,
+        # gets nothing, and calls that agreement. Watched doing exactly that with
+        # HEAT_PER_MILE set to 0 - the check went green on an engine with the feature
+        # switched off. So the mechanism is asserted to EXIST first, against the clean
+        # arm, and only then to charge at the declared rate.
+        ok(hot['pts'] > clean['pts'] and hot['pts'] > 0,
+           'and a pursuit you stay in earns heat the clean road did not',
+           '%d points against %d over the same %.2f miles'
+           % (hot['pts'], clean['pts'], hot['gone'] / mile))
+        ok(abs(hot['pts'] - want) <= max(2, want * 0.15),
+           'and it charges the %g points a mile the engine declares' % per,
+           '%d points over %.2f miles against %d expected'
+           % (hot['pts'], hot['gone'] / mile, round(want)))
+
         # ---- AND THE STARS STILL DRIVE EVERYTHING ELSE ---------------------------
         lv = page.evaluate('() => { const R = window.__road; R.heat(4);'
                            ' return { stars:R.pursuit().heat, cap:R.copCensus().cap }; }')

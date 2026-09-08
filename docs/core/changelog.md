@@ -14,6 +14,22 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-29"></a>
+## [0.13.29] - 2026-09-08
+- Added: **a pursuit you stay in earns heat by the mile.** Owner, 2026-09-08: "we can also
+  increment 2 heat per mile while actively pursued." The other three earners are EVENTS - being
+  seen, running a roadblock, putting a cruiser out - and a driver good enough to hold a chase open
+  without any of them happening again was in a pursuit that could not get worse. This is the floor
+  under that. It is charged against the road travelled rather than the clock, because a distance
+  cannot be farmed by sitting still, and only while a live cruiser is actually on you.
+- **It is slow on purpose.** At 150mph two points a mile is one point every twelve seconds, so a
+  star costs fifty miles. Over a chase of a minute or two it adds a few points to what the events
+  earn - pressure rather than a source. See [RLG-170](../fragments/RLG-170.md).
+- Fixed: **the new check passed with the feature switched off**, and it was caught by falsifying it
+  rather than by reading it. Its expected value came from the rate the engine reports, so at a rate
+  of zero it expected nothing, got nothing, and called that agreement. It now asserts that the
+  pursued arm earns heat the clean arm did not - the mechanism existing - before asserting the rate.
+
 <a id="v0-13-28"></a>
 ## [0.13.28] - 2026-09-08
 - Changed: **an incident is worth less, and cooling is slower by the same measure.** Owner,
