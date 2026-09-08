@@ -14,6 +14,27 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-36"></a>
+## [0.13.36] - 2026-09-08
+- Fixed: **stars belong to a clear night.** Owner, 2026-09-01: "can the clear night sky have stars?"
+  It already did, so the ruling said to MEASURE which of three candidates was wrong before changing
+  any of them. Measured: 2,499 bright points on a clear sky and 2,580 under nine tenths cover - the
+  same sky twice, because the star alpha never mentioned the cover at all. It does now.
+- **The third candidate was already fixed and the ruling did not know it**: the horizon bloom is
+  driven purely by the golden hour now and reaches zero at night, so nothing washes them. And forty
+  single pixels on a regular lattice read as dither, so there are 110 at three brightnesses with the
+  lattice broken up. A clear sky also has no cloud in it now - the puff count had a floor of three.
+- Added: **a tundra sometimes has an aurora.** One place in four, rolled once when the place opens
+  and held for it. Three bands, each a wave with its own height and phase, hanging DOWN from a
+  ragged edge and fading before they reach anything - green low, violet above. Night only, and it
+  wants a clear sky for the same reason the stars do, which makes both halves one mechanism. See
+  [RLG-151](../fragments/RLG-151.md).
+- **The first placement could not be seen**: the curtain hung a tenth of the way down the sky, which
+  on a phone is directly behind the rear-view mirror. Drawn correctly, and invisible.
+- `tools/aurora-test.py` is new. It asserts the aurora and falsifies on it, and it PRINTS the star
+  numbers rather than asserting them - with the gate taken back out the ordering still held, because
+  cloud covers a star as well as dimming it, and a check that cannot fail is worse than none.
+
 <a id="v0-13-35"></a>
 ## [0.13.35] - 2026-09-08
 - Changed: **clouds read as clouds.** Owner, 2026-09-07: "clouds don't read as clouds - fluffy white

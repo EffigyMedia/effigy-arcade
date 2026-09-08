@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.35';
+window.ROAD_BUILD = '0.13.36';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8587,6 +8587,32 @@ function isCrossing(o){ return o && o.mind === CROSSING; }
    nothing depicts one being killed: the ruling calls that a tone decision and
    not a session's to make, so the animal is simply gone from the road.
    -------------------------------------------------------------------- */
+/* ---- AND A TUNDRA SOMETIMES HAS AN AURORA (owner, 2026-09-01, RLG-151) -
+   "The tundra should have a small chance to have an aurora borealis."
+
+   IT IS A MOMENT, NOT A PLACE. A tundra is always there; an aurora is not, so
+   it belongs with the things that are ROLLED once for a stretch of road and
+   held - the same shape the sea's side, the crop's field and the city's window
+   habit all have. One roll when the place opens, read by the painter.
+
+   HOW SMALL IS "A SMALL CHANCE"? The ruling put that to the owner and the queue
+   said to run without checking back, so it is answered here and recorded as
+   decided-for-now. ONE TUNDRA IN FOUR. The ruling worked the sum the other way
+   and worried that one in ten would be a thing a player might see once in
+   twenty runs - a tundra is one place in eleven and a run passes a handful of
+   places, so at a quarter it is roughly one run in a dozen. Rare enough to be
+   worth seeing, common enough to exist.
+
+   AND IT IS A NIGHT THING ON A CLEAR SKY, for the same reasons the stars are.
+   It rides `nightFall` or a green curtain appears over a lit tundra at noon,
+   and it fades with the cover or it shines through an overcast.
+   -------------------------------------------------------------------- */
+const AURORA_ODDS = 0.25;
+let auroraOn = 0;
+function rollAurora(){
+  auroraOn = (biome === 'TUNDRA' && Math.random() < AURORA_ODDS) ? 1 : 0;
+  return auroraOn;
+}
 const DEER_ODDS = 0.10;
 const DEER_CROSS = 2.5;      /* lane units a second */
 const DEER_FROM = 1.5;       /* where the tree line stands, in lane units */
@@ -11702,8 +11728,9 @@ function openBiome(){
      the distance is armed here with the same range every other change uses.
      ---------------------------------------------------------------- */
   biomeNext = placeSpan(biome);
-  /* a run can OPEN in a forest, so the roll belongs here as well (RLG-152) */
+  /* a run can OPEN in a forest or a tundra, so both rolls belong here as well */
   planDeer();
+  rollAurora();
   /* a run cannot open in an event - RLG-140 sees to that - so there is never an
      authored profile in force at the start of one, and nothing is waiting */
   eventProfile = null; eventLen = 0; eventKey = null;
@@ -11825,8 +11852,10 @@ function stepBiome(dt){
     if(cross >= 0.5 && biome !== biomeTo){
       biome = biomeTo;
       /* arriving somewhere is when a crossing is rolled for - once per place,
-         so the odds mean what they say (RLG-152) */
+         so the odds mean what they say (RLG-152) - and the aurora is the same
+         kind of thing rolled on the same occasion (RLG-151) */
       planDeer();
+      rollAurora();
       /* the skyline is NOT rebuilt here. It has been showing the new place
          since the boundary was placed, because it belongs to the horizon
          rather than to the car. */
@@ -17638,19 +17667,113 @@ function drawSky(){
   g.addColorStop(1,    st[3]);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,horizon+2);
 
-  /* stars come out as the light goes */
+  /* ---- STARS BELONG TO A CLEAR NIGHT (owner, 2026-09-01, RLG-151) ------
+     "Can the clear night sky have stars?" - and the sky already had them, which
+     changed what the question was. The ruling named three candidates for why
+     they were not reading, and told this session to MEASURE before changing
+     any of them. Measured at midnight with the cover pinned, counting points
+     brighter than their own row: 2,499 on a clear sky and 2,580 under nine
+     tenths cover. THE COUNT DOES NOT FALL WHEN THE SKY CLOSES OVER, and reading
+     the code says why - the alpha never mentioned `cloud` at all. The owner's
+     word is CLEAR, and that is the lever.
+
+     THE THIRD CANDIDATE WAS ALREADY FIXED and the ruling did not know it. It
+     said the horizon bloom sits over the stars at 0.35 of its strength even at
+     midnight; the bloom is driven purely by `gold` now and reaches zero at
+     night, so there is nothing washing them any more. The fragment was written
+     before that change.
+
+     AND FORTY IS FEW, which was the second candidate. Forty single pixels on a
+     regular lattice read as noise rather than as a sky. There are 110 now, at
+     two brightnesses and two sizes, and the lattice is broken up by a per-star
+     offset - a sky is not evenly spaced, and evenly spaced is what made the old
+     one read as dither.
+     ------------------------------------------------------------------- */
   if(n > 0.25){
-    ctx.save();
-    ctx.globalAlpha = (n - 0.25) / 0.75 * 0.75;
-    ctx.fillStyle = '#dfe9ff';
-    for(let i=0;i<40;i++){
-      const sx = ((i * 137.5) % W + (-camX*W*0.006)) % W;   /* stars, further still */
-      const sy = (i * 61) % Math.max(1, horizon*0.72);
-      const tw = 0.55 + Math.sin(i*3.1 + dist*1.7)*0.45;
-      ctx.globalAlpha = ((n - 0.25)/0.75) * 0.7 * tw;
-      ctx.fillRect(sx < 0 ? sx + W : sx, sy, 1.4, 1.4);
+    /* nothing is visible through cloud, and nearly nothing through half of it */
+    const seeing = Math.max(0, 1 - cloud * 1.15);
+    if(seeing > 0.01){
+      ctx.save();
+      ctx.fillStyle = '#dfe9ff';
+      const base = ((n - 0.25) / 0.75) * seeing;
+      for(let i = 0; i < 110; i++){
+        /* two irrationals rather than one, so the scatter does not fall into
+           rows the way a single stride does */
+        const sx = ((i * 137.5 + (i * i % 29) * 3.7) % W + (-camX*W*0.006)) % W;
+        const sy = ((i * 61 + (i * i % 17) * 5.3) % Math.max(1, horizon*0.72));
+        const tw = 0.55 + Math.sin(i*3.1 + dist*1.7)*0.45;
+        /* a few bright ones among many faint, which is what a sky looks like */
+        const mag = (i % 7 === 0) ? 1.0 : (i % 3 === 0) ? 0.66 : 0.42;
+        ctx.globalAlpha = base * 0.9 * tw * mag;
+        const sz = mag > 0.9 ? 1.8 : 1.2;
+        ctx.fillRect(sx < 0 ? sx + W : sx, sy, sz, sz);
+      }
+      ctx.restore();
     }
-    ctx.restore();
+  }
+
+  /* ---- THE AURORA (owner, 2026-09-01, RLG-151) -------------------------
+     Drawn after the stars and before the bloom, so whatever the bloom does to
+     the lower sky it does to this as well - it is part of the sky rather than
+     a thing laid over the picture.
+
+     IT IS A CURTAIN, WHICH IS A WALK WITH A RAMP. Three bands, each a wave in
+     x whose height and phase differ, filled from a colour at the top to
+     nothing at the bottom. That is the whole shape: the light hangs DOWN from
+     a ragged upper edge and fades out before it reaches anything, which is what
+     separates an aurora from a stripe of green paint.
+
+     IT DRIFTS RATHER THAN ANIMATES. The phase moves with `dist` and with real
+     time at very different rates, so it is never seen to repeat and it never
+     twitches - the same lesson the city's windows taught (RLG-096).
+
+     GREEN LOW, VIOLET ABOVE IT. That is the ordinary aurora and it is what
+     makes it read as one rather than as a green light.
+     ------------------------------------------------------------------- */
+  if(auroraOn && n > 0.35){
+    const seeing = Math.max(0, 1 - cloud * 1.3);
+    if(seeing > 0.01){
+      const lift = ((n - 0.35) / 0.65) * seeing;
+      const t = dist * 0.00007 + (typeof performance !== 'undefined'
+                                  ? performance.now() * 0.00004 : 0);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for(let b = 0; b < 3; b++){
+        /* BELOW THE GLASS. The first placement hung the curtain at a tenth of the
+           way down the sky, which on a phone is directly behind the rear-view
+           mirror - it was drawn correctly and could not be seen. The visible sky
+           is the band between the mirror and the horizon, and that is where it
+           goes. */
+        const topY = horizon * (0.34 + b * 0.075);
+        const dropH = horizon * (0.34 - b * 0.05);
+        const amp = horizon * (0.055 + b * 0.018);
+        const cols = b === 2 ? ['rgba(150,110,255,', 'rgba(90,60,190,']
+                             : ['rgba(120,255,190,', 'rgba(60,200,150,'];
+        const a = lift * (b === 2 ? 0.26 : 0.38);
+        const gr = ctx.createLinearGradient(0, topY - amp, 0, topY + dropH);
+        gr.addColorStop(0,    cols[0] + (a * 0.25).toFixed(3) + ')');
+        gr.addColorStop(0.22, cols[0] + a.toFixed(3) + ')');
+        gr.addColorStop(0.65, cols[1] + (a * 0.42).toFixed(3) + ')');
+        gr.addColorStop(1,    cols[1] + '0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.moveTo(-4, topY + dropH);
+        /* the ragged upper edge, two waves of different lengths so it never
+           reads as a sine */
+        for(let x = -4; x <= W + 4; x += 6){
+          const u = x / W;
+          const y = topY
+                  + Math.sin(u * 6.1 + t * 3.1 + b * 2.2) * amp
+                  + Math.sin(u * 13.7 - t * 1.7 + b * 1.1) * amp * 0.45
+                  - camX * W * 0.004;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(W + 4, topY + dropH);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   // sodium bloom sitting on the horizon, dying back with the sun
@@ -17737,7 +17860,11 @@ function drawSky(){
        is two or three and an overcast one is a crowd; the snow lid pulls them
        DOWN toward the horizon and flattens them, because that is what a snow
        sky is - a low ceiling rather than a set of shapes. */
-    const nP = Math.round(3 + cloud * 9);
+    /* AND A CLEAR SKY HAS NO CLOUD IN IT AT ALL. This had a floor of three, so the
+       lightest cover a place ever rolls still put three banks up and a clear night
+       was never actually clear - which also meant a check counting what a clear sky
+       shows was counting cloud. */
+    const nP = Math.round(cloud * 11);
     const pile = (1 - lid * 0.72) * (1 - hard * 0.25);   /* how much they billow */
     ctx.globalAlpha = clamp(0.30 + cloud * 0.55, 0, 0.92);
     for(let i = 0; i < nP; i++){
@@ -26817,6 +26944,18 @@ requestAnimationFrame(frameLoop);
       w: c.w, type: c.type }));
   };
   API.deerOdds = function(){ return { odds: DEER_ODDS, cross: DEER_CROSS, from: DEER_FROM }; };
+  /* the aurora: whether one is up, a way to force one so a check can photograph
+     it rather than wait a dozen runs, and the real roll for a named place so the
+     ODDS can be counted through the code that does them (RLG-151) */
+  API.aurora = function(v){ if(v !== undefined) auroraOn = v ? 1 : 0; return auroraOn; };
+  API.auroraOdds = function(){ return AURORA_ODDS; };
+  API.auroraRoll = function(key){
+    const wasB = biome, wasA = auroraOn;
+    biome = key; rollAurora();
+    const got = auroraOn;
+    biome = wasB; auroraOn = wasA;
+    return !!got;
+  };
   API.colliderProbe = function(){
     const c = traffic[0];
     const pw = playerW();
