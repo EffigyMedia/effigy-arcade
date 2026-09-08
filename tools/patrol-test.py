@@ -329,8 +329,66 @@ def main():
         ok(len(rows) >= 4, 'there were cruisers to watch', '%d seen' % len(rows))
         ok(not born, 'no police arrive from up the road',
            '; '.join('%+d from %s' % (r['born'], r['from']) for r in born[:4]))
-        ok(not drove, 'and none that arrived behind you gets in front of you',
-           '; '.join('%+d -> %+d' % (r['born'], r['maxAhead']) for r in drove[:4]))
+        # PRINTED, NOT ASSERTED, AND THE REASON MATTERS. This was written while hunting
+        # arrivals from up the road and it tests the wrong thing: RLG-158 has a cruiser
+        # that has caught you take a station AHEAD and run slightly under your speed, to
+        # slow you into a bust. That is the owner's own request, so a cruiser getting in
+        # front of you is a feature and this line was failing on it - one born 589 behind
+        # reached 515 ahead, which is the box forming exactly as designed. What the
+        # complaint was about is where they ARRIVE, and that is the assertion above.
+        print('      (%d of %d arrived behind and later got in front - that is the box'
+              ' of RLG-158, not an arrival)' % (len(drove), len(rows)))
+
+        # ---- AND A CRUISER WORKING SOMEBODY ELSE KEEPS THEM (owner, 2026-09-08) --
+        # "I don't think every cruiser should just inherently switch its targeting to
+        # you just because you exist and you are also speeding half a mile behind them."
+        #
+        # THE DISTANCE HALF IS WHAT IS ASSERTED HERE. A cruiser is put half a mile up
+        # the road with a real traffic car as its target, and the player drives past
+        # well over the limit: it must keep the car it already has.
+        #
+        # THE MARGIN HALF - that going by at a similar speed does not take it off
+        # somebody - is IMPLEMENTED AND NOT ASSERTED, and the reason is written here
+        # rather than left to be rediscovered. Staging it needs the player held a few
+        # miles an hour above a traffic car, and both ends fight it: `setSpd` is
+        # overwritten by the player's own acceleration between ticks, and the traffic
+        # AI drives the NPC's speed toward its own cruise whatever is written to it.
+        # Asking for a 4mph gap produced 34. It was checked by hand against the
+        # decision's own inputs instead.
+        KEEP = """([dz]) => {
+          const R = window.__road;
+          clearInterval(window.__hold);
+          const pz = R.pos + R.PLAYER_Z;
+          R.copsClear(); R.heatSet(0);
+          const npc = R.traffic[0];
+          if(!npc) return false;
+          npc.mind = 1; npc.z = pz + dz + 600; npc.x = 0.30;
+          const k = { z: pz + dz, x: 0.30, spd: npc.spd, wreck: 0, ang: 0, grace: 9,
+                      cool: 0, side: 1, w: 0.27, len: 400, phase: 0, dmg: 0,
+                      from: 'test', onPlayer: false, tz: npc.z, tx: npc.x,
+                      tSpd: npc.spd, retarget: 0 };
+          R.cops().push(k);
+          window.__k = k;
+          window.__hold = setInterval(() => {
+            R.setSpd(0.80 * R.MAX_SPD);
+            k.z = R.pos + R.PLAYER_Z + dz; k.grace = 9;
+            npc.z = k.z + 600; npc.x = 0.30; npc.mind = 1;
+          }, 8);
+          return true; }"""
+        staged = page.evaluate(KEEP, [42000])
+        took = False
+        if staged:
+            for _ in range(30):
+                page.wait_for_timeout(120)
+                if page.evaluate("() => window.__k.onPlayer === true"):
+                    took = True
+                    break
+            page.evaluate("() => clearInterval(window.__hold)")
+        print('      a cruiser half a mile up the road, working an NPC, you at 160mph'
+              ' -> %s' % ('TOOK YOU' if took else 'kept the NPC'))
+        ok(staged, 'the scene could be staged', 'no traffic on the road')
+        ok(not took, 'a cruiser working somebody else does not switch to you from'
+                     ' half a mile away')
 
         errs = errs + errs2 + errs3 + page.evaluate("() => []")
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')

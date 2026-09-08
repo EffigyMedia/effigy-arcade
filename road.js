@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.40';
+window.ROAD_BUILD = '0.13.41';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -442,6 +442,14 @@ const HEAT_COOL = 30;
    behind you. Well inside the 34,000 at which one is culled - see the cooling
    test, which is the only thing that reads it. */
 const LOST_AT = 12000;
+/* ---- WHAT IT TAKES TO PULL A CRUISER OFF SOMEBODY ELSE ----------------
+   Owner, 2026-09-08. Two numbers, and they are a WINDOW and a MARGIN rather
+   than one distance, because the rule is an event: you went past it, and you
+   were going faster than the car it already had. At 200mph a car covers 2,600
+   units in a tenth of a second, so 3,000 is about the moment of going by.
+   -------------------------------------------------------------------- */
+const COP_PASS_BY = 3000;      /* how close counts as going past it */
+const COP_SWITCH_MPH = 10;     /* and how much faster than its current car */
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
@@ -16400,16 +16408,47 @@ function step(dt){
          has. Without this, braking to a stop with the heat cooled away made
          every cruiser lose interest and the BUSTED rule became unreachable:
          bust-test read "nothing happened in seven seconds". */
+      /* ---- AND A CRUISER WORKING SOMEBODY ELSE KEEPS THEM (owner, 2026-09-08)
+         "The only reason a cruiser who is engaged currently to an NPC should
+         switch its targeting to you is if you pass them at a speed above the car
+         they are currently targeting by a small threshold. I don't think every
+         cruiser should just inherently switch its targeting to you just because
+         you exist and you are also speeding half a mile behind them."
+
+         THE FIRST FIX STOPPED A CLEAN DRIVER BEING ADOPTED AND LEFT THIS. A
+         speeding player was still a candidate for every cruiser on the road, and
+         still weighted toward at 0.55, so one already running an NPC down would
+         drop them for you from most of a mile back. That is the pile-up again
+         with a speed test in front of it.
+
+         SO THE SWITCH IS AN EVENT, NOT A COMPARISON. A cruiser already on
+         somebody keeps them unless you GO PAST IT - alongside, within the window
+         a car covers in about a fifth of a second at speed - and you are doing
+         more than the car it is already chasing by a clear margin. That is a
+         cop watching a faster offender go by, which is the only reason it should
+         look up. Ten miles an hour is the margin: enough that drawing level at a
+         similar speed does not take the pursuit off somebody.
+
+         A CRUISER WITH NOBODY IS UNAFFECTED. `onPlayer` is undefined on a fresh
+         dispatch, so a car sent by the radio still finds you the ordinary way -
+         and one already on YOU keeps you, which is what makes the bust reachable.
+         ---------------------------------------------------------------- */
       const worth = heat > 0 || spd > MAX_SPD * SPEED_LIMIT || k.onPlayer === true;
-      let bestZ = worth ? pz : -1e9, bestX = playerX;
-      let bestD = worth ? Math.abs(k.z - pz) * 0.55 : 1e9;
+      let mayTake = worth;
+      if(worth && k.onPlayer === false && k.tSpd !== undefined){
+        const alongside = Math.abs(k.z - pz) < COP_PASS_BY;
+        mayTake = alongside && spd > k.tSpd + MAX_SPD * COP_SWITCH_MPH / 200;
+      }
+      let bestZ = mayTake ? pz : -1e9, bestX = playerX;
+      let bestD = mayTake ? Math.abs(k.z - pz) * 0.55 : 1e9;
+      let bestS = mayTake ? spd : 0;
       const look = (z, x, sp) => {
         /* a target with a bad number in it poisons `k.x` and every gradient
            drawn from it — one NaN in a chase turns the whole frame black */
         if(!isFinite(z) || !isFinite(x) || !isFinite(sp)) return;
         if(sp < MAX_SPD * 0.44) return;      /* not speeding, not interesting */
         const d = Math.abs(k.z - z);
-        if(d < bestD && d < 9000){ bestD = d; bestZ = z; bestX = x; }
+        if(d < bestD && d < 9000){ bestD = d; bestZ = z; bestX = x; bestS = sp; }
       };
       for(const r of racers) look(r.z, r.x, r.spd);
       /* an ambulance on a call is exempt here for the same reason it is exempt
@@ -16418,8 +16457,36 @@ function step(dt){
          ambulance is faster than that by design, so a patrol would have dropped
          a real pursuit to chase the ambulance it was making way for */
       for(const c of traffic) if(c.mind >= SPEEDER && !c.emergency && !c.patrol) look(c.z, c.x, c.spd);
-      k.tz = bestZ; k.tx = bestX;
-      k.onPlayer = (bestZ === pz);
+      /* ---- A SEARCH THAT FINDS NOBODY CHANGES NOTHING --------------------
+         `bestZ` is left at -1e9 when the sweep turns up no candidate - the road
+         is empty, or the only speeder is out of range. Writing that through
+         wiped the cruiser's target AND set `tSpd` to zero, and a zero there
+         makes "faster than the car it already has" true of ANY speed: the very
+         next search handed the cruiser to the player. Measured, that took a
+         cruiser off its NPC for a player only four miles an hour quicker, which
+         is the exact case this rule exists to refuse.
+
+         So a fruitless search leaves the car exactly as it was. It keeps whoever
+         it had, and the margin keeps meaning something.
+         ---------------------------------------------------------------- */
+      if(bestZ === -1e9 && k.tz === undefined){
+        /* ---- AND NOBODY IS NOT THE PLAYER --------------------------------
+           A cruiser that finds nothing AND never had anything must not fall
+           through: `tz` stays undefined, and the line below reads an undefined
+           target as YOU. That is the original defect coming back through the
+           side door, and it busted a clean stopped driver in the very check
+           written to forbid it. It is given the road ahead of itself instead -
+           a police car with nobody to chase drives on.
+           -------------------------------------------------------------- */
+        k.tz = k.z + 4000; k.tx = k.x; k.tSpd = 0; k.onPlayer = false;
+      } else if(bestZ !== -1e9){
+        k.tz = bestZ; k.tx = bestX;
+        /* HOW FAST THE THING IT IS CHASING IS GOING, kept on the car, because
+           the switch above is a comparison against it and reconstructing it
+           later would mean guessing which target the last search settled on */
+        k.tSpd = bestS;
+        k.onPlayer = (bestZ === pz);
+      }
     }
     const tz = (k.tz === undefined) ? pz : k.tz;
     const dz = k.z - tz;
@@ -16970,6 +17037,14 @@ function step(dt){
     if(crawling && !optEasy && !held){
       for(const k of cops){
         if(k.wreck > 0) continue;
+        /* ---- A BUST IS THE END OF A PURSUIT (owner, 2026-09-08) ---------
+           This counted any cruiser standing near a stopped car, which meant a
+           driver wanted for NOTHING could be boxed in and arrested for pulling
+           up beside a parked police car - the owner's own report, and the check
+           written to forbid it failed on exactly that. A parked speed trap
+           counts for nothing here either: it is watching the road, not you.
+           -------------------------------------------------------------- */
+        if(k.trap || k.onPlayer === false) continue;
         if(Math.abs(k.z - pz) < 2600){ boxed = true; break; }
       }
     }

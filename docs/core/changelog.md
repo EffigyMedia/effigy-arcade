@@ -14,6 +14,23 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-41"></a>
+## [0.13.41] - 2026-09-08
+- Changed: **a cruiser keeps the car it is chasing unless you go past it faster.** Owner,
+  2026-09-08: "I don't think every cruiser should just inherently switch its targeting to you just
+  because you exist and you are also speeding half a mile behind them." The switch is an EVENT now,
+  not a comparison: it must be alongside you, and you must be doing more than the car it already has
+  by ten miles an hour. Measured - half a mile up the road with you 40mph faster, it keeps the NPC.
+  See [RLG-172](../fragments/RLG-172.md).
+- Fixed: **three fallbacks that quietly meant "the player".** A fruitless search wrote its empty
+  result through and set the speed being compared against to zero, which makes "faster than its
+  current car" true of any speed. Keeping the old target instead broke the opposite case: a cruiser
+  that never had a target kept an undefined one, and the line that reads it treats undefined as YOU -
+  it busted a clean stopped driver in the check written to forbid that. And the bust counted any
+  cruiser standing near a stopped car, so a driver wanted for nothing could be arrested for pulling
+  up beside a parked police car. **A bust is the end of a pursuit**, so it needs a cruiser actually
+  on you, and a parked trap counts for nothing.
+
 <a id="v0-13-40"></a>
 ## [0.13.40] - 2026-09-08
 - Fixed: **a clean driver is not a target.** Owner, 2026-09-08: "there's STILL an overwhelming amount
