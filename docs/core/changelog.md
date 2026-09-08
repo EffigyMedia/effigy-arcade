@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-38"></a>
+## [0.13.38] - 2026-09-08
+- Changed: **a deer you hit is killed, and it costs the car properly.** Owner, 2026-09-08: "the deer
+  should explode in a bloody mess and it should do appropriate damage to your car." That is the tone
+  question [RLG-152](../fragments/RLG-152.md) left open and said was not a session's to make.
+- **The mess is not the debris burst in a different colour.** Forty particles in three reds on two
+  velocity budgets - a fast bright spray gone in a fifth of a second, and slow dark chunks still
+  tumbling most of a second later. And it comes up over the BONNET: the impact point projects to the
+  very bottom of the screen, behind the player's own car, where almost none of it could be seen.
+- **Two numbers, because they answer different questions.** 90kg decides what the animal does to the
+  car's motion - you barely slow, and it does not push you off your line. A separate strike factor
+  decides what it does to the bodywork, and is deliberately more than the mass suggests: a deer comes
+  over the bonnet rather than being pushed aside. **Measured nose-on at four fifths of top speed:
+  20.3 damage against 10.2 for clipping a saloon at the same speed**, a quarter of an 81-point panel.
+  Before this an animal cost 8.1 - hitting a deer was cheaper than clipping a car.
+- Fixed: **every particle burst in the game rose in a straight vertical line.** `fx` carries floating
+  messages and particles, and the driving stepper branched on the wrong axis - it tested `vy` where
+  it meant `vx`, and a particle has both, so every burst took the message path: no horizontal spread
+  and no gravity. It has been flattening the orange debris off a car and the yellow off a roadblock
+  since both were written, and the wrecked stepper has always had it right. Found while trying to
+  photograph the gore.
+
 <a id="v0-13-37"></a>
 ## [0.13.37] - 2026-09-08
 - Added: **the road runs to the horizon as one body of tarmac.** Owner, 2026-08-31: "another thing

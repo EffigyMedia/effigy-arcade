@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.37';
+window.ROAD_BUILD = '0.13.38';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8616,6 +8616,32 @@ function rollAurora(){
 const DEER_ODDS = 0.10;
 const DEER_CROSS = 2.5;      /* lane units a second */
 const DEER_FROM = 1.5;       /* where the tree line stands, in lane units */
+/* ---- WHAT IT WEIGHS, AND WHAT IT COSTS (owner, 2026-09-08) ------------
+   TWO NUMBERS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS. `DEER_MASS` is what the
+   animal does to the CAR'S MOTION - ninety kilograms against a car of fourteen
+   hundred, so you barely slow and it does not push you off your line. That is
+   the physics and it is right.
+
+   `DEER_STRIKE` is what it does to the BODYWORK, and it is more than the mass
+   suggests on purpose. A deer at speed comes over the bonnet rather than being
+   pushed aside: it takes the front of the car with it. Without this the damage
+   followed the geometry alone and an animal cost exactly what clipping a saloon
+   costs, which is what the owner's "appropriate damage" is about.
+
+   IT IS SURVIVABLE AND IT IS NOT CHEAP, and the figures are measured rather
+   than hoped for. Nose-on at four fifths of top speed a strike costs 20.3
+   against 10.2 for clipping a saloon at the same speed - twice as much, and a
+   quarter of an 81-point panel, so four of them wreck the car. A forest is a
+   place you slow down for, which is what RLG-152 said would make this a feature
+   rather than decoration, and one deer never ends a run on its own.
+
+   THE MULTIPLIER IS 2.5 AND THE RESULT IS 2.0, which is not a discrepancy: the
+   severity term is geometric, and an animal is shorter than a car so the same
+   meeting is a slightly different shape of hit. The number that matters is the
+   one on the panel, and it was measured at four speeds against a car.
+   -------------------------------------------------------------------- */
+const DEER_MASS = 90;
+const DEER_STRIKE = 2.5;
 /* the place a crossing is due, and which way it runs. -1 is none planned. */
 let deerZ = -1, deerSide = 1;
 /* ---- IT WANTS A FOREST WITH TREES ON BOTH SIDES (RLG-152) ------------
@@ -8639,6 +8665,7 @@ function stepDeer(){
     spd: 0, cruise: 0, mind: CROSSING, type: 'deer',
     dx: -deerSide * DEER_CROSS,
     w: typeW('deer'), len: typeLen('deer'),
+    mass: DEER_MASS, strike: DEER_STRIKE,
     near: false, drift: 0, paintN: 0
   });
   deerZ = -1;
@@ -16225,12 +16252,33 @@ function step(dt){
     if(iframe<=0 && Math.abs(dz) < (c.len+380)/2 && dx < overlap){
       /* where it landed decides everything, and both cars move (RLG-131) */
       const sev = impactWith(c);
-      hurt(13 * sev, 'traffic');
-      /* and it takes what ITS end earned, the same mirror every other car gets:
-         running into the back of a van is your nose and its tail */
-      hurtTraffic(c, 13 * (c.hitSev === undefined ? sev : c.hitSev));
+      /* ---- WHAT THE THING YOU HIT DOES TO YOU (owner, 2026-09-08) -----
+         `strike` is a property of the object rather than a branch that names
+         one, which is the standing rule. It exists because the severity above
+         is about GEOMETRY and closing speed - where the hit landed and how fast
+         - and says nothing about what was hit. Two things at the same closing
+         speed on the same corner of the car do not do the same damage, and a
+         deer coming over the bonnet is the case that makes that obvious: it is
+         a fifth of a car's mass, so it barely slows you, and it wrecks far more
+         of the front of the car than the shove would suggest.
+         ------------------------------------------------------------- */
+      hurt(13 * sev * (c.strike || 1), 'traffic');
+      /* ---- AND WHAT IT IS, IS WHETHER IT SURVIVES --------------------
+         Owner, 2026-09-08: the deer "should explode in a bloody mess". A car
+         takes damage and drives on; an animal does not. The branch is on the
+         MIND, which is how RLG-152 chose to express a deer in the first place,
+         so nothing here names a species.
+         ------------------------------------------------------------- */
+      if(isCrossing(c)){
+        gore(c);
+        c.gone = true;
+      } else {
+        /* it takes what ITS end earned, the same mirror every other car gets:
+           running into the back of a van is your nose and its tail */
+        hurtTraffic(c, 13 * (c.hitSev === undefined ? sev : c.hitSev));
+        burst(c, '#ffb066');
+      }
       iframe = 0.9;
-      burst(c, '#ffb066');
     } else if(!c.near && Math.abs(dz) < 260 && dx < overlap+0.20){
       c.near = true;
       snd.nearMiss();
@@ -16759,7 +16807,27 @@ function step(dt){
   // --- fx / timers ---
   if(iframe>0) iframe-=dt;
   if(comboTime>0){ comboTime-=dt; if(comboTime<=0) combo=0; }
-  for(const f of fx){ f.age+=dt; if(f.vy!==undefined) f.y+=f.vy*dt; else { f.x+=f.vx*dt; f.y+=f.vy*dt; f.vy+=700*dt; } }
+  /* ---- IT ASKED ABOUT THE WRONG AXIS (found under RLG-152, 2026-09-08) ---
+     `fx` carries two kinds of thing: a floating MESSAGE, which has a `vy` and
+     drifts upward, and a PARTICLE, which has both and should arc. This branched
+     on `f.vy` when it meant `f.vx` - and a particle has both - so every burst in
+     the game took the message path: it moved in `y` ONLY, with no horizontal
+     spread and no gravity. Forty particles thrown in every direction rose as one
+     vertical column of overlapping dots.
+
+     THAT IS WHY THE OWNER'S "BLOODY MESS" READ AS NOTHING. It was found looking
+     for the gore and it is not the gore's fault: the same fault has been
+     flattening the orange debris off a car and the yellow off a roadblock since
+     both were written. The WRECKED stepper a few thousand lines down has always
+     had it right, which is why a crash you are watching from a standstill throws
+     debris properly and one you drive through does not.
+     ------------------------------------------------------------------- */
+  for(const f of fx){
+    f.age += dt;
+    f.x += (f.vx || 0) * dt;
+    f.y += (f.vy || 0) * dt;
+    if(f.vx !== undefined) f.vy += 700 * dt;
+  }
   fx = fx.filter(f=>f.age<f.life);
   shake = Math.max(0, shake - dt*2.2);
   hitFlash = Math.max(0, hitFlash - dt*2.4);
@@ -17036,6 +17104,45 @@ function burst(o,color){
     fx.push({x:sx, y:sy, vx:rnd(-260,260), vy:rnd(-330,-40), life:rnd(.35,.85), age:0,
              r:rnd(2,6), c:color});
 }
+/* ---- AND SOMETHING SOFT MAKES A DIFFERENT MESS (owner, 2026-09-08) -----
+   "The deer should explode in a bloody mess and it should do appropriate damage
+   to your car." That is the third answer RLG-152 left open and called a tone
+   decision rather than a mechanical one, and it is the owner's to make.
+
+   IT IS NOT `burst` IN A DIFFERENT COLOUR. Debris off a car is fourteen light
+   flecks that fly up and away; an animal at a hundred miles an hour is a spray
+   that goes mostly FORWARD and OVER, plus heavier pieces that arrive and drop.
+   So this is more of them, in three reds, on two velocity budgets - a fast
+   bright spray and slow dark chunks that fall - and it is thrown along the car's
+   own direction of travel rather than symmetrically.
+
+   THE DARKEST PIECES LIVE LONGEST, which is what makes it read as a mess left
+   behind rather than as a firework: the bright spray is gone in a third of a
+   second and the heavy pieces are still tumbling a second later.
+   ------------------------------------------------------------------- */
+function gore(o){
+  const p = proj(o.x*ROAD, o.z||pos+PLAYER_Z);
+  const sx = p.ok ? p.x : W/2;
+  /* ---- AND IT HAS TO HAPPEN WHERE YOU CAN SEE IT --------------------
+     The impact point is a few feet in front of the bumper, which projects to
+     the very bottom of the screen - BEHIND the player's own car sprite. The
+     first version was drawn correctly and was almost entirely hidden by the
+     back of the car, which is not what "explodes in a bloody mess" means. It
+     comes up over the BONNET instead: the origin is lifted to two thirds of
+     the way down the screen when the geometry puts it lower, which is where a
+     thing you have just run over would actually appear from the driver's seat.
+     ---------------------------------------------------------------- */
+  const sy = Math.min(p.ok ? p.y : H*0.8, H*0.64);
+  /* the spray: fast, bright, and thrown up and outward */
+  for(let i=0;i<26;i++)
+    fx.push({x:sx, y:sy, vx:rnd(-420,420), vy:rnd(-520,-90), life:rnd(.20,.45), age:0,
+             r:rnd(1.5,4), c: i%3===0 ? '#ff5a5a' : (i%3===1 ? '#c81f2c' : '#8e1220')});
+  /* and the heavy of it: slower, darker, longer-lived, and falling */
+  for(let i=0;i<14;i++)
+    fx.push({x:sx, y:sy, vx:rnd(-190,190), vy:rnd(-230,40), life:rnd(.55,1.15), age:0,
+             r:rnd(3,8), c: i%2 ? '#6d0d18' : '#3f070f'});
+}
+
 function hurt(n, src){
   if(state!=='driving') return;
   dmg = Math.min(100, dmg + n);
@@ -27055,7 +27162,27 @@ requestAnimationFrame(frameLoop);
       x: +c.x.toFixed(3), z: Math.round(c.z - pos - PLAYER_Z),
       w: c.w, type: c.type }));
   };
-  API.deerOdds = function(){ return { odds: DEER_ODDS, cross: DEER_CROSS, from: DEER_FROM }; };
+  /* ---- WHAT IS FLYING THROUGH THE AIR, BY COLOUR (RLG-152) -------------
+     A check for "it exploded in a bloody mess" cannot read a screenshot and
+     cannot count on finding red pixels in a frame - the car has tail lights,
+     the sky has a sunset and a police bar is red twice a second. What it CAN
+     ask is what the particle system was handed, which is the painter's own
+     input rather than a guess at its output. Reds are counted apart from
+     everything else because that is the whole of the claim.
+     -------------------------------------------------------------------- */
+  API.fxNow = function(){
+    let red = 0, other = 0;
+    for(const f of fx){
+      if(!f || !f.c){ other++; continue; }
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(f.c);
+      if(!m){ other++; continue; }
+      const r = parseInt(m[1],16), g = parseInt(m[2],16), b = parseInt(m[3],16);
+      if(r > 55 && r > g * 2.2 && r > b * 2.2) red++; else other++;
+    }
+    return { n: fx.length, red: red, other: other };
+  };
+  API.deerOdds = function(){ return { odds: DEER_ODDS, cross: DEER_CROSS, from: DEER_FROM,
+                                     mass: DEER_MASS, strike: DEER_STRIKE }; };
   /* the aurora: whether one is up, a way to force one so a check can photograph
      it rather than wait a dozen runs, and the real roll for a named place so the
      ODDS can be counted through the code that does them (RLG-151) */

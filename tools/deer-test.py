@@ -133,21 +133,80 @@ def main():
         # The ruling's third question: nothing at all makes it decoration. It is in
         # `traffic`, so the collision it already has is the answer - and this is what
         # says so rather than assuming it.
+        # ---- NOSE-ON, WHICH IS HOW YOU MEET ONE --------------------------------
+        # The severity the engine computes is a shape as well as a speed: something
+        # exactly alongside is a rub and something ahead of you is a strike. Pinning
+        # the animal at the player's own z made every measurement a flank rub and
+        # halved the damage - 12.2 where a nose-on hit costs 20.3 - which is a fact
+        # about where the harness put it, not about the deer. It is held a little
+        # AHEAD, because a thing crossing your path is in front of you.
+        #
+        # AND THE PARTICLE COUNT IS A PEAK, NOT A SNAPSHOT. The bright spray lives a
+        # fifth of a second and the heavy pieces a second; a reading taken 600ms
+        # after the hit finds only the heavy ones and reports 14 of a burst of 40.
         page.evaluate("""() => { const R = window.__road;
             R.setDamage(0); R.setLane(0);
             // THE CAR HAS TO BE MOVING. A collision at a standstill is not one -
             // this read zero damage with the animal sitting exactly on the player,
             // because nothing had run into anything.
-            R.setSpd(0.5 * R.MAX_SPD);
+            R.setSpd(0.8 * R.MAX_SPD);
             R.placeDeer(300, 1);
-            window.__hold = setInterval(() => { R.setSpd(0.5 * R.MAX_SPD); R.setLane(0);
+            window.__peak = 0;
+            window.__hold = setInterval(() => { R.setSpd(0.8 * R.MAX_SPD); R.setLane(0);
               const k = R.traffic.filter(c => c.type === 'deer')[0];
-              if(k){ k.x = 0; k.z = R.pos + R.PLAYER_Z; } }, 8); }""")
+              if(k){ k.x = 0; k.z = R.pos + R.PLAYER_Z + 150; k.spd = 0; }
+              const f = R.fxNow(); if(f.red > window.__peak) window.__peak = f.red; },
+              8); }""")
         page.wait_for_timeout(600)
-        hurt = page.evaluate('() => window.__road.damage()')
+        after = page.evaluate("() => ({ dmg: window.__road.damage(),"
+                              " fx: { n: window.__road.fxNow().n, red: window.__peak },"
+                              " left: window.__road.crossings().length })")
         page.evaluate('() => clearInterval(window.__hold)')
+        hurt = after['dmg']
         ok(hurt > 0, 'hitting one costs you, so a forest is a place to slow down for',
            '%.1f damage' % hurt)
+
+        # ---- AND IT DOES NOT WALK AWAY (owner, 2026-09-08) ----------------------
+        # The ruling left this open as a tone decision and the owner made it: the
+        # animal is killed. A car takes damage and drives on; this does not.
+        ok(after['left'] == 0, 'and the animal does not survive it',
+           '%d still crossing' % after['left'])
+        # THE PARTICLES ARE READ AS THE PAINTER'S INPUT, not off the screen. A frame
+        # has tail lights, a sunset and a flashing police bar in it, so counting red
+        # PIXELS would find red on a build that drew nothing at all.
+        print('  ..    the burst peaked at %d red particles' % after['fx']['red'])
+        ok(after['fx']['red'] >= 20,
+           'and what is left of it is a bloody mess rather than debris',
+           'peaked at %d red particles' % after['fx']['red'])
+
+        # ---- AND IT COSTS MORE THAN CLIPPING A CAR AT THE SAME SPEED -----------
+        # "Appropriate damage" is a comparison, not a number. The severity the engine
+        # computes is about GEOMETRY and closing speed and says nothing about what was
+        # hit - so before this, an animal cost exactly what clipping a saloon costs.
+        # The same staged collision is run against an ordinary traffic car at the same
+        # speed, in the same place, so everything except the thing hit is identical.
+        car = page.evaluate("""() => { const R = window.__road;
+            R.setDamage(0); R.setLane(0); R.setSpd(0.8 * R.MAX_SPD);
+            R.parkTraffic(0, 300, 'sedan');
+            window.__hold = setInterval(() => { R.setSpd(0.8 * R.MAX_SPD); R.setLane(0);
+              const k = R.traffic[0];
+              if(k){ k.x = 0; k.z = R.pos + R.PLAYER_Z + 150; k.spd = 0; } }, 8);
+            return true; }""")
+        page.wait_for_timeout(600)
+        car_dmg = page.evaluate('() => window.__road.damage()')
+        page.evaluate('() => clearInterval(window.__hold)')
+        strike = page.evaluate('() => window.__road.deerOdds().strike')
+        print('  ..    a deer costs %.1f against %.1f for a car at the same speed,'
+              ' declared multiplier %g' % (hurt, car_dmg, strike))
+        # THE THRESHOLD IS SET UNDER THE MEASURED SPREAD, not at the multiplier. The
+        # ratio came in at 1.54, 1.61, 1.72, 1.99 and 2.09 across runs - the severity
+        # term depends on exactly where the two met, and that varies frame to frame.
+        # A bound of 1.4 sits below all of them and well above the 0.79 an engine
+        # without the strike factor produces.
+        ok(car_dmg > 0 and hurt > car_dmg * 1.4,
+           'and it costs more than clipping a car at the same speed does',
+           '%.1f against %.1f, a ratio of %.2f'
+           % (hurt, car_dmg, hurt / max(0.01, car_dmg)))
 
         # ---- AND IT ONLY HAPPENS IN A FOREST ------------------------------------
         # `planDeer` is the whole of the rarity and the whole of the placement rule,
