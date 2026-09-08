@@ -178,6 +178,43 @@ function carW(w){ return w * CAR_UNIT / ROAD; }
    read literally for the z axis.
    ------------------------------------------------------------------------- */
 const PLAYER_W = 0.265;
+/* ---- AND EACH CAR IS AS WIDE AS ITS OWN PICTURE (RLG-058) --------------
+   Owner, 2026-08-28: "we have to make the vehicle colliders true to their
+   sprite size. It's hard to tell." The half of that ruling left for later was
+   that every player car collided at ONE width while traffic and rivals each
+   carried their own - a lorry and a roadster the same width in your hands.
+
+   THE NUMBERS ARE DERIVED, NOT INVENTED, and that is what makes this a fix
+   rather than twenty-six opinions. `PLAYER_W` sizes the CANVAS a car is drawn
+   into; the painter then draws the body across a fraction of that canvas, and
+   the fraction is the body's own `wide`. So the width you can actually see has
+   been per-car all along and only the hit test was not.
+
+   IT IS THE REAR SILHOUETTE, because that is the picture the player is
+   predicting from - you see your own car from behind and from nowhere else.
+   The front view adds the arch blisters and is a little wider; using it would
+   mean colliding at a width the player never sees.
+
+   EVERY CAR GETS NARROWER, WHICH IS THE POINT. Against a flat 0.265 the six
+   run from 0.225 for the roadster to 0.300 for a formula car, so a roadster
+   was being struck fifteen per cent wider than it looks. "It's hard to tell"
+   is a complaint about prediction, and this is the size of what could not be
+   predicted.
+
+   THE AI'S MARGINS ARE NOT THIS. `laneClear` and `laneSpeed` judge a safe gap
+   with the player at 0.26 plus a margin; that is a driver's judgment rather
+   than a collider, and the ruling puts it out of scope by name.
+   -------------------------------------------------------------------- */
+const playerWCache = {};
+function playerWidthOf(key){
+  if(playerWCache[key] !== undefined) return playerWCache[key];
+  const B = BODY[key];
+  const wide = (B && B.wide !== undefined) ? B.wide : 0.03;
+  /* the painter draws from 0.5-wid to 0.5+wid of the canvas, so the body
+     spans twice `wid` of a canvas that is PLAYER_W across */
+  return (playerWCache[key] = PLAYER_W * 2 * (0.42 + wide));
+}
+function playerW(){ return playerWidthOf(optBody); }
 
 /* How far out from the ROAD EDGE something stands, in scenery units, returned
    as a distance in pixels from the middle of the road.
@@ -219,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.32';
+window.ROAD_BUILD = '0.13.33';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9589,7 +9626,7 @@ function engineRpm(){
            heat to draw with and no clock to expire on, and sat on the road
            until the player drove 2,000 units past it. `layRubber` is the one
            place that knows the shape. */
-        layRubber(playerX, pos + PLAYER_Z - 340, Math.min(1, kick), PLAYER_W);
+        layRubber(playerX, pos + PLAYER_Z - 340, Math.min(1, kick), playerW());
         shake = Math.max(shake, kick * 0.55);
       }
     }
@@ -9695,7 +9732,7 @@ function doLaunch(){
   launchNote = L.q > 0.75 ? 'PERFECT LAUNCH' : 'GOOD LAUNCH';
   if(L.q > 0.60){
     shake = Math.max(shake, L.q * 0.30);
-    layRubber(playerX, pos + PLAYER_Z - 340, L.q * 0.9, PLAYER_W);
+    layRubber(playerX, pos + PLAYER_Z - 340, L.q * 0.9, playerW());
   }
 }
 /* How much drive the launch is still taking away. 1 is a clean getaway. */
@@ -14671,7 +14708,7 @@ function step(dt){
   if(spinT > 0){
     spinT = Math.max(0, spinT - dt);
     layRubber(playerX, pos + PLAYER_Z - 340,
-              0.55 + 0.45 * clamp(spinT / LAUNCH.spinFor, 0, 1), PLAYER_W);
+              0.55 + 0.45 * clamp(spinT / LAUNCH.spinFor, 0, 1), playerW());
   }
   if(bogHold > 0) bogHold = Math.max(0, bogHold - dt);
   if(launchNoteT > 0) launchNoteT = Math.max(0, launchNoteT - dt);
@@ -14993,7 +15030,7 @@ function step(dt){
      its own rubber completely — the marks were there the whole time and
      hidden by the thing making them. Half a car back puts them on the tarmac
      below the bumper where you can actually see them. */
-  if(pScrub > 0.05) layRubber(playerX, pos + PLAYER_Z - 340, pScrub, PLAYER_W);
+  if(pScrub > 0.05) layRubber(playerX, pos + PLAYER_Z - 340, pScrub, playerW());
   stepRubber(dt);
 
   /* ---- A SIREN KEEPS ASKING ---------------------------------------------
@@ -15989,7 +16026,7 @@ function step(dt){
     if(c.z > pos + 64000){ traffic.splice(i,1); continue; }
     if((c.iframe || 0) > 0) c.iframe -= dt;
     const dz = c.z - pz, dx = Math.abs(c.x - playerX);
-    const overlap = carW(c.w + PLAYER_W)/2;
+    const overlap = carW(c.w + playerW())/2;
     if(iframe<=0 && Math.abs(dz) < (c.len+380)/2 && dx < overlap){
       /* where it landed decides everything, and both cars move (RLG-131) */
       const sev = impactWith(c);
@@ -16307,7 +16344,7 @@ function step(dt){
        Measured: one hit logged at nearestCop 3793.
        ------------------------------------------------------------------ */
     const pdz = k.z - pz;
-    if(iframe<=0 && Math.abs(pdz) < (k.len+380)/2 && Math.abs(k.x-playerX) < carW(k.w+PLAYER_W)/2){
+    if(iframe<=0 && Math.abs(pdz) < (k.len+380)/2 && Math.abs(k.x-playerX) < carW(k.w+playerW())/2){
       /* ---- THE PIT IS GONE (owner, 2026-09-07) ---------------------------
          "I don't think there is enough collision granularity to really do the
          PIT justice reliably. We could get rid of the PIT manoeuvre and just
@@ -16502,7 +16539,7 @@ function step(dt){
       let clean = true;
       for(const p of b.parts){
         if(p.cop) continue;
-        if(Math.abs(p.x - playerX) < carW(p.w + PLAYER_W)/2){ clean=false; break; }
+        if(Math.abs(p.x - playerX) < carW(p.w + playerW())/2){ clean=false; break; }
       }
       if(clean){
         /* a near miss is its own reward - and a car with no bottle is not
@@ -26496,10 +26533,24 @@ requestAnimationFrame(frameLoop);
   /* the half-width the hit test actually uses against that car, and the
      half-width the player is DRAWN at, in the same units - the two numbers this
      ruling exists to keep equal */
+  /* the half-width the hit test uses against a car of a GIVEN width. `colliderProbe`
+     answers for `traffic[0]`, which is whichever car is first in the array rather than
+     the one a check has parked in front of the player - so a harness that stages a car
+     and then asks the probe is comparing its measurement against a different vehicle.
+     This takes the width it is asking about. */
+  API.hitHalfWith = function(w){ return +(carW(w + playerW()) / 2).toFixed(5); };
   API.colliderProbe = function(){
     const c = traffic[0];
-    return { playerW: PLAYER_W,
-             hitHalf: c ? +carW(c.w + PLAYER_W).toFixed(5)/2 : null,
+    const pw = playerW();
+    return { playerW: pw,
+             /* the CANVAS a car is drawn into, which is one number for all six -
+                it is reported beside the body's own width so a check cannot
+                mistake the two, which is the confusion this ruling is about */
+             canvasW: PLAYER_W,
+             body: optBody,
+             widths: Object.keys(BODY).reduce((o, k) => {
+               o[k] = +playerWidthOf(k).toFixed(4); return o; }, {}),
+             hitHalf: c ? +carW(c.w + pw).toFixed(5)/2 : null,
              trafficW: c ? c.w : null };
   };
   /* ---- WHAT A VEHICLE CAN DO, FROM BOTH TABLES AT ONCE -------------------

@@ -14,6 +14,27 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-33"></a>
+## [0.13.33] - 2026-09-08
+- Fixed: **every car is as wide as its own picture.** Owner, 2026-08-28: "we have to make the
+  vehicle colliders true to their sprite size. It's hard to tell." The half of that ruling left for
+  later was that all six player cars collided at ONE width while traffic and rivals each carried
+  their own - a lorry and a roadster the same width in your hands.
+- **The numbers are derived, not invented.** `PLAYER_W` sizes the canvas a car is drawn into; the
+  painter draws the body across a fraction of that canvas, and the fraction is the body's own
+  `wide`. So the width you can SEE has been per-car all along and only the hit test was not. It is
+  the rear silhouette, because that is the only view you have of your own car.
+- **Every car gets narrower, which is the point.** The fleet runs from 0.225 for the roadster to
+  0.300 for a formula car against a flat 0.265, so a roadster was being struck fifteen per cent
+  wider than it looks. See [RLG-058](../fragments/RLG-058.md).
+- Fixed: **two checks in the collider harness were red on main and nobody had said so**, and four
+  faults in it are gone - all the same shape, a measurement not measuring what it named. The run
+  clock froze the world mid-search and made a body read zero damage at a full overlap; the count-in
+  froze it during the FIRST search, which is why only that one was unstable at 0.0012, 0.0750 and
+  0.0375 on one build; a contact shoved the player out of the offset being tested, so the answer
+  depended on how long the harness waited; and the declared sum was read against whichever car was
+  first in the array rather than the one parked in front of the player.
+
 <a id="v0-13-32"></a>
 ## [0.13.32] - 2026-09-08
 - Changed: **the police navigate the traffic, and surround you before you stop.** Owner, 2026-09-07:
