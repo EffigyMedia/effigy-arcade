@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.33';
+window.ROAD_BUILD = '0.13.34';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -5871,6 +5871,57 @@ function buildFleet(){
     TRAFFIC_SP[kind] = TRAFFIC_PAINT.map((c,i2) =>
       sprite(size[0], size[1], paintRig(rig, trafficPaint(i2))));
   }
+  /* ---- AND THE ONE THING ON THE ROAD THAT IS NOT A VEHICLE (RLG-152) ----
+     A deer, seen from the side, because it is crossing - every other body in
+     this table is drawn from behind because everything else is going the same
+     way you are. ONE PAINT rather than the ten a car gets: a deer is a deer.
+     -------------------------------------------------------------------- */
+  TRAFFIC_SP['deer'] = [sprite(120, 132, (g, w, h) => {
+    const coat = '#6b5136', dark = '#4a3724', pale = '#8a6c4a';
+    const X = w * 0.5, Y = h * 0.62, L = w * 0.30, T = h * 0.26;
+    g.fillStyle = 'rgba(0,0,0,.35)';
+    g.beginPath(); g.ellipse(X, h*0.95, L*1.05, h*0.03, 0, 0, 6.2832); g.fill();
+    /* legs first, so the body sits over them - mid-stride, because it is
+       sprinting rather than standing */
+    g.strokeStyle = dark; g.lineWidth = Math.max(1.5, w*0.030); g.lineCap='round';
+    const leg = (x0, x1) => { g.beginPath(); g.moveTo(X+x0, Y+T*0.20);
+                              g.lineTo(X+x1, h*0.93); g.stroke(); };
+    leg(-L*0.62, -L*0.95); leg(-L*0.46, -L*0.10);
+    leg( L*0.52,  L*0.92); leg( L*0.38,  L*0.02);
+    /* the body: a deep chest running back to a lighter rump */
+    g.fillStyle = coat;
+    g.beginPath(); g.ellipse(X, Y, L, T, 0, 0, 6.2832); g.fill();
+    g.fillStyle = pale;
+    g.beginPath(); g.ellipse(X - L*0.62, Y + T*0.10, L*0.34, T*0.72, 0, 0, 6.2832); g.fill();
+    /* neck and head, up and forward - it has seen the car */
+    g.fillStyle = coat;
+    g.beginPath();
+    g.moveTo(X + L*0.55, Y - T*0.30);
+    g.lineTo(X + L*1.02, Y - T*1.50);
+    g.lineTo(X + L*1.34, Y - T*1.42);
+    g.lineTo(X + L*0.92, Y - T*0.10);
+    g.closePath(); g.fill();
+    g.beginPath(); g.ellipse(X + L*1.20, Y - T*1.52, L*0.26, T*0.30, 0.5, 0, 6.2832); g.fill();
+    /* antlers, so the silhouette reads as a deer at a hundred feet and not as
+       a dog - the shape is the whole of what identifies it at road distance */
+    g.strokeStyle = pale; g.lineWidth = Math.max(1, w*0.020);
+    const ant = (dx) => {
+      g.beginPath();
+      g.moveTo(X + L*1.10 + dx, Y - T*1.72);
+      g.lineTo(X + L*0.86 + dx, Y - T*2.42);
+      g.moveTo(X + L*1.00 + dx, Y - T*2.06);
+      g.lineTo(X + L*1.32 + dx, Y - T*2.30);
+      g.stroke();
+    };
+    ant(0); ant(L*0.16);
+    /* the tail, up - a deer that is running shows white */
+    g.fillStyle = '#e8e2d4';
+    g.beginPath(); g.ellipse(X - L*0.98, Y - T*0.36, L*0.13, T*0.30, -0.4, 0, 6.2832); g.fill();
+    /* and the eye, which is the only thing that catches a headlight */
+    g.fillStyle = '#1a1208';
+    g.beginPath(); g.arc(X + L*1.24, Y - T*1.56, Math.max(1, w*0.018), 0, 6.2832); g.fill();
+  })];
+
   /* ---- AND THE SUPERCARS THAT ARE SOMEBODY'S CAR (RLG-054) --------------
      Owner, 2026-08-29: "we should make the supercars, not including the formula,
      very very rare traffic cars in their muted colors", and "they should inherit
@@ -7927,7 +7978,13 @@ function laneClear(c, tx, urgency){
     /* closing fast from behind counts as occupied even when it is not yet */
     return dz <= -needB && dz > -6000 && o.spd > c.spd + 900;
   };
-  for(const o of traffic){ if(o !== c && taken(o)) return false; }
+  /* A CROSSING ANIMAL IS NOT TRAFFIC TO MERGE AROUND (RLG-152). It is on the
+     road for under a second and it is nobody's lane; treating it as an obstacle
+     would set every car near it braking and swerving for a thing that has
+     already gone, and the corridor guarantee this file protects is measured
+     over exactly these sweeps. The player still hits it, which is the point of
+     it - the hazard is yours, not the road's. */
+  for(const o of traffic){ if(o !== c && !isCrossing(o) && taken(o)) return false; }
   for(const o of cops){ if(o.wreck <= 0 && taken(o)) return false; }
   const pdz = (pos + PLAYER_Z) - c.z;
   if(Math.abs(playerX - tx) < (0.26 + c.w)/2 + 0.05 && pdz > -needB && pdz < needF) return false;
@@ -7959,7 +8016,7 @@ function wouldBlock(c, tx){
      --------------------------------------------------------------------- */
   const near = [];
   for(const o of traffic){
-    if(o === c) continue;
+    if(o === c || isCrossing(o)) continue;
     if(Math.abs(o.z - c.z) > 2400) continue;
     near.push(o);
   }
@@ -7986,7 +8043,7 @@ function laneSpeed(c, tx){
     if(dz <= 0 || dz > 6000) return;
     v = Math.min(v, o.spd);
   };
-  for(const o of traffic){ if(o !== c) slower(o); }
+  for(const o of traffic){ if(o !== c && !isCrossing(o)) slower(o); }
   /* pulling out to sit behind a cruiser is no better than pulling out to sit
      behind a lorry, so the police count toward how fast a lane is (RLG-159) */
   for(const o of cops){ if(o.wreck <= 0) slower(o); }
@@ -8125,7 +8182,8 @@ function keepLaneOpen(dt, pz){
      arrives at the limit, which is the only way an absolute guarantee can hold.
      ---------------------------------------------------------------------- */
   const WARN = 0.62;
-  const ahead = traffic.filter(c => c.z > pz - 2000 && c.z < pz + 26000);
+  const ahead = traffic.filter(c => !isCrossing(c)
+                                && c.z > pz - 2000 && c.z < pz + 26000);
   blockedAhead = 0;
   tightestAhead = 9;
   for(let z = pz; z < pz + 26000; z += STEP){
@@ -8488,6 +8546,77 @@ const SPEED_LIMIT = 80 / 200;          /* as a fraction of MAX_SPD */
    rarity and this is a supersession rather than an increase.
    ======================================================================== */
 const CIVILIAN = 0, SPEEDER = 1, RACER = 2;
+/* ---- AND A FOURTH MIND THAT IS NOT DRIVING AT ALL (RLG-152) ----------
+   Owner, 2026-09-01: "in the forest biome I'd like a very very small chance
+   for deer to sprint across the road from one tree line to the other."
+
+   IT IS A MIND, NOT A VEHICLE CLASS, and the ruling asked for it that way: a
+   deer is "a driver with a very simple mind rather than a special case in the
+   physics". Everything that reads `traffic` - the spawner, the culler, the
+   mirror, the crest occlusion, the collision - goes on working without knowing
+   what a deer is, and the one branch that exists is about what this mind DOES
+   rather than about what body it is wearing.
+
+   WHAT IT DOES IS CROSS. It holds no lane, follows nobody, and reads no road:
+   it moves sideways at a fixed rate until it is off the far side, and then it
+   is gone. It is the first thing in this game that moves ACROSS the road.
+   -------------------------------------------------------------------- */
+const CROSSING = 3;
+function isCrossing(o){ return o && o.mind === CROSSING; }
+/* ---- HOW RARE, HOW FAST, AND WHAT A HIT COSTS -------------------------
+   The ruling put three questions to the owner and the queue said to run
+   without checking back, so all three are answered here and recorded as
+   decided-for-now rather than settled.
+
+   HOW RARE: about one forest in ten. The owner said "very very small" twice,
+   so it is deliberately at the edge of never. It is rolled ONCE when a forest
+   opens rather than tested per second, which is what makes the odds mean what
+   they say - a per-frame chance would cluster two into one wood and leave the
+   next four empty.
+
+   HOW FAST: the drivable road is two lane units across and the crossing runs
+   at 2.5 of them a second, so it clears the tarmac in about eight tenths of a
+   second. The ruling framed the choice as a flash against a hazard; this is
+   the fast end of a hazard - long enough to react to, short enough to be a
+   sprint rather than a thing you watch amble.
+
+   AND A HIT COSTS WHAT ANY COLLISION COSTS, which is the answer the ruling
+   said makes it a feature rather than decoration: a forest becomes a place you
+   slow down for. It needed no code at all - a deer is in `traffic`, and the
+   player's collision with traffic already exists. THE DEER IS NOT KILLED and
+   nothing depicts one being killed: the ruling calls that a tone decision and
+   not a session's to make, so the animal is simply gone from the road.
+   -------------------------------------------------------------------- */
+const DEER_ODDS = 0.10;
+const DEER_CROSS = 2.5;      /* lane units a second */
+const DEER_FROM = 1.5;       /* where the tree line stands, in lane units */
+/* the place a crossing is due, and which way it runs. -1 is none planned. */
+let deerZ = -1, deerSide = 1;
+/* ---- IT WANTS A FOREST WITH TREES ON BOTH SIDES (RLG-152) ------------
+   The owner said "from one tree line to the other", so a place with water, a
+   wall or a bore down one side is not it - there is nothing for the animal to
+   come out of. `sideRoll` is the sea's side and is zero when there is none.
+   -------------------------------------------------------------------- */
+function planDeer(){
+  if(biome !== 'FOREST' || sideRoll) { deerZ = -1; return; }
+  if(Math.random() >= DEER_ODDS) { deerZ = -1; return; }
+  deerZ = pos + PLAYER_Z + rnd(60000, 260000);
+  deerSide = Math.random() < 0.5 ? -1 : 1;
+}
+function stepDeer(){
+  if(deerZ < 0) return;
+  /* it comes out of the trees at the edge of sight, like everything else on
+     this road, so it is never conjured inside the drawn world (RLG-031) */
+  if(pos + PLAYER_Z < deerZ - OUT_OF_SIGHT) return;
+  traffic.push({
+    z: deerZ, lane: 1, x: deerSide * DEER_FROM,
+    spd: 0, cruise: 0, mind: CROSSING, type: 'deer',
+    dx: -deerSide * DEER_CROSS,
+    w: typeW('deer'), len: typeLen('deer'),
+    near: false, drift: 0, paintN: 0
+  });
+  deerZ = -1;
+}
 /* what each vehicle can actually do, as a fraction of MAX_SPD. This is the CAR,
    and it is the only thing in here that reads the body. */
 const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55,
@@ -8564,7 +8693,9 @@ function superType(){
    An ambulance is a van's box on a van's wheels, so it takes the van's figures.
    ---------------------------------------------------------------------- */
 function typeW(t){
-  return t === 'truck'  ? 0.32
+  /* a deer is a narrow thing seen side-on, and it is not a car - RLG-152 */
+  return t === 'deer' ? 0.10
+       : t === 'truck'  ? 0.32
        : t === 'van' || t === 'ambulance' ? 0.275
        : t === 'pickup' ? 0.29
        /* the same figures `spawnCop` gives a chasing cruiser, so a patrol does
@@ -8575,7 +8706,8 @@ function typeW(t){
        : SUPER_W[t] || 0.275;
 }
 function typeLen(t){
-  return t === 'truck'  ? 520
+  return t === 'deer' ? 200
+       : t === 'truck'  ? 520
        : t === 'van' || t === 'ambulance' ? 410
        : t === 'pickup' ? 420
        : t === 'cop' ? 400
@@ -11570,6 +11702,8 @@ function openBiome(){
      the distance is armed here with the same range every other change uses.
      ---------------------------------------------------------------- */
   biomeNext = placeSpan(biome);
+  /* a run can OPEN in a forest, so the roll belongs here as well (RLG-152) */
+  planDeer();
   /* a run cannot open in an event - RLG-140 sees to that - so there is never an
      authored profile in force at the start of one, and nothing is waiting */
   eventProfile = null; eventLen = 0; eventKey = null;
@@ -11690,6 +11824,9 @@ function stepBiome(dt){
     }
     if(cross >= 0.5 && biome !== biomeTo){
       biome = biomeTo;
+      /* arriving somewhere is when a crossing is rolled for - once per place,
+         so the odds mean what they say (RLG-152) */
+      planDeer();
       /* the skyline is NOT rebuilt here. It has been showing the new place
          since the boundary was placed, because it belongs to the horizon
          rather than to the car. */
@@ -15056,6 +15193,10 @@ function step(dt){
     if(c.z > pos - 400) scatter(0.90, c.z, c.x);
   }
 
+  /* the planned crossing, put on the road once the car is near enough for it to
+     come out of the trees rather than to appear in the middle of them */
+  if(!CFG.circuitOnly) stepDeer();
+
   /* ---- SERVING A PENALTY, AND THE WORLD KEEPS GOING (owner, 2026-09-06) ---
      "When the player gets the 2 seconds penalty, the world shouldn't freeze.
      The world should continue."
@@ -15738,6 +15879,18 @@ function step(dt){
   for(const c of traffic){
     /* a wreck has no AI: it is not choosing a lane or holding a gap any more, it is sliding to the verge - see `stepDeadTraffic` */
     if(c.dead) continue;
+    /* ---- AND A CROSSING IS NOT DRIVING (RLG-152) ----------------------
+       Everything below this line is a car reading the road: a barrier, the
+       thing in front, a lane worth moving to. A deer does none of it. It goes
+       sideways at its own rate until it is off the far side and then it is
+       gone - which is the entire behaviour, and it is why this is a mind
+       rather than a class.
+       ---------------------------------------------------------------- */
+    if(isCrossing(c)){
+      c.x += c.dx * dt;
+      if(Math.abs(c.x) > DEER_FROM + 0.1) c.gone = true;
+      continue;
+    }
     const wasSpd = c.spd || 0;
     let want = c.cruise;
 
@@ -15764,7 +15917,7 @@ function step(dt){
       if(gap > 2200) return;
       want = Math.min(want, gap < 420 ? 0 : o.spd + gap * 0.35);
     };
-    for(const o of traffic){ if(o !== c) follow(o); }
+    for(const o of traffic){ if(o !== c && !isCrossing(o)) follow(o); }
     /* ---- AND A POLICE CAR IS ONE OF THEM (RLG-159) --------------------
        This is the loop that stops a car driving into the back of the thing in
        front of it, and it read only `traffic`. A cruiser slowing across the
@@ -15988,12 +16141,20 @@ function step(dt){
     /* a wrecked car coasts to the verge and stops. It advances HERE like
        everything else so that it cannot be moved twice in one frame. */
     if(c.dead){ stepDeadTraffic(c, dt); continue; }
+    /* a crossing that has reached the far tree line is gone - it is not a car
+       that has been overtaken, so it does not wait to fall out of the mirror */
+    if(c.gone){ traffic.splice(i,1); continue; }
     c.z += c.spd*dt;
     /* the idle wander inside a lane. NOT while a move is in progress: it was
        being added on top of the merge every frame, so a car arrived a little
        past its target and then had to be pulled back. And the bound is in lane
        widths, so a wider road gets a wider wander rather than a tighter one. */
-    if(!(c.mergeT > 0) && !c.yielding){
+    /* AND A CROSSING DOES NOT WANDER IN A LANE IT IS NOT IN (RLG-152). The skip
+       was written a dozen lines earlier at first, as a `continue` - which also
+       stepped over the culling and the PLAYER'S COLLISION, so the animal could
+       be driven through and cost nothing. It is the drift that a crossing has no
+       business in, and nothing else. */
+    if(!isCrossing(c) && !(c.mergeT > 0) && !c.yielding){
       c.x += c.drift*60*dt;
       if(Math.abs(c.x - LANE_X[c.lane]) > LANE_W * TRAF_DRIFT) c.drift *= -1;
     }
@@ -26539,6 +26700,42 @@ requestAnimationFrame(frameLoop);
      and then asks the probe is comparing its measurement against a different vehicle.
      This takes the width it is asking about. */
   API.hitHalfWith = function(w){ return +(carW(w + playerW()) / 2).toFixed(5); };
+  /* ---- STAGING A CROSSING, FOR A CHECK (RLG-152) ------------------------
+     One forest in ten carries a deer, which is a number chosen so a player
+     almost never meets one - and a harness that waited for the odds would be
+     measuring the random number generator. `placeDeer` puts one at a stated
+     distance so the crossing itself can be watched, and `deerDue` reports the
+     planned one so the ODDS can be measured separately, by opening forests and
+     counting.
+     -------------------------------------------------------------------- */
+  API.placeDeer = function(dz, side){
+    deerZ = pos + PLAYER_Z + (dz === undefined ? 20000 : dz);
+    deerSide = side === undefined ? 1 : (side < 0 ? -1 : 1);
+    stepDeer();
+    return traffic.filter(isCrossing).length;
+  };
+  API.deerDue = function(){ return deerZ < 0 ? null : Math.round(deerZ - pos - PLAYER_Z); };
+  /* run the REAL planner for a named place and put everything back, so the odds
+     and the forest-only rule are measured through the code that does them rather
+     than through a copy of its condition written in the harness */
+  API.deerPlan = function(key, sea){
+    const wasZ = deerZ, wasB = biome, wasS = sideRoll;
+    /* THE SEA SIDE IS PART OF THE RULE and so it is part of what can be asked
+       about. The live run has whatever side it rolled, and leaving that in place
+       made every forest reject - which read as odds of zero rather than as the
+       harness measuring a coastal wood. */
+    biome = key; sideRoll = sea ? 1 : 0;
+    planDeer();
+    const got = deerZ >= 0;
+    biome = wasB; deerZ = wasZ; sideRoll = wasS;
+    return got;
+  };
+  API.crossings = function(){
+    return traffic.filter(isCrossing).map(c => ({
+      x: +c.x.toFixed(3), z: Math.round(c.z - pos - PLAYER_Z),
+      w: c.w, type: c.type }));
+  };
+  API.deerOdds = function(){ return { odds: DEER_ODDS, cross: DEER_CROSS, from: DEER_FROM }; };
   API.colliderProbe = function(){
     const c = traffic[0];
     const pw = playerW();

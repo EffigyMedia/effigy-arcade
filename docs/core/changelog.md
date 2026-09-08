@@ -14,6 +14,25 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-34"></a>
+## [0.13.34] - 2026-09-08
+- Added: **a deer crosses a forest road, very rarely.** Owner, 2026-09-01: "in the forest biome I'd
+  like a very very small chance for deer to sprint across the road from one tree line to the other."
+  It is the first thing in this game that moves ACROSS the road.
+- **It is a mind, not a vehicle class.** `CROSSING` sits beside CIVILIAN, SPEEDER and RACER, so the
+  spawner, the culler, the mirror, the crest occlusion and the collision all go on working without
+  knowing what a deer is. See [RLG-152](../fragments/RLG-152.md).
+- **The ruling's three open questions are answered and recorded as decided-for-now**, each a single
+  tunable: about one forest in ten, rolled once when the place opens rather than tested per second,
+  measured at 10.8%, 10.5% and 9.5% over 400 openings; 2.5 lane units a second, which clears the
+  tarmac in about eight tenths of a second; and hitting one costs what any collision costs, which is
+  what makes a forest a place to slow down for. **The animal is not killed and nothing depicts one
+  being killed** - the ruling calls that a tone decision and not a session's to make.
+- **It wants two tree lines**, so a forest with water down one side plans none - measured at 0 of 400.
+- **It is kept out of the lane sweeps deliberately.** A thing on the road for under a second is
+  nobody's lane, and treating it as an obstacle would set every car near it braking for something
+  already gone. The hazard is the player's. `tools/deer-test.py` is new and it falsifies.
+
 <a id="v0-13-33"></a>
 ## [0.13.33] - 2026-09-08
 - Fixed: **every car is as wide as its own picture.** Owner, 2026-08-28: "we have to make the
