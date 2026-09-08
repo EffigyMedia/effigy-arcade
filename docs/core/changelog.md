@@ -14,6 +14,28 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-40"></a>
+## [0.13.40] - 2026-09-08
+- Fixed: **a clean driver is not a target.** Owner, 2026-09-08: "there's STILL an overwhelming amount
+  of cops just coming back at me one after the other engaged to me... and why do I start hot pursuit
+  with heat at all?" One root cause answered both. The player was the DEFAULT target of every
+  cruiser's search, unconditionally and weighted toward - right for a cruiser already on you, wrong
+  for every other one. So a trap that left its post for a speeding NPC re-targeted within 1.4 seconds
+  and adopted you however you were driving, and they accumulated.
+- **Measured at 76mph against a limit of 80**, with no heat and not one radio dispatch: four cruisers
+  engaged to a driver who had done nothing, every one trap-born. After the fix the same run holds at
+  zero engaged, and the only cruiser on the road is a trap pulling over an NPC.
+- **And that is where the heat came from.** RLG-170 charges two points a mile WHILE PURSUED, so a
+  clean driver was billed for a pursuit that should never have started. Nothing was wrong with the
+  reset - `heatPts` is zeroed every run. See [RLG-172](../fragments/RLG-172.md).
+- **A cop already on you still keeps you**, which is the half the old comment claimed and the code
+  did not make. Without it, braking to a stop made every cruiser lose interest and the BUSTED rule
+  became unreachable.
+- Fixed: **the bust check was holding the defect in place.** It staged a cruiser beside a driver with
+  NO heat and expected an arrest - a case that only passed because every cruiser adopted the player
+  whatever they had done. The scene now carries a real pursuit, and the owner's complaint is a check
+  of its own: a driver wanted for nothing cannot be busted.
+
 <a id="v0-13-39"></a>
 ## [0.13.39] - 2026-09-08
 - Fixed: **no police arrive from up the road.** Owner, 2026-09-08: "there are still police coming

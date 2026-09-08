@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.39';
+window.ROAD_BUILD = '0.13.40';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16369,7 +16369,40 @@ function step(dt){
     k.retarget -= dt;
     if(k.retarget <= 0){
       k.retarget = 1.4;
-      let bestZ = pz, bestX = playerX, bestD = Math.abs(k.z - pz) * 0.55;
+      /* ---- AND A CLEAN DRIVER IS NOT A TARGET (owner, 2026-09-08) --------
+         "There's STILL an overwhelming amount of cops just coming back at me
+         one after the other engaged to me."
+
+         THE PLAYER WAS THE DEFAULT TARGET UNCONDITIONALLY. Every cruiser starts
+         this search with you as `best` and weighted toward at 0.55, which is
+         right for a cop that is ALREADY on you and wrong for every other one.
+         So a trap that left its post for a speeding NPC - which RLG-046 rules
+         it should - re-targeted within 1.4 seconds and adopted YOU, however
+         you were driving. They accumulate, because each one arrives for
+         somebody else's offence and stays for yours.
+
+         MEASURED AT 76MPH AGAINST A LIMIT OF 80, with no heat and not one radio
+         dispatch: four cruisers engaged to a driver who had done nothing, all
+         of them trap-born. It is also where the heat came from - the per-mile
+         charge is paid while PURSUED, so a clean driver was being billed for a
+         pursuit that should never have started.
+
+         THE LAW IS STILL NOT ONLY AFTER YOU. The rest of this search is
+         untouched: a cruiser still picks the nearest speeder, and a pursuit can
+         still be taken off you by somebody else's driving. What changed is that
+         you have to be WORTH chasing to be in the running at all - wanted, or
+         over the limit. A cop already on you keeps its weighting, because heat
+         is what a pursuit leaves behind and heat keeps you a candidate.
+         ---------------------------------------------------------------- */
+      /* A COP ALREADY ON YOU KEEPS YOU, which is the half the old comment
+         claimed and the code did not make. The test decides whether a cruiser
+         that is NOT on you may ADOPT you - it never releases one that already
+         has. Without this, braking to a stop with the heat cooled away made
+         every cruiser lose interest and the BUSTED rule became unreachable:
+         bust-test read "nothing happened in seven seconds". */
+      const worth = heat > 0 || spd > MAX_SPD * SPEED_LIMIT || k.onPlayer === true;
+      let bestZ = worth ? pz : -1e9, bestX = playerX;
+      let bestD = worth ? Math.abs(k.z - pz) * 0.55 : 1e9;
       const look = (z, x, sp) => {
         /* a target with a bad number in it poisons `k.x` and every gradient
            drawn from it — one NaN in a chase turns the whole frame black */

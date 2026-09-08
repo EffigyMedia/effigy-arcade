@@ -36,8 +36,28 @@ PORT = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f'http://127.0.0.1:{PORT}'
 
+# ---- A BUST IS THE END OF A PURSUIT, SO THE SCENE NEEDS ONE (owner, 2026-09-08) ----
+# This staged a cruiser beside a driver with NO HEAT and expected an arrest. That case
+# used to fire because every cruiser adopted the player as its default target whatever
+# they had done - which is the owner's own report: "an overwhelming amount of cops just
+# coming back at me one after the other engaged to me". A clean, stopped driver being
+# boxed in and arrested is that fault, not a feature, so the check would have held the
+# defect in place.
+#
+# THE SCENE NOW CARRIES WHAT A BUST NEEDS: heat on the car and a cruiser that is on it.
+# `onPlayer` is set because a real dispatched cruiser has it set by the target search,
+# and a staged one that omits it is not a cruiser in pursuit - it is a parked car.
 PLACE_COP = """() => { const R = window.__road;
     R.copsClear();
+    R.heat(2);
+    R.cops().push({ z: R.pos + R.PLAYER_Z + 200, x: 0.30, spd: 0,
+                    wreck:0, ang:0, grace:0, cool:0, side:1, onPlayer:true,
+                    w:0.27, len:400, phase:0, dmg:0, from:'test' }); }"""
+
+# and the same scene with nothing on the car, which is the owner's complaint as a check
+PLACE_COP_CLEAN = """() => { const R = window.__road;
+    R.copsClear();
+    R.heatSet(0);
     R.cops().push({ z: R.pos + R.PLAYER_Z + 200, x: 0.30, spd: 0,
                     wreck:0, ang:0, grace:0, cool:0, side:1,
                     w:0.27, len:400, phase:0, dmg:0, from:'test' }); }"""
@@ -114,6 +134,17 @@ def main():
            f'ended by {why!r}' if why else '')
         ctx.close()
 
+        # ---- STOPPED BESIDE A CRUISER, BUT WANTED FOR NOTHING ----------------
+        # The owner's report as an assertion: a driver who has done nothing is not
+        # chased, and cannot be arrested for stopping near a police car.
+        ctx, page, errs4 = boot(b, pursuit=True)
+        page.evaluate(PLACE_COP_CLEAN)
+        why = stop_and_wait(page)
+        print(f'  ..    stopped beside a cruiser, no heat   -> {why or "nothing"}')
+        ok(why == '', 'and a driver wanted for nothing cannot be busted',
+           f'ended by {why!r}' if why else '')
+        ctx.close()
+
         # ---- STOPPED, CRUISER ALONGSIDE, PURSUIT OFF -------------------------
         ctx, page, errs3 = boot(b, pursuit=False)
         page.evaluate(PLACE_COP)
@@ -122,7 +153,7 @@ def main():
         ok(why == '', 'and with HOT PURSUIT off nobody can box you in',
            f'ended by {why!r}' if why else '')
 
-        errs = errs + errs2 + errs3
+        errs = errs + errs2 + errs3 + errs4
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         ctx.close()
         b.close()
