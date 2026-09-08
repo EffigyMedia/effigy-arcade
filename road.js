@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.22';
+window.ROAD_BUILD = '0.13.23';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7978,10 +7978,30 @@ function spawnBehind(){
   /* It was giving up after ONE blocked lane, and at a standstill the lane
      behind you is usually the one you are sitting in — so nothing ever
      arrived, which is exactly the case this exists for. Try every lane. */
+  /* ---- FURTHER BACK, AND IT FADES IN (owner, 2026-09-07) ---------------
+     "We either need to spawn the traffic behind the car at a greater distance
+     or alpha fade them in or both, because right now if you just stop the car
+     and look at your rearview mirror you just constantly see traffic just
+     popping into existence."
+
+     BOTH, AND NEITHER IS ENOUGH ALONE. The mirror draws 34,000 units back and
+     this dropped cars 2,600 to 4,200 behind - a third of the way up the glass,
+     at a size you cannot miss. Simply pushing the spawn past the mirror's reach
+     does not work either: a car has to CLOSE on you to arrive, and at anything
+     like road speed the closing rate is a few hundred units a second, so one
+     dropped at the far edge would take the best part of a minute. This spawner
+     exists to stop a stopped car sitting on an empty road, and a car that never
+     arrives is the fault it was written to fix.
+
+     So it goes back far enough to appear small, and it fades in over its first
+     stretch of travel. `arriveFade` measures the car's OWN distance covered
+     rather than the gap to the player, because when you are moving quickly that
+     gap barely closes and a fade keyed on it would never finish.
+     ------------------------------------------------------------------- */
   const order = [0,1,2,3].sort(()=>Math.random()-0.5);
   let lane = -1, z = 0;
   for(const L of order){
-    const zz = pos - rnd(2600, 4200);
+    const zz = pos - rnd(7000, 11000);
     if(laneFree(zz, L, 1500)){ lane = L; z = zz; break; }
   }
   if(lane < 0) return;
@@ -8048,8 +8068,27 @@ function spawnBehind(){
     mind: mindFor(behindCruise),
     type: t,
     w: typeW(t), len: typeLen(t),
-    near:false, drift: rnd(-1,1)*0.0002, fromBehind:true, paintN: (Math.random()*10)|0
+    near:false, drift: rnd(-1,1)*0.0002, fromBehind:true, paintN: (Math.random()*10)|0,
+    /* where it came in, so it can be faded up over its first stretch */
+    bornZ: z
   });
+}
+
+/* ---- HOW SOLID A CAR THAT HAS JUST ARRIVED IS --------------------------
+   1 for everything that has always been there. A car dropped in behind you
+   fades up over its first `ARRIVE_FADE` units of travel, so it resolves out of
+   the distance instead of appearing whole.
+
+   MEASURED IN THE CAR'S OWN TRAVEL, not in the gap to the player. The gap is
+   what you would reach for and it is the wrong quantity: at road speed a car
+   coming up behind closes only a few hundred units a second, so a fade keyed on
+   the gap would still be half transparent a minute later. What it has driven is
+   the same number whatever the player is doing.
+   ---------------------------------------------------------------------- */
+const ARRIVE_FADE = 6000;
+function arriveFade(o){
+  if(!o || o.bornZ === undefined) return 1;
+  return clamp((o.z - o.bornZ) / ARRIVE_FADE, 0, 1);
 }
 
 /* ---- AND SOMETIMES ONE IS ON A CALL (owner, 2026-09-07) -----------------
@@ -19602,7 +19641,11 @@ function paintBucket(list, onRoad){
     } else if(it.kind==='t'){
       const set = TRAFFIC_SP[it.o.type];
       const img = set ? set[(it.o.paintN|0) % set.length] : SP[it.o.type];
-      const box = drawSprite(img, it.o.x, it.o.z, it.o.w);
+      /* the same arrival fade the mirror uses. A car dropped in behind you is
+         usually solid long before it passes, but a slow one on a fast road can
+         still be fading when it comes alongside, and it must not change how
+         solid it is at the moment it crosses from one view to the other. */
+      const box = drawSprite(img, it.o.x, it.o.z, it.o.w, arriveFade(it.o));
       noteSprite(it.o);
       /* Tail lights on the same schedule the street lamps use, and BRIGHT the
          moment a car is actually shedding speed. Same rule for everything on
@@ -21672,6 +21715,12 @@ function drawMirrorFull(mx, my, mw, mh){
       : it.o.body ? rivalFront(it.o.body, it.o.paint, it.o.striped)
       : null;
 
+    /* a car that has just been dropped in behind you is faded up over its first
+       stretch of travel rather than appearing whole - see `arriveFade` */
+    const arrive = arriveFade(it.o);
+    if(arrive <= 0.02) continue;
+    const arriveWas = ctx.globalAlpha;
+    if(arrive < 1) ctx.globalAlpha = arriveWas * arrive;
     if(fs){
       const fh = sw * fs.height / fs.width;
       ctx.drawImage(fs, x0, p1.y - fh, sw, fh);
@@ -21714,6 +21763,11 @@ function drawMirrorFull(mx, my, mw, mh){
         ctx.fillStyle = on2 ? '#3b6bff' : '#ff2b4a';
         ctx.fillRect(x0, p1.y - fh - Math.max(1, fh*0.06), sw, Math.max(1, fh*0.06));
       }
+      /* RESTORED ON BOTH WAYS OUT. This branch ends in a `continue`, so a single
+         restore after the loop body would be skipped for every car that has a
+         face - which is all of them - and the arrival fade would leak onto the
+         weather drawn after this pass. */
+      ctx.globalAlpha = arriveWas;
       continue;
     }
 
@@ -21724,6 +21778,7 @@ function drawMirrorFull(mx, my, mw, mh){
     ctx.beginPath();
     ctx.roundRect(x0 + sw*0.14, y0 + sh*0.10, sw*0.72, sh*0.38, Math.max(0.4, sw*0.05));
     ctx.fill();
+    ctx.globalAlpha = arriveWas;
   }
   /* ---- AND THE WEATHER FALLS IN HERE TOO (RLG-092) --------------------
      Last, and inside the clip, because precipitation is in the air BETWEEN the
@@ -25286,6 +25341,18 @@ requestAnimationFrame(frameLoop);
     return { now:now, waiting:waiting, never:never, seen:seen };
   };
   API.trafficCount = function(){ return traffic.length; };
+  /* ---- WHAT IS ARRIVING BEHIND YOU, AND HOW SOLID IT IS ------------------
+     `arrive` is the fade: 0 the instant a car is dropped in, 1 once it has
+     driven `ARRIVE_FADE` units. A check reads it rather than counting pixels in
+     the glass, because the mirror is a few dozen pixels of a moving picture and
+     a car three pixels wide cannot be told from the road it is on.
+     -------------------------------------------------------------------- */
+  API.arrivals = function(){
+    return traffic.filter(c => c.bornZ !== undefined)
+                  .map(c => ({ back: Math.round(pos - c.z),
+                               bornBack: Math.round(pos - c.bornZ),
+                               arrive: +arriveFade(c).toFixed(3) }));
+  };
   /* WHERE THE LANES ARE, read by tools/merge-test.py. A harness that carries
      its own copy of LANE_X measures a road that RLG-024 is going to widen, and
      it cannot tell you it is out of date - it simply reports a car in the outer

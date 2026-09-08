@@ -14,6 +14,27 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-23"></a>
+## [0.13.23] - 2026-09-07
+- Fixed: **traffic behind you resolves out of the distance instead of appearing.** Owner,
+  2026-09-07: "if you just stop the car and look at your rearview mirror you just constantly see
+  traffic just popping into existence." The mirror draws 34,000 units back and the rear spawner was
+  dropping cars **2,600 to 4,200 behind** - a third of the way up the glass, at a size you cannot
+  miss.
+- **Both halves, and neither works alone.** They go in at 7,000 to 11,000 now, and they **fade up
+  over their first stretch of travel.** Simply spawning past the mirror's reach would have deleted
+  the feature: a car has to *close* on you to arrive, and at road speed the closing rate is a few
+  hundred units a second, so one dropped at the far edge would take the better part of a minute.
+  This spawner exists to stop a stopped car sitting on an empty road.
+- **The fade is measured in the car's own travel, not the gap to you.** The gap is the obvious
+  quantity and the wrong one - when you are moving quickly it barely closes, so a fade keyed on it
+  would still be half transparent a minute later.
+- Added `tools/arrive-test.py`. It asserts cars go in well back, arrive transparent, become fully
+  solid - **and still arrive**, which is the check that keeps the other three honest: spawning at
+  the far edge of the glass would satisfy them perfectly and quietly remove the feature. Watched
+  failing with the old distance and no fade: nearest drop 2,607 units, and **0 of 2,680 readings**
+  caught a car mid-fade. See [UNT-195](../fragments/UNT-195.md).
+
 <a id="v0-13-22"></a>
 ## [0.13.22] - 2026-09-07
 - Fixed: **getting onto a bridge is a sharp ramp, a flat deck, and a sharp ramp.** Owner,
