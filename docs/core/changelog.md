@@ -14,6 +14,26 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-26"></a>
+## [0.13.26] - 2026-09-07
+- **Both halves of the owner's ruling were already true, and are now proved rather than assumed.**
+  "They should only come from behind. The exception to this is when you pass a speed trap or the cop
+  sitting at a roadblock. And the cop at a roadblock never chases you - that's just set dressing."
+  Nothing in the engine changed; what changed is that it can no longer stop being true silently.
+- Every cruiser records **where it came in relative to the player** and which source made it, logged
+  from one place in the step rather than at the four spawn sites - so a fifth source cannot be added
+  without appearing in the ledger. `patrol-test` asserts the **rule**, not a reading of the three
+  spawners that exist today: a check naming them would go on passing the day a fourth is added in
+  front of the car, which is the shape being ruled out. Watched failing with the radio dispatching
+  ahead: two cruisers at +2,944 and +2,857.
+- The roadblock's cruiser is a **part of the block** and never enters the pursuit array at all - every
+  AI and collision loop skips it. Asserted now, so it stays set dressing.
+- Fixed a check that was measuring luck: "a patrol car turns up in ordinary traffic" counted patrols
+  **on the road at that instant**, and with a 4% share and usually one out that read 128 sightings on
+  one run and **zero on the next**, on an engine spawning them perfectly well. It counts how many the
+  road has *made*. Same mistake `ladder-test` made with the radio and the same answer - count the
+  events, not the state. See [UNT-198](../fragments/UNT-198.md).
+
 <a id="v0-13-25"></a>
 ## [0.13.25] - 2026-09-07
 - Fixed: **a roadblock is in the mirror** - and the sweep the owner asked for found it was not

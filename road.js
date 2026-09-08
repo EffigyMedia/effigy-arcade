@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.25';
+window.ROAD_BUILD = '0.13.26';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7832,6 +7832,30 @@ function laneSpeed(c, tx){
 let blockedAhead = 0;               /* windows with no way through, last pass */
 let mergesMade = 0;                 /* lane changes traffic has decided on, this run */
 let patrolsWoken = 0;               /* patrols that stopped being traffic, this run */
+/* ---- WHICH SIDE OF YOU EVERY CRUISER CAME IN ON (owner, 2026-09-07) -----
+   "I don't think they should spawn in front of you and come back at you. They
+   should only come from behind. The exception to this is when you pass a speed
+   trap or the cop sitting at a roadblock."
+
+   Every cruiser records how far ahead of the player it was created - negative
+   for behind - and its source alongside. `patrol-test` asserts the rule rather
+   than a reading of the spawners, because a fourth source added later would be
+   invisible to a check that named the three that exist.
+
+   THE ROADBLOCK CRUISER IS NOT IN THIS AND CANNOT BE. It is a `parts` entry on
+   the block and never enters the `cops` array at all, so it has never chased
+   anybody - every AI and collision loop skips it on `p.cop`. That half of the
+   owner's ruling was already true and is proved rather than built.
+   ------------------------------------------------------------------------ */
+let lastCopDz = 0, copOrigins = [];
+/* ---- HOW MANY PATROLS THE ROAD HAS MADE, WHICH IS THE SIGNAL THAT LASTS ---
+   `patrols().patrolling` counts the ones in traffic RIGHT NOW, and with a four
+   per cent share and one usually on the road that number is mostly luck: a
+   forty-five second drive read 128 sightings on one run and ZERO on the next,
+   on an engine spawning them perfectly well. The same mistake `ladder-test`
+   made with the radio, and the same answer - count the events, not the state.
+   ------------------------------------------------------------------------ */
+let patrolsMade = 0;
 /* ---- HOW MANY THE RADIO HAS SENT, WHICH IS THE SIGNAL THAT SURVIVES ------
    `ladder-test` counted how many radio cars were on the road at once, and with a
    cap of at most three and a dispatch that waits for somebody to have eyes on you,
@@ -8197,6 +8221,7 @@ function spawnWave(z){
             : roll<0.59 ? 'tuner'  : roll<0.67 ? 'muscle'
             : roll<0.73 ? 'taxi'
             : roll<0.86 ? 'sedan'  : 'sedan2';
+    if(t === 'cop') patrolsMade++;
     const mind = rollMind(t);
     traffic.push({
       z: z + rnd(-600,600), lane,
@@ -8440,11 +8465,12 @@ function spawnTrap(){
   cops.push({
     /* far enough ahead to be a surprise, near enough that the watch sees it
        before it is culled */
-    z: (function(){ const zz = pos + rnd(OUT_OF_SIGHT, 52000); noteSpawn(zz); return zz; })(),
+    z: (function(){ const zz = pos + rnd(OUT_OF_SIGHT, 52000); noteSpawn(zz);
+                    lastCopDz = Math.round(zz - (pos + PLAYER_Z)); return zz; })(),
     x: side * 1.16,                    /* on the grass, clear of the road */
     spd: 0, wreck:0, ang:0, grace:0, cool:0, side,
     w:0.27, len:400, phase: Math.random()*6.28,
-    trap: true, armed: true, from:'trap'
+    trap: true, armed: true, from:'trap', bornDz: lastCopDz
   });
 }
 
@@ -8491,6 +8517,7 @@ function patrolWatch(){
     if(spd <= MAX_SPD * SPEED_LIMIT) continue;    /* you went by legally */
     /* out of the traffic and into the chase, at its own place and speed */
     traffic.splice(i, 1);
+    lastCopDz = Math.round(c.z - pz);
     cops.push({
       z: c.z, x: c.x,
       /* ---- IT STARTS THE WAY EVERY DISPATCHED CRUISER STARTS -----------
@@ -8508,7 +8535,7 @@ function patrolWatch(){
       spd: Math.max(c.spd || 0, spd * 0.95 + 1800),
       wreck:0, ang:0, grace:0.5, cool:0, side:1,
       w:0.27, len:400, phase: Math.random()*6.28,
-      dmg:0, from:'patrol'
+      dmg:0, from:'patrol', bornDz: lastCopDz
     });
     snd.warnCop();
     flashWarn('PATROL ENGAGED');
@@ -8608,12 +8635,13 @@ function spawnSuper(){
      referencing it threw every time a super cruiser was due */
   const ln = rint(0, 3);
   cops.push({
-    z: pos - rnd(9000, 16000),         /* comes up from behind */
+    z: (function(){ const zz = pos - rnd(9000, 16000);   /* comes up from behind */
+                    lastCopDz = Math.round(zz - (pos + PLAYER_Z)); return zz; })(),
     x: LANE_X[ln],
     spd: spd * 1.04 + 1200,
     wreck:0, ang:0, grace:0.8, cool:0, side:1,
     w:0.265, len:390, phase: Math.random()*6.28,
-    superc: true, from:'super'
+    superc: true, from:'super', bornDz: lastCopDz
   });
   snd.warnCop();
   flashWarn('INTERCEPTOR');
@@ -8624,13 +8652,14 @@ function spawnSuper(){
 function dispatchCap(){ return heat < 2 ? 0 : Math.min(3, heat - 1); }
 function spawnCop(){
   const z = pos - rnd(3200,4200);
+  lastCopDz = Math.round(z - (pos + PLAYER_Z));
   let lane = rint(0,3), tries = 0;
   while(tries++ < 8 && !laneFree(z, lane, 1800)) lane = rint(0,3);
   cops.push({
     z, x: LANE_X[lane],
     spd: spd*0.95 + 1800,
     wreck:0, ang:0, grace:1.1, cool:0, side:1,
-    w:0.27, len:400, phase: Math.random()*6.28,
+    w:0.27, len:400, phase: Math.random()*6.28, bornDz: lastCopDz,
     /* ---- WHICH OF THE THREE SOURCES SENT IT (owner, 2026-09-07) --------
        "Police are generated from 3 sources. Traffic cruisers engaging after
        pass, speed traps raising heat, and random timers from rear spawner."
@@ -8746,7 +8775,7 @@ function reset(){
   /* You start PARKED, in first, with the engine idling. A run that begins at
      60mph gives away the launch, and now that first gear pulls properly off
      the line the launch is worth having. */
-  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0; radioSent=0;
+  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0; radioSent=0; patrolsMade=0; copOrigins=[];
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
@@ -15389,6 +15418,18 @@ function step(dt){
      track of whether you have gone past it either way - it simply never acts on
      it while the switch is off */
   if(roadFurniture){ trapWatch(dt); superWatch(dt); patrolWatch(); }
+  /* ---- EVERY CRUISER IS LOGGED THE FRAME IT APPEARS ---------------------
+     Recorded here rather than at the four push sites, so a fifth source cannot
+     be added without appearing in the ledger. `bornDz` is stamped by whichever
+     spawner ran; anything without one has not been through a spawner at all,
+     which is a harness pushing a car in by hand and is marked as such. */
+  if(drawWatch) for(const k of cops){
+    if(k.logged) continue;
+    k.logged = 1;
+    copOrigins.push({ from: k.from || 'unknown',
+                      dz: (k.bornDz === undefined) ? null : k.bornDz });
+    if(copOrigins.length > 200) copOrigins.shift();
+  }
   /* A roadblock across a bend is a wall you cannot see until you are in it,
      so they only go up on a stretch that is straight where it stands AND
      still straight a little further on. */
@@ -25384,6 +25425,11 @@ requestAnimationFrame(frameLoop);
      because nothing was there proves something different from a run where a
      patrol was passed and let you go.
      -------------------------------------------------------------------- */
+  /* where every cruiser came in, and from which source - see `copOrigins` */
+  API.copOrigins = function(){ return copOrigins.slice(); };
+  /* how many patrols the road has put in the traffic - see `patrolsMade` */
+  API.patrolsMade = function(){ return patrolsMade; };
+  API.clearCopOrigins = function(){ copOrigins = []; return true; };
   API.patrols = function(){
     const list = traffic.filter(c => c.patrol);
     return { patrolling: list.length, woken: patrolsWoken,

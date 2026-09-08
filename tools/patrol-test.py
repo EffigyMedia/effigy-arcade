@@ -125,18 +125,28 @@ def main():
             st = page.evaluate("() => window.__road.patrols()")
             n = st['patrolling']
             seen = max(seen, n)
-            met += n
+            met = page.evaluate("() => window.__road.patrolsMade()")
             # GATHERED AS WE GO. Reading the drivers at the END asks about whatever
             # happens to be on the road in that one frame, and usually that is nothing -
             # the check reported "none on the road to read" and passed, which is a check
             # that proves nothing while looking like it proved something.
             for c in st['cars']:
                 minds.add(c['mind'])
+        # HOW MANY THE ROAD HAS MADE, not how many are standing there. With a four per
+        # cent share and one usually out, the instantaneous count is luck: this read 128
+        # on one run and ZERO on the next, on an engine spawning them perfectly well.
         ok(met > 0, 'a patrol car turns up in ordinary traffic',
-           f'{met} sightings over 45s, at most {seen} on the road at once')
+           f'{met} put on the road over 45s, at most {seen} out at once')
 
         # ---- AND IT DRIVES LIKE TRAFFIC, NOT LIKE A CHASE ------------------------
         print(f'  ..    drivers seen at the wheel of one: {sorted(minds)}')
+        # AND IF NONE HAPPENED TO BE IN VIEW WHEN THE DRIVERS WERE READ, one is placed.
+        # Reading nothing and passing is the vacuity this file already had once.
+        if not minds:
+            page.evaluate("() => window.__road.placePatrol(3000)")
+            page.wait_for_timeout(300)
+            for c in page.evaluate("() => window.__road.patrols()")['cars']:
+                minds.add(c['mind'])
         ok(bool(minds) and minds == {0},
            'and a Civilian is driving it, so it cruises at the limit',
            f'minds seen {sorted(minds)}, where Civilian is 0'
@@ -222,6 +232,52 @@ def main():
         ok(caps['superCruiser']['ceiling'] > caps['cruiser']['ceiling'] * 1.2,
            'and the interceptor is meaningfully faster than the patrol car',
            f"{caps['superCruiser']['mph']}mph against {caps['cruiser']['mph']}mph")
+
+        # ================= AND THEY ONLY COME FROM BEHIND ========================
+        # Owner, 2026-09-07: "I don't think they should spawn in front of you and come back
+        # at you. They should only come from behind. The exception to this is when you pass
+        # a speed trap or the cop sitting at a roadblock. And the cop at a roadblock never
+        # chases you - that's just set dressing."
+        #
+        # THE RULE IS ASSERTED, NOT THE SPAWNERS. Reading the three that exist would go on
+        # passing on the day a fourth is added in front of the car, which is the whole
+        # shape of the thing being ruled out. Every cruiser records where it came in
+        # relative to the player and which source made it.
+        print('  ..    letting the road make police of every kind')
+        page.evaluate("() => { const R = window.__road;"
+                      " R.watchDraw(true); R.clearCopOrigins(); R.heat(4); }")
+        for _ in range(160):
+            page.evaluate('() => { const R = window.__road;'
+                          ' R.setSpd(0.62 * R.MAX_SPD); R.heat(4); }')
+            page.wait_for_timeout(200)
+        origins = page.evaluate("() => window.__road.copOrigins()")
+        by = {}
+        for o in origins:
+            by.setdefault(o['from'], []).append(o['dz'])
+        for src in sorted(by):
+            dzs = [d for d in by[src] if d is not None]
+            print(f"  ..    {len(by[src])} from {src:8s} "
+                  f"{'nearest ' + str(max(dzs)) if dzs else 'no distance recorded'}")
+        ok(bool(origins), 'police of some kind appeared at all', f'{len(origins)} cruisers')
+        # A TRAP IS PARKED AHEAD BY ITS NATURE and is the owner's own exception. Everything
+        # else has to come in behind the car.
+        ahead = [o for o in origins
+                 if o['from'] not in ('trap', 'test') and (o['dz'] or 0) > 0]
+        ok(not ahead, 'no cruiser is created in front of you except a parked trap',
+           f'{len(ahead)} came in ahead: ' + ', '.join(
+               f"{o['from']} at {o['dz']}" for o in ahead[:4]) if ahead else '')
+        # AND THE ROADBLOCK'S CRUISER IS SET DRESSING. It is a part of the block and never
+        # enters the cops array, so it cannot chase - this asserts it stays that way.
+        rb = page.evaluate("""() => { const R = window.__road;
+            R.forceRoadblock();
+            const b = R.roadblocks()[0];
+            return { panelsWithCop: b ? b.cops : 0,
+                     copsNamedBlock: R.cops().filter(k => k.from === 'block').length }; }""")
+        print(f"  ..    the roadblock has {rb['panelsWithCop']} cruiser standing at it")
+        ok(rb['panelsWithCop'] >= 1, 'a roadblock has a cruiser at it', str(rb))
+        ok(rb['copsNamedBlock'] == 0,
+           'and it is set dressing - it never joins the pursuit',
+           f"{rb['copsNamedBlock']} in the chase")
 
         errs = errs + errs2 + errs3 + page.evaluate("() => []")
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
