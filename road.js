@@ -219,7 +219,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.24';
+window.ROAD_BUILD = '0.13.25';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16000,7 +16000,18 @@ function step(dt){
   // --- repair crates ---
   for(let i=crates.length-1;i>=0;i--){
     const c = crates[i];
-    if(c.z < pos - 1500){ crates.splice(i,1); continue; }
+    /* ---- IT HAS TO OUTLIVE THE CAMERA TO BE IN THE MIRROR ---------------
+       This was 1,500 units, so a crate was deleted almost the instant it went
+       behind you - and the glass sees 34,000 back, which is why adding crates to
+       the mirror's list changed nothing until this moved. There was no crate
+       left to draw.
+
+       The checkpoint boards had exactly this and were given exactly this fix:
+       `MIRROR_BACK` is the one number both read, so the two cannot drift apart.
+       A crate behind you is not collectable - the pickup test is a proximity one
+       - so this only keeps it drawable.
+       ------------------------------------------------------------------ */
+    if(c.z < pos - MIRROR_BACK){ crates.splice(i,1); continue; }
     if(c.got) continue;
     /* ---- A RIVAL CAN TAKE IT FIRST (owner, 2026-09-06) ------------------
        "They will also compete with you over the pickups, which will award NOS
@@ -19172,6 +19183,19 @@ let drawWatch = 0, drawWhy = '', drawSeen = [], drawFrameNo = 0, drawVid = 0;
    still drew its roadside. Before the fix that intersection was empty.
    ---------------------------------------------------------------------- */
 let walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
+/* ---- WHAT EACH VIEW WAS OFFERED (owner, 2026-09-07) ---------------------
+   "Do a sweep of all things that should be in the mirror and make sure they are
+   visible in it." The sweep found three missing - a roadblock, a sign and a
+   repair crate - and a comment saying so would rot on the day a ninth kind is
+   added to the road.
+
+   So both passes record the KINDS they were handed, and `mirror-test` asserts
+   the glass is offered everything the windscreen is. It records what each view
+   was OFFERED rather than what it painted, because that is where the fault was:
+   a roadblock was never put in the mirror's list at all, and everything after
+   that point was working perfectly.
+   ---------------------------------------------------------------------- */
+let viewKinds = { front:{}, glass:{} };
 /* BY HOW MUCH a slice missed being painted, per segment, this frame. A slice is
    skipped when its top has gone back UP relative to the nearest ground already
    painted - it is behind a crest - and its sprites go with it. A slice that
@@ -19446,6 +19470,7 @@ function drawWorld(){
   drawRubber();
 
   const items = [];
+  if(drawWatch) viewKinds = { front:{}, glass:{} };
   for(const c of traffic) items.push({z:c.z, kind:'t', o:c});
   for(const k of cops)    items.push({z:k.z, kind:'k', o:k});
   for(const b of blocks)  items.push({z:b.z, kind:'b', o:b});
@@ -19456,6 +19481,7 @@ function drawWorld(){
   for(const tz of towerZs()) items.push({z:tz, kind:'w', o:tz});
   for(const r of racers)  items.push({z:r.z, kind:'g', o:r});
   for(const c of crates)  if(!c.got) items.push({z:c.z, kind:'r', o:c});
+  if(drawWatch) for(const it of items) viewKinds.front[it.kind] = 1;
   items.sort((a,b)=>b.z-a.z);
   /* ---- SPRITES ARE EMITTED INSIDE THE ROAD LOOP ------------------------
      They used to be drawn in this pass, AFTER the whole road, which is why
@@ -21707,11 +21733,11 @@ function drawMirrorFull(mx, my, mw, mh){
   const lampNow = lampsOn();
   const back = [];
   for(const c of traffic) if(c.z < pos)
-    back.push({ o:c, w:c.w, tint:(c.type==='truck'?'#8b8f96':c.type==='coupe'?'#7a3b46':'#3c4a63'), cop:false });
+    back.push({ o:c, w:c.w, tint:(c.type==='truck'?'#8b8f96':c.type==='coupe'?'#7a3b46':'#3c4a63'), cop:false, kind:'t' });
   for(const k of cops){ if(k.wreck>0||k.z>=pos) continue;
-    back.push({ o:k, w:k.w||0.27, tint:'#dfe4ec', cop:true }); }
+    back.push({ o:k, w:k.w||0.27, tint:'#dfe4ec', cop:true, kind:'k' }); }
   for(const r of racers) if(r.z < pos)
-    back.push({ o:r, w:r.w, tint:(PAINT[r.paint]||PAINT.WHITE).body, cop:false });
+    back.push({ o:r, w:r.w, tint:(PAINT[r.paint]||PAINT.WHITE).body, cop:false, kind:'g' });
   /* ---- AND THE CHECKPOINT BOARDS (RLG-108) ----------------------------
      The data and the retention were already right: `cpGantries` keeps a board
      for 8,000 units after it is passed and this glass sees 34,000 back, so
@@ -21719,11 +21745,39 @@ function drawMirrorFull(mx, my, mw, mh){
      cars rather than being painted underneath them, because a gantry stands in
      the world at a distance like everything else and the list is what puts
      near things over far ones. */
-  for(const cp of cpGantries) if(cp.z < pos) back.push({ o:cp, gantry:true });
+  for(const cp of cpGantries) if(cp.z < pos) back.push({ o:cp, gantry:true, kind:'c' });
+  /* ---- AND THE ROADBLOCK YOU HAVE JUST THREADED (owner, 2026-09-07) ----
+     "A police roadblock is invisible in the mirror." It was: this list is what
+     the glass draws and a block was never put in it, so a wall you had just got
+     through vanished the instant it was behind you.
+
+     Into the SAME sorted list as everything else, for the reason the checkpoint
+     boards give: a car between you and the block has to be drawn in front of it,
+     and the sort is what does that. It is one entry with many parts rather than
+     one per panel, so the whole block sorts at one depth - which is true, since
+     every panel of it stands on the same line across the road.
+     ------------------------------------------------------------------- */
+  for(const bl of blocks)
+    if(bl.z < pos && bl.z > pos - MIRROR_BACK) back.push({ o:bl, block:true, kind:'b' });
+  /* ---- AND THE TWO THE SWEEP FOUND (owner, 2026-09-07) -----------------
+     The owner asked for "a sweep of all things that should be in the mirror",
+     and the roadblock was not alone. The forward pass draws eight kinds and this
+     list carried five: a SIGN you had just passed and a repair CRATE you had
+     just missed both vanished the moment they were behind you, and a crate is a
+     thing you might well want to know you have gone by.
+
+     `mirror-test` now compares the two lists rather than trusting this comment,
+     so a ninth kind added to the road cannot quietly miss the glass.
+     ------------------------------------------------------------------- */
+  for(const sg of signs)
+    if(sg.z < pos && sg.z > pos - MIRROR_BACK) back.push({ o:sg, sign:true, kind:'s' });
+  for(const cr of crates)
+    if(!cr.got && cr.z < pos && cr.z > pos - MIRROR_BACK)
+      back.push({ o:cr, crate:true, kind:'r' });
   /* the bridge's towers once they are behind you, into the same sorted list so
      a car between you and one is drawn in front of it (RLG-112) */
   for(const tz of towerZs())
-    if(tz < pos && tz > pos - MIRROR_BACK) back.push({ o:{ z:tz }, tower:true });
+    if(tz < pos && tz > pos - MIRROR_BACK) back.push({ o:{ z:tz }, tower:true, kind:'w' });
   /* ---- AND THE FINISH BANNER ONCE IT IS BEHIND YOU (RLG-133) ----------
      Into the same sorted list, so a rival between you and the line is drawn in
      front of it. `finishZ` is a single number rather than an array, so it needs
@@ -21736,8 +21790,76 @@ function drawMirrorFull(mx, my, mw, mh){
   for(const it of back){
     /* a gantry spans the road, so it is projected on the centre line rather
        than at a lateral offset it has not got */
-    const p1 = rproj((it.gantry || it.finish || it.tower) ? 0 : it.o.x*ROAD, it.o.z);
+    const p1 = rproj((it.gantry || it.finish || it.tower || it.block) ? 0 : it.o.x*ROAD,
+                     it.o.z);
+    /* what the glass was OFFERED this frame, for the sweep - see `viewKinds` */
+    if(drawWatch && it.kind) viewKinds.glass[it.kind] = 1;
     if(!p1) continue;
+    if(it.crate){
+      /* the same box on the shoulder, at its own lateral offset */
+      const cw = p1.scale * 0.22 * CAR_UNIT * mw;
+      if(SP.repair && cw >= 1){
+        const chh = cw * SP.repair.height / SP.repair.width;
+        const cp = rproj(it.o.x * ROAD, it.o.z);
+        if(cp) ctx.drawImage(SP.repair, cp.x - cw/2, cp.y - chh, cw, chh);
+      }
+      continue;
+    }
+    if(it.sign){
+      /* a sign stands beside the road, so it takes its own lateral position and
+         the glass's own scale. `drawSign` paints a forward-facing board from the
+         main projection and cannot be reused here. */
+      const sp = rproj(it.o.x * ROAD, it.o.z);
+      const gw = sp ? sp.scale * 0.30 * CAR_UNIT * mw : 0;
+      if(sp && gw >= 1.2){
+        const gh = gw * 1.35;
+        ctx.fillStyle = '#5b6472';
+        ctx.fillRect(sp.x - gw*0.06, sp.y - gh*0.62, gw*0.12, gh*0.62);
+        ctx.fillStyle = '#123a1e';
+        ctx.beginPath();
+        ctx.roundRect(sp.x - gw/2, sp.y - gh, gw, gh*0.44, Math.max(0.5, gw*0.08));
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(226,240,228,.72)';
+        ctx.lineWidth = Math.max(0.4, gw*0.05);
+        ctx.stroke();
+      }
+      continue;
+    }
+    if(it.block){
+      /* ---- THE SAME WALL, FROM THE OTHER SIDE ---------------------------
+         Each panel is projected at its OWN lateral position rather than the
+         block's centre, because a roadblock IS its spread across the road -
+         drawing it on the centre line would make a wall into a post.
+
+         The cruiser standing at it takes its FRONT sprite, which is the glass's
+         rule for every vehicle: a mirror shows you faces. The forward pass uses
+         the rear sprite for the same car, and that is correct there for the same
+         reason.
+         ---------------------------------------------------------------- */
+      for(const part of it.o.parts){
+        const pp = rproj(part.x * ROAD, it.o.z);
+        if(!pp) continue;
+        if(part.cop){
+          const cs = (FRONT_SP.cop || [])[0] || null;
+          const cw = pp.scale * 0.27 * CAR_UNIT * mw;
+          if(cs && cw >= 1.2){
+            const ch = cw * cs.height / cs.width;
+            ctx.drawImage(cs, pp.x - cw/2, pp.y - ch, cw, ch);
+            /* the bar is the one part of a police car that is not in the sprite */
+            const on3 = Math.floor(sirenPhase*1.4) % 2;
+            ctx.fillStyle = on3 ? '#3b6bff' : '#ff2b4a';
+            ctx.fillRect(pp.x - cw/2, pp.y - ch - Math.max(1, ch*0.06),
+                         cw, Math.max(1, ch*0.06));
+          }
+          continue;
+        }
+        const bw = pp.scale * part.w * CAR_UNIT * mw;
+        if(bw < 1) continue;
+        const bh = bw * (SP.barrier ? SP.barrier.height / SP.barrier.width : 0.5);
+        if(SP.barrier) ctx.drawImage(SP.barrier, pp.x - bw/2, pp.y - bh, bw, bh);
+      }
+      continue;
+    }
     if(it.tower){
       /* ---- THE SAME TOWER, IN THE GLASS (RLG-112) ------------------
          `drawTower` paints from a projected point and a vertical scale, so
@@ -25624,6 +25746,9 @@ requestAnimationFrame(frameLoop);
   API.watchDraw = function(on){ drawWatch = on ? 1 : 0; drawSeen = []; return drawWatch; };
   API.drawFrame = function(){ return { n:drawFrameNo, seen:drawSeen }; };
   API.walkTrace = function(){ return walkTrace; };
+  /* which kinds each view was handed this frame - see `viewKinds` */
+  API.viewKinds = function(){ return { front:Object.keys(viewKinds.front).sort(),
+                                       glass:Object.keys(viewKinds.glass).sort() }; };
   API.scattered = function(){ return scattered; };
   API.nearestSpawn = function(){ return Math.round(nearestSpawn); };
   API.drawDistance = function(){ return DRAW * SEG; };

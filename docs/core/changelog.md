@@ -14,6 +14,31 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-25"></a>
+## [0.13.25] - 2026-09-07
+- Fixed: **a roadblock is in the mirror** - and the sweep the owner asked for found it was not
+  alone. "Do a sweep of all things that should be in the mirror and make sure they are visible in
+  it." The forward pass hands its painter **eight** kinds of thing; the mirror's list carried
+  **five**. A roadblock you had just threaded, a **sign** you had just passed and a **repair crate**
+  you had just missed all vanished the moment they were behind you.
+- **The crate needed more than a place in the list.** It was deleted 1,500 units behind the camera
+  and the glass sees 34,000, so it did not exist by the time the mirror could draw it - adding it
+  changed nothing until the retention moved. The checkpoint boards had exactly this problem and were
+  given exactly this fix; both read `MIRROR_BACK` now, so they cannot drift apart. A crate behind you
+  is still not collectable, because that test is a proximity one.
+- Each roadblock panel is projected at **its own lateral position** rather than the block's centre,
+  because a roadblock *is* its spread across the road - drawn on the centre line a wall becomes a
+  post. The cruiser standing at it takes its front sprite, which is the glass's rule for every
+  vehicle.
+- Added `tools/mirror-test.py`, and it **compares the two lists rather than holding its own.** A
+  check naming the kinds it expects would be a second place to update and would go on passing the day
+  a ninth thing is added to the road and forgotten in the glass - which is the fault being fixed. It
+  asserts on what each view is *offered*, because that is where this went wrong: everything after
+  the list was working perfectly. Watched failing with the roadblock removed again.
+  See [UNT-197](../fragments/UNT-197.md).
+- Known red and not caused by this: `bridge-test`'s water-symmetry check, unchanged since before this
+  queue began.
+
 <a id="v0-13-24"></a>
 ## [0.13.24] - 2026-09-07
 - Fixed: **a destroyed car keeps its smoke and fire.** Owner, 2026-09-07: "when a car is destroyed -
