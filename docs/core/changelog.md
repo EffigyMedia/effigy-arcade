@@ -14,6 +14,18 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-51"></a>
+## [0.13.51] - 2026-09-09
+- Added: **a measurement of whether a car's two ends are the same SHAPE**, not merely the same box.
+  Owner, 2026-09-09: "it's looking at the same vehicle straight on from the front and straight on
+  from the back." `carProfile` divides each end's ink into 24 columns and reports the top and bottom
+  of each as a fraction of the box, with the front mirrored, so size cancels and only shape is
+  compared. **Sixteen of the seventeen garage bodies are different shapes** - LORRY, VAN and
+  AMBULANCE worst at 73-79% of the box in their worst column, and CREST the only car whose two ends
+  already agree. See [RLG-184](../fragments/RLG-184.md).
+- Nothing else changed in the product. The fleet fix is one pass, not a series of adjustments: the
+  body outline gets declared once and both painters fill it, with the tyres in the same definition.
+
 <a id="v0-13-50"></a>
 ## [0.13.50] - 2026-09-09
 - Fixed: **the garage clipped the width of a car after 0.13.49 matched its two heights.** Owner,

@@ -26937,6 +26937,53 @@ requestAnimationFrame(frameLoop);
      one (RLG-180), so a capture walking the garage has no other way to name the
      file it is writing. */
   API.currentBody = function(){ return optBody; };
+  /* ---- THE OUTLINE ITSELF, COLUMN BY COLUMN (RLG-184) -------------------
+     Owner, 2026-09-09: "it's not just the height and the width that need to
+     match, but their silhouettes need to match too, because thinking about it
+     it's looking at the same vehicle straight on from the front and straight on
+     from the back."
+
+     A BOUNDING BOX CANNOT ANSWER THAT. Two drawings can agree on width and
+     height and still be different shapes, so this reports the SHAPE: the ink
+     box is divided into `n` columns and each one gives the top and the bottom
+     of the ink in it, as a fraction of the box. Two ends that are the same
+     vehicle produce the same profile whatever size they were drawn at.
+
+     MIRRORED ON PURPOSE. A face and a tail are the same car seen from opposite
+     ends, so the left of one answers to the right of the other - comparing them
+     unmirrored would call every asymmetric car a mismatch.
+     ------------------------------------------------------------------- */
+  API.carProfile = function(key, n){
+    const was = optBody;
+    if(key) { optBody = key; buildPlayer(); }
+    const N = n || 24;
+    const read = (img, mirror) => {
+      if(!img) return null;
+      const box = spriteInk(img);
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      let d;
+      try { d = g.getImageData(box.x, box.y, box.w, box.h).data; }
+      catch(e){ return null; }
+      const out = [];
+      for(let i = 0; i < N; i++){
+        const frac = mirror ? (N - 1 - i) : i;
+        const x = Math.min(box.w - 1, Math.floor((frac + 0.5) / N * box.w));
+        let top = -1, bot = -1;
+        for(let y = 0; y < box.h; y++){
+          if(d[(y * box.w + x) * 4 + 3] > 8){ if(top < 0) top = y; bot = y; }
+        }
+        out.push(top < 0 ? null
+                 : { t: +(top / box.h).toFixed(3), b: +((bot + 1) / box.h).toFixed(3) });
+      }
+      return out;
+    };
+    const res = { back: read(SP.player, false), front: read(SP.playerFront, true) };
+    if(key){ optBody = was; buildPlayer(); }
+    return res;
+  };
   API.carEnds = function(){
     const was = optBody, out = {};
     for(const k of Object.keys(BODY)){

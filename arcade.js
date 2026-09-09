@@ -44,7 +44,7 @@ var A = window.Arcade = window.Arcade || {};
    over would have said "nearly done" about work that has barely started. The
    version tracks THIS product. The maturity of the engine underneath it is
    recorded in the git history, which came across whole. */
-A.version = '0.13.50';
+A.version = '0.13.51';
 
 /* ---- WHICH BUILD AM I PLAYING? -------------------------------------------
    Asked for by the owner, 2026-08-29, and it is a testing tool rather than

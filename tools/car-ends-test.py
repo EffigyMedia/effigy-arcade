@@ -105,6 +105,47 @@ def main():
                   % (k, bw, bih, fw, fih, fw - bw, fih - bih,
                      '' if (fw == bw and fih == bih) else '   <-- differs'))
 
+        # ---- AND THE SILHOUETTE ITSELF (owner, 2026-09-09) -------------------
+        # "It's not just the height and the width that need to match, but their
+        # silhouettes need to match too, because it's looking at the same vehicle
+        # straight on from the front and straight on from the back."
+        #
+        # A BOUNDING BOX CANNOT ANSWER THAT: two drawings can agree on width and
+        # height and still be different shapes. The engine reports each end's ink
+        # profile - the top and bottom of the ink in each of 24 columns, as a
+        # fraction of the box - with the front MIRRORED, because a face and a tail
+        # are the same car seen from opposite ends.
+        print('')
+        print('  %-14s %9s %9s   %s' % ('CAR', 'meanErr', 'worstCol', 'silhouette'))
+        prof_rows = []
+        for k in sorted(ends):
+            if not ends[k] or not ends[k]['front']:
+                continue
+            pr = page.evaluate('([k, n]) => window.__road.carProfile(k, n)', [k, 24])
+            if not pr or not pr['back'] or not pr['front']:
+                print('  %-14s  (profile unavailable)' % k)
+                continue
+            errs_col = []
+            # NOT `b` - that is the browser. Shadowing it here closed nothing at the
+            # end of the run and the whole file died after printing its results.
+            for ca, cb in zip(pr['back'], pr['front']):
+                if ca is None or cb is None:
+                    errs_col.append(1.0)
+                    continue
+                errs_col.append(max(abs(ca['t'] - cb['t']), abs(ca['b'] - cb['b'])))
+            mean = sum(errs_col) / len(errs_col)
+            worst = max(errs_col)
+            prof_rows.append((k, mean, worst))
+            print('  %-14s %8.1f%% %8.1f%%   %s'
+                  % (k, mean * 100, worst * 100,
+                     'match' if worst <= 0.04 else 'DIFFERENT SHAPE'))
+        bad_shape = [k for k, m, w in prof_rows if w > 0.04]
+        ok(bool(prof_rows), 'every car had its outline read',
+           '%d profiled' % len(prof_rows))
+        ok(not bad_shape,
+           "and each car's two ends are the same shape",
+           '%d of %d are not' % (len(bad_shape), len(prof_rows)) if bad_shape else '')
+
         off = [k for k, d in rows if d > args.tol]
         ok(bool(rows), 'every garage car was measured', '%d cars with two ends' % len(rows))
         ok(not off,
