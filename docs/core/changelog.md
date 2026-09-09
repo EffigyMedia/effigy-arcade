@@ -14,6 +14,22 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-43"></a>
+## [0.13.43] - 2026-09-08
+- Fixed: **every run opened with a blinking PURSUIT ×1 and nothing was chasing you.** Owner,
+  2026-09-08: "Every run starts with a banner that says pursuit x1. What is that and why do we
+  need it?" The row is a live count of the cruisers on you and is worth having, but it counted
+  `onPlayer !== false` - and a car that has never chosen a target has `onPlayer` **undefined**,
+  which passes that test. A speed trap is laid in the first seconds of every run, so the row
+  reported a parked car that had not looked at anybody. **This is the same mistake in the same
+  shape as the box in 0.13.42**, found the same day: `!== false` was written to mean "is on the
+  player" and quietly also means "has never decided". Measured on the old predicate: lit, at
+  ×1, on 90 of 90 samples of a legal drive. See [RLG-178](../fragments/RLG-178.md).
+- Removed: **the dead combo suffix on that row.** `combo` is zeroed at every reset and nothing
+  raises it - the score system it belonged to is gone, and the near-miss handler already carries
+  a note about the same variable printing "+0" over the road. The text it guarded could never
+  appear.
+
 <a id="v0-13-42"></a>
 ## [0.13.42] - 2026-09-08
 - Changed: **one engagement, one target, permanently.** Owner, 2026-09-08: "whenever a cop engages a

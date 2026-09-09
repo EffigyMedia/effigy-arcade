@@ -23835,10 +23835,31 @@ function hud(){
       $('radar').innerHTML = bars;
     }
   }
-  const active = cops.some(k=>k.wreck<=0 && k.onPlayer !== false);
-  $('pursuit').className = active ? 'on' : '';
-  $('pursuit').textContent = 'PURSUIT \u00D7'+cops.filter(k=>k.wreck<=0 && k.onPlayer !== false).length +
-    (combo>1 ? '  \u00B7  \u00D7'+combo : '');
+  /* ---- IT COUNTS CARS THAT ARE CHASING YOU (owner, 2026-09-08, RLG-178) -
+     "Every run starts with a banner that says PURSUIT x1. What is that and why
+     do we need it?"
+
+     THE ROW IS RIGHT AND THE TEST INSIDE IT WAS WRONG. It is a live count of
+     the cruisers on you, which is worth having while one is happening. It asked
+     for `onPlayer !== false`, and a car that has never chosen a target has
+     `onPlayer` UNDEFINED - which passes that test. The road lays a speed trap
+     in the first seconds of every run, so every run opened with a blinking red
+     PURSUIT x1 for a parked car that had not looked at anybody.
+
+     THIS IS THE SAME MISTAKE IN THE SAME SHAPE AS THE BOX (RLG-173), found on
+     the same day: `!== false` was written to mean "is on the player" and
+     quietly also means "has never decided". Asking for `=== true` says what was
+     meant, and a parked trap is no longer a pursuit.
+
+     AND THE COMBO SUFFIX GOES WITH IT. `combo` is zeroed at every reset and
+     nothing ever raises it - the score system it belonged to was removed, and
+     the near-miss handler already carries a note about this same variable
+     printing "+0" over the road. `combo > 1` could not be true, so the text it
+     guarded could never appear.
+     ------------------------------------------------------------------ */
+  const chasing = cops.filter(k => k.wreck <= 0 && k.onPlayer === true).length;
+  $('pursuit').className = chasing > 0 ? 'on' : '';
+  $('pursuit').textContent = 'PURSUIT \u00D7' + chasing;
   nitroBtn.disabled = nos<=8;
   brakeBtn.disabled = state!=='driving';
   nitroBtn.classList.toggle('hot', nosOn);
