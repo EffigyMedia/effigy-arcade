@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-64"></a>
+## [0.13.64] - 2026-09-09
+- Changed: **the CREST's spoiler wears the car's own paint.** Owner, 2026-09-09: "let's make its
+  spoiler colored like the matador's." The ducktail blade was a fixed near-black with near-black
+  uprights, so a CREST in any colour wore a black wing and the largest feature on the back of the car
+  ignored the garage. It takes the same three values the MATADOR's aerofoil does, on the ducktail's
+  own geometry - the shape is what separates the two cars, not the paint. See
+  [RLG-192](../fragments/RLG-192.md).
+
 <a id="v0-13-63"></a>
 ## [0.13.63] - 2026-09-09
 - Changed: **more edge on the CREST's dome.** Owner, 2026-09-09: "I also want a bit more edge to the

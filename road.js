@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.63';
+window.ROAD_BUILD = '0.13.64';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2728,6 +2728,17 @@ function carWing(g, w, h, S, o){
     return;
   }
   if(S.wing === 'ducktail'){
+    /* ---- AND IT IS THE CAR'S OWN COLOUR (owner, 2026-09-09) ------------
+       "let's make its spoiler colored like the matador's."
+
+       MATADOR's aerofoil is `o.lo` with a white lift along its top edge and
+       stanchions in `o.body`. This blade was a fixed '#1a1d22' with '#15171b'
+       uprights, so a CREST in ANY paint wore a black wing - a colour you chose
+       stopped at the deck. Same three values as the high wing now, on the
+       ducktail's own geometry: what separates the two cars from behind is the
+       SHAPE of the wing, which is unchanged, rather than the fact that one of
+       them was painted and the other was not.
+       ---------------------------------------------------------------- */
     /* a swan-neck wing held high above the deck on two uprights that hang from
        the top of the blade, with a small ducktail below it */
     g.fillStyle = o.lo;
@@ -2737,14 +2748,14 @@ function carWing(g, w, h, S, o){
     g.lineTo(w*0.86, topY+h*0.02);
     g.lineTo(w*0.14, topY+h*0.02);
     g.closePath(); g.fill();
-    g.fillStyle = '#15171b';
+    g.fillStyle = o.body;
     g.fillRect(w*0.285, topY-h*0.20, w*0.028, h*0.20);
     g.fillRect(w*0.687, topY-h*0.20, w*0.028, h*0.20);
-    g.fillStyle = '#1a1d22';
+    g.fillStyle = o.lo;
     rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.042, 2); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.18)';
+    g.fillStyle = 'rgba(255,255,255,.16)';
     rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.013, 2); g.fill();
-    g.fillStyle = '#15171b';
+    g.fillStyle = o.body;
     g.fillRect(w*0.005, topY-h*0.245, w*0.026, h*0.062);
     g.fillRect(w*0.969, topY-h*0.245, w*0.026, h*0.062);
     return;
