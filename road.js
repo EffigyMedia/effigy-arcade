@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.58';
+window.ROAD_BUILD = '0.13.59';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -5276,11 +5276,25 @@ function paintFront(o){
     /* splitter and shadow, common to all three */
     g.fillStyle = '#1b1f26';
     g.fillRect(w*(0.5-wid*0.96), botY - h*0.05, w*wid*1.92, h*0.05);
-    /* ---- CLEAR OF THE LAMPS -------------------------------------------
-       At `topY + 0.155` the mark landed on the lamp line of every face — on
-       CREST it sat inside the unibrow. It goes ABOVE them, on the bonnet
-       between the screen and the light units, where there is bare metal. */
-    if(B.rear) drawMarque(g, B.rear, w*0.5, topY + h*0.038, h*0.034);
+    /* ---- WHERE THE BADGE GOES ON A FACE (owner, 2026-09-09) -------------
+       Owner: "I'd like you to lower the badge on all three supercar fronts. For
+       the crest, I'd like it to be directly in between the headlights. The
+       other two I'd like to be down towards the center of the painted hood."
+
+       IT WAS TUCKED UNDER THE WINDSCREEN. `topY + 0.038` was chosen to keep it
+       clear of the lamps after an earlier attempt put it ON them, and clearing
+       them upward left it hard against the glass with the whole bonnet empty
+       below it.
+
+       THE TWO ANSWERS ARE DIFFERENT BECAUSE THE TWO FACES ARE. CREST wears a
+       single band right across, so the only place a badge can be between the
+       headlights is on the break at the middle of it - `by2 + bh2*0.5`, which
+       is the band's own centre line. STALLION and MATADOR carry a lamp at each
+       side and paint between them, so their badge drops onto that paint.
+       ---------------------------------------------------------------- */
+    if(B.rear)
+      drawMarque(g, B.rear, w*0.5,
+                 topY + h*(F === 'P' ? 0.101 : 0.090), h*0.034);
   };
 }
 

@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-59"></a>
+## [0.13.59] - 2026-09-09
+- Changed: **the badge sits on the face of a supercar rather than under its windscreen.** Owner,
+  2026-09-09: "lower the badge on all three supercar fronts. For the crest, directly in between the
+  headlights. The other two down towards the center of the painted hood." CREST wears one band right
+  across, so between its headlights means the break at the middle of it - the band's own centre line.
+  STALLION and MATADOR have a lamp each side with paint between, so theirs drops onto that paint. See
+  [RLG-189](../fragments/RLG-189.md).
+
 <a id="v0-13-58"></a>
 ## [0.13.58] - 2026-09-09
 - Fixed: **the VECTOR badge is centred.** Owner, 2026-09-09: "the badge for the vector on the steering
