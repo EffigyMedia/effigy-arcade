@@ -22564,6 +22564,8 @@ function drawFinishBack(g, px, py, roadW){
    with real perspective, and every sprite placed by the same maths as the
    forward view. Costs a full extra pass — see MIRROR notes in DESIGN.md.
    -------------------------------------------------------------------------- */
+/* the last cruiser the glass drew, in canvas pixels - debug only, see RLG-177 */
+let mirrorCopBox = null;
 function drawMirrorFull(mx, my, mw, mh){
   ctx.save();
   ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 5); ctx.clip();
@@ -23289,12 +23291,48 @@ function drawMirrorFull(mx, my, mw, mh){
         if(fs.overWipers) fs.overWipers(ctx);
         ctx.restore();
       }
-      /* the light bar still goes on top of a patrol car: it is the one part of
-         a police car that is not in the sprite, because it flashes */
+      /* ---- THE BAR IS IN THE SPRITE NOW (owner, 2026-09-08, RLG-177) ----
+         Owner, from the device: "Why is there something that looks like a
+         health bar or something only visible on the police cruisers in the
+         rearview mirror? I don't want health bars in either view."
+
+         IT WAS NEITHER A HEALTH BAR NOR THE LIGHT BAR. It was a SECOND light
+         bar. The comment that stood here said the bar "is the one part of a
+         police car that is not in the sprite, because it flashes", and that
+         stopped being true when RLG-053 converted the cruiser: the front
+         sprite draws its own bar and declares the two lamps `bar.fl` and
+         `bar.fr`. So the glass drew the sprite's bar AND then painted this one
+         over the top of it.
+
+         AND IT DID NOT EVEN AGREE WITH THE ONE UNDERNEATH. It was `sw` wide -
+         the WHOLE CAR - against the sprite's 52%, and it sat a bar's height
+         ABOVE the roof rather than on it. A solid, full-width, hard-edged
+         rectangle floating over a car is a health bar in every game that has
+         ever drawn one, which is exactly what it was read as.
+
+         THIS IS THE THIRD TIME THE SAME MISTAKE HAS BEEN FOUND IN THIS FILE,
+         and the other two are recorded a few hundred lines apart: `drawCopLights`
+         once painted the lit bar "from its own geometry, at its own width and
+         its own height, above a bar the sprite had already drawn", and the title
+         card "grew its own hand-placed rectangles - two red bars at guessed
+         coordinates over a sprite that already knew where its lamps were". The
+         answer was the same both times and is the same here: ask the sprite.
+
+         `lampsLit` bails below ten pixels of car, which is the right behaviour
+         rather than a limitation - a bar is not resolvable on a car that small,
+         and painting one anyway is how this started.
+         ---------------------------------------------------------------- */
       if(it.cop){
         const on2 = Math.floor(sirenPhase*1.4) % 2;
-        ctx.fillStyle = on2 ? '#3b6bff' : '#ff2b4a';
-        ctx.fillRect(x0, p1.y - fh - Math.max(1, fh*0.06), sw, Math.max(1, fh*0.06));
+        lampsLit({ x: x0 + sw/2, y: p1.y, w: sw, h: fh },
+                 fs, [on2 ? 'bar.fl' : 'bar.fr'], 1);
+        /* WHERE THE GLASS PUT THIS CRUISER, for a check to read (RLG-177). The
+           rule is that nothing belonging to a police car may be painted ABOVE
+           its own sprite, and a check cannot say that without knowing where the
+           sprite went. Colour alone could not: the stray bar was drawn under the
+           arrival fade, so it never matched its own literal value and an
+           exact-colour count passed happily on the broken build. */
+        mirrorCopBox = { x: x0, y: p1.y - fh, w: sw, h: fh };
       }
       /* RESTORED ON BOTH WAYS OUT. This branch ends in a `continue`, so a single
          restore after the loop body would be skipped for every car that has a
@@ -26207,6 +26245,7 @@ requestAnimationFrame(frameLoop);
              from:biomeFrom, to:biomeTo,
              phase:+phase().toFixed(3), wet:+wet.toFixed(3) };
   };
+  API.mirrorCopBox = function(){ return mirrorCopBox; };
   API.mirrorEye = function(v){ if(v > 0) MIRROR_EYE = v; return MIRROR_EYE; };
   API.mirrorHorizon = function(v){ if(v > 0) MIRROR_HORIZON = v; return MIRROR_HORIZON; };
   /* the mirror's three weather numbers, live, so the density and the streak can

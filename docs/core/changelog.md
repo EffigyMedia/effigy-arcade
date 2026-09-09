@@ -14,6 +14,21 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-44"></a>
+## [0.13.44] - 2026-09-08
+- Fixed: **the thing that looked like a health bar over police cruisers in the mirror was a second
+  light bar.** Owner, 2026-09-08, from the device. The glass painted its own `fillRect` on top of
+  every cruiser - **the whole width of the car, one bar-height above the roof** - over the bar the
+  front sprite already draws. The comment beside it claimed the bar "is the one part of a police
+  car that is not in the sprite, because it flashes", and that stopped being true when
+  [RLG-053](../fragments/RLG-053.md) converted the cruiser: the front sprite declares `bar.fl` and
+  `bar.fr` as lamps. The mirror now lights those, so there is one bar and the sprite owns it. See
+  [RLG-177](../fragments/RLG-177.md).
+- Added: **`tools/mirror-bar-test.py` and `tools/cop-mirror-shot.py`.** The capture tool is what
+  found this - the two candidate explanations, a real bar and the light bar misread at 44-pixel
+  scale, could not be told apart by reading code, and one picture settled it. The check asserts
+  that nothing belonging to a police car is painted above its own sprite.
+
 <a id="v0-13-43"></a>
 ## [0.13.43] - 2026-09-08
 - Fixed: **every run opened with a blinking PURSUIT ×1 and nothing was chasing you.** Owner,
