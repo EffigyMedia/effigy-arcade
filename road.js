@@ -20733,6 +20733,23 @@ function drawWorld(){
   for(const b of blocks)  items.push({z:b.z, kind:'b', o:b});
   for(const sg of signs)  items.push({z:sg.z, kind:'s', o:sg});
   for(const cp of cpGantries) items.push({z:cp.z, kind:'c', o:cp});
+  /* ---- AND THE FINISH LINE, WHICH WAS OUTSIDE ALL OF THIS (RLG-179) ----
+     Owner, 2026-09-08: "the finish line renders before vehicles."
+
+     IT WAS DRAWN AFTER THE WHOLE FRAME. `drawFinish` was called from the loop
+     next to `drawMirror` and the HUD, so it painted over every car on the road
+     whatever the depth - measured with a patrol car half a car short of the
+     line, the gantry's board covered it completely, and the car was NEARER to
+     the camera than the line was.
+
+     THE CHECKPOINT BOARDS NEVER HAD THIS COMPLAINT because they were already
+     here, in the bucketed pass that paints far to near. The finish is the same
+     kind of object and is now the same kind of item, so it needs no rule of its
+     own: a car in front of it paints over it, a car beyond it does not, and the
+     tarmac chequer goes under the cars that drive across it because it is in
+     the same bucket as the road slice it sits on.
+     ------------------------------------------------------------------- */
+  if(mode === 'race') items.push({z: finishZ, kind:'f', o:null});
   /* the bridge's towers, emitted with everything else so they are depth-sorted
      against the cars rather than painted over them (RLG-112) */
   for(const tz of towerZs()) items.push({z:tz, kind:'w', o:tz});
@@ -20864,6 +20881,10 @@ function paintBucket(list, onRoad){
     if(onRoad !== null && !!ON_ROAD[it.kind] !== onRoad) continue;
     if(it.kind==='c'){
       drawGantry(it.o);
+    } else if(it.kind==='f'){
+      /* RLG-179: the finish keeps its own range guard, so an item pushed for a
+         line that is miles away still costs nothing */
+      drawFinish();
     } else if(it.kind==='w'){
       drawTower(it.o);
     } else if(it.kind==='s'){
@@ -22499,6 +22520,9 @@ const $=id=>document.getElementById(id);
    proper reverse camera would cost a whole extra projection pass, and what you
    actually need to know is "how close, which lane".
    -------------------------------------------------------------------------- */
+/* where the finish's tarmac chequer was last drawn, in canvas pixels - debug
+   only, see RLG-179 */
+let finishBox = null;
 /* the finish banner: a gantry across the road with chequered boards */
 function drawFinish(){
   if(mode !== 'race') return;
@@ -22526,6 +22550,15 @@ function drawFinish(){
   }
   ctx.fillStyle = 'rgba(0,0,0,.35)';
   ctx.fillRect(p1.x - wRoad/2, by + bh - 2, wRoad, 2);
+  /* WHERE THE TARMAC CHEQUER LANDED, for a check to read (RLG-179). The rule is
+     that a car standing on the line covers it, and a check cannot sample the line
+     without knowing where the projection put it. */
+  finishBox = { x: p1.x - wRoad/2, y: y, w: wRoad, h: Math.max(1.5, h*0.30),
+                /* AND THE WHOLE STANDING THING, top of the board down to the road.
+                   That band is where a car near the line actually overlaps it, and
+                   it is where the defect showed: the board covered a car that was
+                   nearer to the camera than the line was. */
+                boardY: y - h*2.6, boardH: h*2.6 + Math.max(1.5, h*0.30) };
   /* the line on the tarmac */
   const cells2 = 20, cw2 = wRoad/cells2;
   for(let i=0;i<cells2;i++){
@@ -23965,7 +23998,10 @@ function frameLoop(now){
      the wind streaks in drawPlayer instead, which cost nothing and cannot
      corrupt the frame. If a real smear is wanted it needs a second offscreen
      canvas, not a self-copy. */
-  drawFinish();
+  /* `drawFinish()` USED TO BE HERE, and being here was the defect (RLG-179):
+     after `draw()` means after everything, so the line and its gantry painted
+     over every car on the road regardless of which was nearer. It is an item in
+     the depth-sorted sprite pass now, beside the checkpoint boards. */
   drawMirror();
   drawBust(); hud();
   /* ---- CFG.overlay(ctx) — the LAST thing on the frame -------------------
@@ -26529,6 +26565,7 @@ requestAnimationFrame(frameLoop);
      more dangerous of the two options. It says which mode it found, so a check
      can report that it had to change it rather than assume.
      ------------------------------------------------------------------- */
+  API.finishBox = function(){ return finishBox; };
   API.parkFinish = function(dz){
     const was = mode;
     if(mode !== 'race') mode = 'race';

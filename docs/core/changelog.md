@@ -14,6 +14,20 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-47"></a>
+## [0.13.47] - 2026-09-08
+- Fixed: **the finish line painted over every car on the road.** Owner, 2026-09-08: "the finish
+  line renders before vehicles." `drawFinish` was called from the frame loop beside `drawMirror`
+  and the HUD - after `draw()`, which is after everything - so the gantry and the tarmac chequer
+  covered any car regardless of depth. Captured with a patrol car half a car short of the line:
+  **the board hid it completely**, on a car that was nearer to the camera than the line was. The
+  finish is an item in the depth-sorted sprite pass now, beside the checkpoint boards that never
+  had this complaint. See [RLG-179](../fragments/RLG-179.md).
+- Added: **`tools/finish-shot.py`**, which parks a car on the line and captures the frame. It is
+  the instrument that settled the question, and it is what verified the fix - **no automated check
+  for this exists.** Four were attempted and the last one passed on the broken build; the reason
+  is written into the ruling so the next session does not repeat them.
+
 <a id="v0-13-46"></a>
 ## [0.13.46] - 2026-09-08
 - Fixed: **every run opened with an ambulance going past, not "pretty often".** Owner, 2026-09-08:
