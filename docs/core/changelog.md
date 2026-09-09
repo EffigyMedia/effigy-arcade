@@ -14,6 +14,13 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-63"></a>
+## [0.13.63] - 2026-09-09
+- Changed: **more edge on the CREST's dome.** Owner, 2026-09-09: "I also want a bit more edge to the
+  crest dome." The rail added in 0.13.61 was 0.040 of the sprite, which reads as the line where the
+  glass stops rather than as metal. It is 0.062 now, at both ends. See
+  [RLG-187](../fragments/RLG-187.md).
+
 <a id="v0-13-62"></a>
 ## [0.13.62] - 2026-09-09
 - Added: **headlights on the three formula cars, wired.** Owner, 2026-09-09, asked whether the

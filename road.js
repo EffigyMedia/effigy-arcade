@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.62';
+window.ROAD_BUILD = '0.13.63';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2695,7 +2695,11 @@ function carDomeGlassPath(g, w, h, S){
      arithmetic gives every domed body a rail of the same depth.
      ------------------------------------------------------------------- */
   const crown = springY*0.25 + apex*0.75;
-  const sApex = crown + h*0.040;
+  /* ---- AND MORE OF IT (owner, 2026-09-09) -----------------------------
+     "I also want a bit more edge to the crest dome." 0.040 of the sprite was
+     the first rail this roof ever had, and it reads as the line where the glass
+     stops rather than as metal. 0.062 is a roof rail you can see. */
+  const sApex = crown + h*0.062;
   g.beginPath();
   g.moveTo(w*sX, sY);
   g.quadraticCurveTo(w*(sX + sSpan*0.10), sApex + h*0.014, w*(sX + sSpan*0.24), sApex);
