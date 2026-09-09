@@ -14,6 +14,19 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-53"></a>
+## [0.13.53] - 2026-09-09
+- Fixed: **a formula car's tail is its own drawing again.** Owner, 2026-09-09, on 0.13.52: "the
+  formula cars have been completely fucked up. The rear has the same design as the front and it
+  shouldn't be true. The original was pretty good." [RLG-184](../fragments/RLG-184.md) asks that the
+  two ends be the same OBJECT, not the same picture - so the outline is declared once and each end
+  paints its own thing into it. `formulaShell` carries the tyres, the wing and the bodywork at the
+  bottom, in the tail's own numbers; `paintFormulaTail` puts the diffuser, the rain light and the
+  badge in, and `paintFormulaFace` puts a nose cone, the wishbones and a front wing in. All 24
+  columns of all three cars agree exactly. See [RLG-185](../fragments/RLG-185.md).
+- **Not verified on a device.** The tail is what shipped before 0.13.52, restored whole. The face is
+  new work on the tail's proportions and is the owner's call.
+
 <a id="v0-13-52"></a>
 ## [0.13.52] - 2026-09-09
 - Fixed: **every vehicle's front and its own back are now the same shape.** Owner, 2026-09-09: "it's
