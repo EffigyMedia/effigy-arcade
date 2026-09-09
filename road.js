@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.54';
+window.ROAD_BUILD = '0.13.55';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4593,7 +4593,13 @@ function formulaShell(w, h){
        between them they are the bottom edge of the silhouette. */
     lowY: cyT + TH2*0.22, lowH: h*0.16,
     lowX0: 0.30, lowX1: 0.70,
-    planeX0: 0.05, planeX1: 0.95, planeH: h*0.055
+    planeX0: 0.05, planeX1: 0.95, planeH: h*0.055,
+    /* AND TWO FINS AT THE ENDS OF IT. A front wing without endplates is a bar,
+       and the owner reported exactly that. They are in the shared declaration
+       rather than on the face alone, because anything standing above the plane
+       at the outer end of the car is outline: the tail draws them as the
+       fences at the edge of its floor, the face as the wing's endplates. */
+    finW: 0.042, finRise: h*0.048
   };
 }
 /* the two tyres: the driven wheels from behind and the steered ones from in
@@ -4670,10 +4676,17 @@ function paintFormulaTail(g, w, h, o, B, lamps){
   g.fillStyle = rl; g.beginPath(); g.arc(w*0.5, rlY, w*0.085, 0, 6.2832); g.fill();
   g.restore();
 
-  /* the floor edge across the car, which is the shared bottom of the outline */
+  /* the floor edge across the car, and the fence at each end of it - the
+     shared bottom of the outline (see `formulaShell`) */
+  const tpy = S.lowY + S.lowH - S.planeH;
   g.fillStyle = '#0f1216';
-  g.fillRect(w*S.planeX0, S.lowY + S.lowH - S.planeH,
-             w*(S.planeX1-S.planeX0), S.planeH);
+  g.fillRect(w*S.planeX0, tpy, w*(S.planeX1-S.planeX0), S.planeH);
+  for(const fx of [S.planeX0, S.planeX1 - S.finW]){
+    g.fillStyle = '#171b21';
+    g.fillRect(w*fx, tpy - S.finRise, w*S.finW, S.finRise + S.planeH);
+    g.fillStyle = 'rgba(190,205,220,.10)';
+    g.fillRect(w*fx, tpy - S.finRise, w*S.finW, h*0.008);
+  }
   /* the diffuser: the tallest, brightest thing down here */
   g.fillStyle = '#0b0d10';
   g.fillRect(w*S.lowX0, S.lowY, w*(S.lowX1-S.lowX0), S.lowH);
@@ -4733,25 +4746,46 @@ function paintFormulaFace(g, w, h, o, B, parts){
   rr(g, w*0.470, S.bodyTop + h*0.024, w*0.060, h*0.010, h*0.005); g.fill();
   if(B && B.rear) drawMarque(g, B.rear, w*0.5, S.cyT + S.TH2*0.06, h*0.030);
 
-  /* ---- THE FRONT WING, in the plane the tail keeps its floor edge in ----- */
+  /* ---- THE FRONT WING -------------------------------------------------
+     Owner, 2026-09-09: bringing the two ends onto one outline had "regressed
+     the front of the formula car by removing its front lower wing." It had:
+     the wing was one flat plane with the nose splitter painted OVER the middle
+     of it, so what was left either side read as two white stubs.
+
+     The splitter goes first now, and the wing stands in front of it - which is
+     also where it is on the car. Three elements with the plane showing between
+     them, and a fence at each end, so it reads as a wing rather than a bar.
+
+     THE FULL-WIDTH PLANE UNDERNEATH IS WHY IT STAYS IN THE OUTLINE. The tail
+     fills exactly that rectangle with its floor edge, so every element stacked
+     on it is inset rather than a narrower version of it. Three tapering planes
+     with nothing behind them left the lower rows short of what the tail draws,
+     and the bottom rows of a formula car ARE its outline.
+     ------------------------------------------------------------------- */
   const py = S.lowY + S.lowH - S.planeH;
   const pw = S.planeX1 - S.planeX0;
-  /* THE MAIN PLANE FIRST, FULL WIDTH. The tail's floor edge fills exactly this
-     rectangle, so the elements stacked on it are inset rather than narrower
-     versions of it - a front wing drawn as three tapering planes left the two
-     lower rows short of what the tail draws, and the outline is the bottom two
-     rows of the car. */
-  g.fillStyle = '#e9eef4';
-  g.fillRect(w*S.planeX0, py, w*pw, S.planeH);
-  g.fillStyle = '#c6cfd9';
-  g.fillRect(w*(S.planeX0+0.03), py + S.planeH*0.38, w*(pw-0.06), S.planeH*0.24);
-  g.fillStyle = '#a2adb8';
-  g.fillRect(w*(S.planeX0+0.07), py + S.planeH*0.70, w*(pw-0.14), S.planeH*0.24);
-  /* the splitter under the nose, in the box the diffuser occupies */
+  /* the splitter under the nose, in the box the diffuser occupies - behind */
   g.fillStyle = '#0b0d10';
   g.fillRect(w*S.lowX0, S.lowY, w*(S.lowX1-S.lowX0), S.lowH);
   g.fillStyle = 'rgba(150,166,182,.18)';
   g.fillRect(w*(S.lowX0+0.02), S.lowY + h*0.010, w*(S.lowX1-S.lowX0-0.04), h*0.012);
+  /* the plane the elements sit on, which is the tail's floor edge */
+  g.fillStyle = '#2b333c';
+  g.fillRect(w*S.planeX0, py, w*pw, S.planeH);
+  /* three elements, each shorter than the one above it */
+  const EL = [[0.000, '#e9eef4', 0.00], [0.030, '#c6cfd9', 0.36], [0.070, '#a2adb8', 0.68]];
+  for(const e of EL){
+    g.fillStyle = e[1];
+    g.fillRect(w*(S.planeX0+e[0]), py + S.planeH*e[2],
+               w*(pw-e[0]*2), S.planeH*0.30);
+  }
+  /* the endplates, from the same declaration the tail draws its fences from */
+  for(const fx of [S.planeX0, S.planeX1 - S.finW]){
+    g.fillStyle = '#232930';
+    g.fillRect(w*fx, py - S.finRise, w*S.finW, S.finRise + S.planeH);
+    g.fillStyle = 'rgba(220,232,244,.22)';
+    g.fillRect(w*fx, py - S.finRise, w*S.finW, h*0.010);
+  }
 
   formulaWing(g, w, h, S);
 }

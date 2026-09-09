@@ -14,6 +14,18 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-55"></a>
+## [0.13.55] - 2026-09-09
+- Fixed: **the formula car's front lower wing is back.** Owner, 2026-09-09: bringing the two ends onto
+  one outline had "regressed the front of the formula car by removing its front lower wing." It had:
+  the wing was one flat plane with the nose splitter painted over the middle of it, so what was left
+  either side read as two white stubs. The splitter is drawn behind the wing now, which is where it
+  is on the car, and the wing is three elements with the plane showing between them.
+- Added: **an endplate at each end of it**, declared in `formulaShell` rather than on the face alone -
+  anything standing above the plane at the outer end of the car is outline, so the tail draws the
+  same two as the fences at the edge of its floor. All 24 columns still agree on all three cars.
+  See [RLG-185](../fragments/RLG-185.md).
+
 <a id="v0-13-54"></a>
 ## [0.13.54] - 2026-09-09
 - Added: **a face for the CREST.** Owner, 2026-09-09: "since there is so much unused space on the
