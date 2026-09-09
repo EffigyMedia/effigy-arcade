@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-58"></a>
+## [0.13.58] - 2026-09-09
+- Fixed: **the VECTOR badge is centred.** Owner, 2026-09-09: "the badge for the vector on the steering
+  wheel needs to be centered like the other two cars' steering wheels." A marque is drawn in a frame
+  whose origin is wherever the caller puts it, so a badge not balanced about (0,0) is off centre
+  everywhere it appears at once - on the wheel boss, on the nose and on the boot lid. VECTOR's
+  chevrons ran from -13.0 to +3.2 and are on the origin now, unchanged in shape and spacing. See
+  [RLG-188](../fragments/RLG-188.md).
+
 <a id="v0-13-57"></a>
 ## [0.13.57] - 2026-09-09
 - Fixed: **the CREST's face has glass all the way to the roof edge.** Owner, 2026-09-09: "the rear

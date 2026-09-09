@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.57';
+window.ROAD_BUILD = '0.13.58';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14590,15 +14590,25 @@ function drawMarque(g, kind, cx, cy, r, tint){
        so standing still. Two stacked chevrons in electric blue: a direction and
        a magnitude, which is what the word means. The same dark edge the other
        marques carry, so it holds on a white nose. */
+    /* ---- AND IT IS CENTRED ON ITS OWN ORIGIN (owner, 2026-09-09) --------
+       Owner, from the wheel sheet: "the badge for the vector on the steering
+       wheel needs to be centered like the other two cars' steering wheels."
+
+       IT WAS DRAWN 4.9 UNITS HIGH. A marque is drawn in a frame whose origin is
+       where the caller puts it - the boss of a wheel, the middle of a nose -
+       so anything not balanced about (0,0) is off centre EVERYWHERE it is used,
+       and this one ran from y -13.0 to +3.2. The two chevrons are unchanged in
+       shape and spacing; the pair has been dropped onto the origin.
+       ---------------------------------------------------------------- */
     g.fillStyle = 'rgba(8,14,22,.85)';
-    for(const dy of [2.6, -3.4]){
+    for(const dy of [7.5, 1.5]){
       g.beginPath();
       g.moveTo(0,-9.6+dy); g.lineTo(8.4,0.6+dy); g.lineTo(4.6,0.6+dy);
       g.lineTo(0,-4.6+dy); g.lineTo(-4.6,0.6+dy); g.lineTo(-8.4,0.6+dy);
       g.closePath(); g.fill();
     }
     g.fillStyle = '#3fa9ff';
-    for(const dy of [2.0, -4.0]){
+    for(const dy of [6.9, 0.9]){
       g.beginPath();
       g.moveTo(0,-9.0+dy); g.lineTo(7.4,0.0+dy); g.lineTo(4.4,0.0+dy);
       g.lineTo(0,-4.4+dy); g.lineTo(-4.4,0.0+dy); g.lineTo(-7.4,0.0+dy);
