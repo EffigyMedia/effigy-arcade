@@ -24075,6 +24075,24 @@ function garageCard(){
     return '<u class="bar">' + '<i class="on"></i>'.repeat(n) +
            '<i></i>'.repeat(5-n) + '</u>';
   };
+  /* ---- A CAR YOU HAVE NOT WON HAS NO NAME AND NO NUMBERS ---------------
+     Owner, 2026-09-09: "instead of showing their name and stats I want the name
+     to be three ? and I want their stats to be omitted."
+
+     THE FIRST BUILD KEPT THE NAME, on the reasoning that the shape and the name
+     are the invitation and the stats are the reward. The owner took it further
+     and they are right: a named car with a shape and a condition is a catalogue
+     entry you happen to be locked out of, while `???` is a question. The shape
+     still says what CLASS it is, which is all the invitation needs.
+     ------------------------------------------------------------------- */
+  if(carLocked(optBody)){
+    return '<div class="gwrap locked">' +
+      '<canvas id="gcar" width="300" height="180"></canvas>' +
+      '<div class="gname">???</div>' +
+      '<div class="gnote lock">LOCKED</div>' +
+      '<div class="gnote">' + unlockHow(optBody) + '</div>' +
+    '</div>';
+  }
   return '<div class="gwrap">' +
     '<canvas id="gcar" width="300" height="180"></canvas>' +
     '<div class="gname">' + optBody + '</div>' +
@@ -24278,9 +24296,38 @@ function drawGarageCar(){
     const dy = TOP - box.y*sc;
     g2.drawImage(img, dx, dy, img.width*sc, img.height*sc);
   };
-  if(!front){ put(back, boxes[0], 150); return; }
-  put(back,  boxes[0],  75);
-  put(front, boxes[1], 225);
+  if(!front){ put(back, boxes[0], 150); }
+  else { put(back,  boxes[0],  75); put(front, boxes[1], 225); }
+  /* ---- AND A CAR YOU HAVE NOT WON IS A SHAPE (owner, 2026-09-08) --------
+     Flattened rather than redrawn. `source-atop` fills only where the sprites
+     already painted, so the silhouette is the car's own outline at its own
+     size - a second, hand-drawn shape would be the same duplication that
+     RLG-053 and RLG-177 were both about, and it would go out of date the first
+     time a body was retouched.
+
+     THE SHAPE IS DELIBERATELY NOT HIDDEN. It gives away the class and the
+     proportions at a glance, and that is the point: the card is an invitation,
+     and an invitation you cannot read is a locked door.
+     ------------------------------------------------------------------- */
+  if(carLocked(optBody)){
+    g2.save();
+    g2.globalCompositeOperation = 'source-atop';
+    /* OPAQUE, AND THAT IS THE WHOLE POINT. A translucent wash at .30 left the
+       tail lights, the headlights and the paint perfectly readable - a tinted
+       photograph of the car rather than a silhouette, which is exactly what the
+       owner did not ask for. A solid fill flattens every painted pixel to one
+       colour and leaves nothing but the outline.
+
+       A GRADIENT RATHER THAN A FLAT GREY, so the shape still reads as a solid
+       object standing on a floor rather than as a sticker. It is the only
+       modelling a silhouette gets and it costs one fill. */
+    const sil = g2.createLinearGradient(0, TOP, 0, CARD_H);
+    sil.addColorStop(0, '#9aa3b4');
+    sil.addColorStop(1, '#5b6376');
+    g2.fillStyle = sil;
+    g2.fillRect(0, 0, 300, CARD_H);
+    g2.restore();
+  }
 }
 function showGarage(){
   /* before a single control is drawn: a save can hold a car and a mode that
@@ -24349,7 +24396,14 @@ function showGarage(){
         (optEasy ? 'OFF' : 'ON') + '</b></button>' +
       /* a fork can put its own buttons here — Motorsport adds QUALIFY */
       (CFG.garageButtons ? CFG.garageButtons() : '') +
-      '<button class="go" data-act="drive">DRIVE</button>' +
+      /* THE SAME SHAPE RLG-115 SET for a mode a car cannot enter: greyed with
+         the reason given, not hidden. `disabled` is what stops the press, so
+         the rule holds even if the note is ever restyled away - and the action
+         below checks again, because a hardware back-press or a stale veil must
+         not be able to drive a car that has not been won. */
+      '<button class="go' + (carLocked(optBody) ? ' ghost shut' : '') + '"' +
+        (carLocked(optBody) ? ' disabled' : '') + ' data-act="drive">' +
+        (carLocked(optBody) ? 'LOCKED' : 'DRIVE') + '</button>' +
       '<button class="go ghost" data-act="back">BACK</button>' +
     '</div>',
     Object.assign({}, (CFG.garageActions ? CFG.garageActions(start) : {}), {
@@ -24382,7 +24436,10 @@ function showGarage(){
       chase: () => { optEasy = !optEasy;
                      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
                      showGarage(); },
-      drive: start,
+      /* THE SECOND LOCK. The button is `disabled` as well; this is here for the
+         same reason the mode action has one - a stale veil or a hardware press
+         must not be able to drive a car that has not been won (RLG-180). */
+      drive: () => { if(carLocked(optBody)) return; start(); },
       back: showTitle
     }));
   drawGarageCar();
@@ -24445,6 +24502,64 @@ function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
    It used to be three lines inside `cycleBody`, which meant only the arrows
    could ask.
    ------------------------------------------------------------------------- */
+/* ---- A LOCKED CAR IS A SILHOUETTE, NOT AN ABSENCE (owner, 2026-09-08) ---
+   Owner: "I want to show all the cars in the garage as grey silhouettes until
+   you unlock them... players would never know that they can unlock stuff,
+   especially if when they are locked, it says underneath them how to unlock
+   them."
+
+   THE PROBLEM IS DISCOVERABILITY. A locked car that is simply missing from the
+   garage is indistinguishable from a car that does not exist, so the whole
+   tournament ladder was paying out prizes nobody knew they were climbing
+   towards. A shape with its condition written under it turns the garage into
+   the place the game explains what it is for.
+
+   AND THE CAPTIONS ARE THE REAL CONDITIONS, read out of the code that grants
+   them rather than written from memory - `tourScore`'s finish branch for the
+   five tournament prizes, and the distance branch in `step` for the two that
+   are not listed here at all.
+   ---------------------------------------------------------------------- */
+const UNLOCK_HOW = {
+  super:        'WIN A SPORTS TOURNAMENT',
+  formula:      'WIN A SUPERCAR TOURNAMENT',
+  cruiser:      'WIN A SPORTS TOURNAMENT \u00B7 HOT PURSUIT ON',
+  supercruiser: 'WIN A SUPERCAR TOURNAMENT \u00B7 HOT PURSUIT ON'
+};
+/* ---- AND TWO ARE SECRET, WHICH IS THE OWNER'S OWN SPLIT ------------------
+   "This does not include the production and utility vehicles. Those are secret
+   unlocks." The line falls exactly on a seam: the five above are TOURNAMENT
+   RESULTS, so the player is already doing the thing and telling them what it
+   pays costs no mystery. These two are distance milestones on a mode nobody
+   drives for distance - fifty miles of TEST DRIVE is not a thing anyone
+   stumbles into on purpose, and finding out it paid something is the whole
+   pleasure of it.
+
+   THEY ARE ABSENT RATHER THAN GREYED. A silhouette with nothing written under
+   it is worse than no silhouette: it advertises that something exists and
+   refuses to say what, which is a puzzle the game never intends to answer.
+   ---------------------------------------------------------------------- */
+const SECRET_UNLOCK = { production:1, utility:1 };
+
+/* whether this car is still to be won, ignoring the debug overrides - those
+   open a car WITHOUT writing the flag, and a car opened for testing should
+   look like a car you own */
+function carLocked(k){
+  const need = BODY_CLASS[k];
+  if(!need) return false;
+  if(unlocked(need)) return false;
+  if((need === 'production' || need === 'utility') && unlocked('traffic')) return false;
+  return true;
+}
+/* how it is won, or '' for the two that do not say */
+function unlockHow(k){
+  const need = BODY_CLASS[k];
+  return (need && UNLOCK_HOW[need]) || '';
+}
+/* the cars that can actually be driven - what `garageBodies` used to return */
+function playableBodies(){
+  return garageBodies().filter(k => !carLocked(k));
+}
+
 function garageBodies(){
   /* ---- DEBUG OVERRIDES ---------------------------------------------------
      These open a car in the garage WITHOUT writing the unlock flag, so the
@@ -24464,8 +24579,15 @@ function garageBodies(){
     if(need === 'cruiser' || need === 'supercruiser') return !!dbgPolice;
     return !!dbgRacers;
   };
+  /* ---- AND A LOCKED CAR IS LISTED AS A SILHOUETTE (owner, 2026-09-08) ---
+     `openBy` is now the test for whether a car is READY, not for whether it is
+     shown. Everything else in this fleet appears; only the two secret unlocks
+     are held back, and `carLocked` is what the card and the painter read to
+     decide how to draw it.
+     ------------------------------------------------------------------- */
+  const shown = k => openBy(k) || !SECRET_UNLOCK[BODY_CLASS[k] || ''];
   /* an NPC body has stats and a sprite but is not a car you can pick */
-  let ks = Object.keys(BODY).filter(k => !BODY[k].npc).filter(openBy);
+  let ks = Object.keys(BODY).filter(k => !BODY[k].npc).filter(shown);
   /* ---- A CIRCUIT GARAGE LISTS ONLY WHAT CAN RACE (RLG-115) --------------
      Owner, 2026-09-05, choosing between four shapes: production and utility
      vehicles are "not offered at all in Motorsport". Interstate keeps them and
@@ -24505,6 +24627,16 @@ function garageBodies(){
    menu simply stops offering what the car cannot do.
    ------------------------------------------------------------------------- */
 function enforceCarRules(){
+  /* ---- SHOWN, NOT PLAYABLE, AND THE FIRST BUILD HAD IT THE OTHER WAY ----
+     This runs on every garage render, so asking the narrower question made the
+     silhouettes unreachable: cycling onto a locked car swapped it straight back
+     out again, and the garage cycled between the three cars you already owned.
+
+     BROWSING IS NOT DRIVING. This is the rule that keeps a SAVE honest - a car
+     the garage will not list at all must not stay selected - and what stops a
+     locked car being driven is the DRIVE button, which is `disabled` and checks
+     again in its action.
+     ------------------------------------------------------------------- */
   const ks = garageBodies();
   if(ks.indexOf(optBody) < 0){
     optBody = ks[0];

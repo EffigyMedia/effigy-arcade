@@ -14,6 +14,22 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-48"></a>
+## [0.13.48] - 2026-09-09
+- Added: **locked cars appear in the garage as grey silhouettes with the way to win them written
+  underneath.** Owner, 2026-09-08: "players would never know that they can unlock stuff, especially
+  if when they are locked, it says underneath them how to unlock them." The garage went from three
+  cars to ten: three owned, seven silhouettes carrying their real conditions, read out of the code
+  that grants them rather than written from memory. **A locked card gives nothing else away** -
+  the owner's ruling of 2026-09-09: the name is `???` and the stats are omitted, so the shape says
+  what class it is and the caption says how to win it, and nothing says what it is. `DRIVE` becomes a disabled `LOCKED` on those
+  cards, in the same greyed-with-the-reason shape [RLG-115](../fragments/RLG-115.md) set for a mode
+  a car cannot enter. See [RLG-180](../fragments/RLG-180.md).
+- Kept secret: **the production and utility vehicles**, by the owner's split. They are absent, not
+  greyed - a silhouette with no caption advertises a puzzle the game never intends to answer.
+- Added: **`tools/garage-shot.py`**, which walks the garage with the real arrows and captures each
+  card. It is what caught the first build painting a tinted photograph rather than a silhouette.
+
 <a id="v0-13-47"></a>
 ## [0.13.47] - 2026-09-08
 - Fixed: **the finish line painted over every car on the road.** Owner, 2026-09-08: "the finish
