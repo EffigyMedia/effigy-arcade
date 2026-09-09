@@ -88,14 +88,6 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 }
 #nitro i{ transition:filter .18s linear, box-shadow .18s linear }
 
-#pursuit{
-  width:fit-content;margin:10px auto 0;font-size:9.5px;font-weight:700;letter-spacing:.28em;
-  padding:5px 12px;border:1px solid var(--red);color:#fff;background:rgba(255,51,85,.16);
-  opacity:0;transition:opacity .2s;
-}
-#pursuit.on{opacity:1;animation:bl .7s steps(2) infinite}
-@keyframes bl{0%,100%{border-color:var(--red);background:rgba(255,51,85,.16)}
-              50%{border-color:var(--blue);background:rgba(77,140,255,.16)}}
 
 /* pointer-events:none — this banner is full-width and sits ON TOP of the
    canvas, so while a warning was on screen (PIT LANE, WRONG WAY, BUSTED) it
@@ -749,7 +741,6 @@ body.titling #veil h1{display:none}
         <div class="stat c" id="placeWrap" hidden><span>PLACE</span><b id="place">12/12</b></div>
         <div class="stat r"><span>DISTANCE</span><b id="score">0</b></div>
       </div>
-      <div id="pursuit">PURSUIT</div>
     </div>
     <div class="botrow">
       <!-- speed now lives on the dial, where a car keeps it -->

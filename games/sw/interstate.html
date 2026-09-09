@@ -30,6 +30,9 @@
   --dim:rgba(255,238,222,.5);
   --red:#ff3355;
   --blue:#4d8cff;
+  /* named at last: `#rotate b` has been asking for `--gold` with a literal
+     fallback since it was written, and the wanted stars need the same one */
+  --gold:#e8b23a;
   --cyan:#5ff0d8;
   --disp:"Saira Condensed","Arial Narrow",sans-serif;
   --lab:"Archivo","Helvetica Neue",Arial,sans-serif;
@@ -109,15 +112,39 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
    "three of five" rather than "three". The one being filled clips an orange
    gradient to the glyph, so the fill runs left to right across the star itself
    and moves with every point rather than snapping. */
+/* ---- THE STARS ARE HOT OR COLD (owner, 2026-09-08) ----------------------
+   Gold while a cruiser is actually engaged to you, blue while you are cooling.
+   OUTLINE AND FILL TOGETHER, which is what the owner asked for: one colour
+   says the state and the fill level says the amount, so the row answers "how
+   wanted" and "right now?" in one glance. It replaced a separate PURSUIT row
+   that said the second half in words.
+
+   THE OUTLINE IS A REAL STROKE. These were solid glyphs before - an unfilled
+   star was the same shape in a paler colour, so there was no outline to give a
+   colour to. `-webkit-text-stroke` draws the edge and the fill is painted
+   through `background-clip:text`, which is how the partial star already worked.
+   Both are supported wherever this ships: it is a WebKit/Blink phone.
+   ---------------------------------------------------------------------- */
 #wanted{ display:flex;flex-direction:row;justify-content:center;
-  gap:calc(2px * var(--ark-ui,1));white-space:nowrap;line-height:1 }
+  gap:calc(3px * var(--ark-ui,1));white-space:nowrap;line-height:1;
+  --star:var(--blue);--starGlow:rgba(77,140,255,.55) }
+#wanted.hot{ --star:var(--gold);--starGlow:rgba(232,178,58,.60) }
 #wanted b{ font-size:calc(19px * var(--ark-ui,1));font-weight:400;line-height:1;
-  color:rgba(255,238,222,.34);text-shadow:none }
-#wanted b.on{ color:#ff8a3d;text-shadow:0 0 14px rgba(255,138,61,.55) }
-#wanted b.part{ color:transparent;
-  background:linear-gradient(90deg,#ff8a3d 0,#ff8a3d var(--fill,0%),
-             rgba(255,238,222,.34) var(--fill,0%),rgba(255,238,222,.34) 100%);
+  color:transparent;text-shadow:none;
+  -webkit-text-stroke:calc(1px * var(--ark-ui,1)) var(--star);
+  paint-order:stroke fill }
+/* an earned star is filled solid in the state's colour, and glows */
+#wanted b.on{ background:var(--star);
+  -webkit-background-clip:text;background-clip:text;
+  filter:drop-shadow(0 0 5px var(--starGlow)) }
+/* the one the total is part-way through fills from the left */
+#wanted b.part{
+  background:linear-gradient(90deg,var(--star) 0,var(--star) var(--fill,0%),
+             transparent var(--fill,0%),transparent 100%);
   -webkit-background-clip:text;background-clip:text }
+/* and an unearned star is the outline alone, dimmed so the row reads as a
+   gauge rather than five equal marks */
+#wanted b.off{ opacity:.42 }
 /* ---- the radar detector: four bars that fill toward the contact (RLG-164) -
    Owner, 2026-09-07: a detector "for upcoming speed traps and traffic cops,
    just like it was done in the original Need for Speed games".
@@ -172,14 +199,6 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 }
 #nitro i{ transition:filter .18s linear, box-shadow .18s linear }
 
-#pursuit{
-  width:fit-content;margin:10px auto 0;font-size:9.5px;font-weight:700;letter-spacing:.28em;
-  padding:5px 12px;border:1px solid var(--red);color:#fff;background:rgba(255,51,85,.16);
-  opacity:0;transition:opacity .2s;
-}
-#pursuit.on{opacity:1;animation:bl .7s steps(2) infinite}
-@keyframes bl{0%,100%{border-color:var(--red);background:rgba(255,51,85,.16)}
-              50%{border-color:var(--blue);background:rgba(77,140,255,.16)}}
 
 /* pointer-events:none — this banner is full-width and sits ON TOP of the
    canvas, so while a warning was on screen (PIT LANE, WRONG WAY, BUSTED) it
@@ -933,7 +952,6 @@ body.titling #veil h1{display:none}
         <div class="stat c" id="distWrap" hidden><span>TO GO</span><b id="dist">0.0<i>MI</i></b></div>
         <div class="stat c" id="placeWrap" hidden><span>PLACE</span><b id="place">12/12</b></div>
       </div>
-      <div id="pursuit">PURSUIT</div>
     </div>
     <div class="botrow">
       <!-- speed now lives on the dial, where a car keeps it -->

@@ -23851,6 +23851,25 @@ function hud(){
         else stars += '<b class="off">★</b>';
       }
       $('wanted').innerHTML = stars;
+      /* ---- HOT OR COLD, AND THE STARS SAY WHICH (owner, 2026-09-08) ------
+         "If you are actively being engaged then the stars' fill is golden. If
+         you are on active cooldown the fill is the same colour as the blue edge,
+         to represent being cold instead of hot. The outline of the stars should
+         be gold when you're hot and blue when you're cold, along with the fill."
+
+         THIS REPLACED THE PURSUIT ROW RATHER THAN JOINING IT. That row said the
+         same thing in words, in its own box, under a level it was already
+         repeating - two places to look for one fact. The stars are already on
+         the screen and already mean "how much trouble you are in", so how much
+         and how live are one reading now.
+
+         WHAT COUNTS AS HOT is a cruiser actually engaged to you - `onPlayer`
+         strictly true, which is the same test the old row was fixed to use
+         earlier today. Everything else is cold: cooling down, and also simply
+         not wanted, because a driver nobody is chasing is not hot whatever the
+         clock says.
+         ---------------------------------------------------------------- */
+      $('wanted').classList.toggle('hot', cops.some(k => k.wreck <= 0 && k.onPlayer === true));
     }
   }
   /* ---- AND THE DETECTOR IS FOUR BARS (RLG-164) -------------------------
@@ -23873,31 +23892,6 @@ function hud(){
       $('radar').innerHTML = bars;
     }
   }
-  /* ---- IT COUNTS CARS THAT ARE CHASING YOU (owner, 2026-09-08, RLG-178) -
-     "Every run starts with a banner that says PURSUIT x1. What is that and why
-     do we need it?"
-
-     THE ROW IS RIGHT AND THE TEST INSIDE IT WAS WRONG. It is a live count of
-     the cruisers on you, which is worth having while one is happening. It asked
-     for `onPlayer !== false`, and a car that has never chosen a target has
-     `onPlayer` UNDEFINED - which passes that test. The road lays a speed trap
-     in the first seconds of every run, so every run opened with a blinking red
-     PURSUIT x1 for a parked car that had not looked at anybody.
-
-     THIS IS THE SAME MISTAKE IN THE SAME SHAPE AS THE BOX (RLG-173), found on
-     the same day: `!== false` was written to mean "is on the player" and
-     quietly also means "has never decided". Asking for `=== true` says what was
-     meant, and a parked trap is no longer a pursuit.
-
-     AND THE COMBO SUFFIX GOES WITH IT. `combo` is zeroed at every reset and
-     nothing ever raises it - the score system it belonged to was removed, and
-     the near-miss handler already carries a note about this same variable
-     printing "+0" over the road. `combo > 1` could not be true, so the text it
-     guarded could never appear.
-     ------------------------------------------------------------------ */
-  const chasing = cops.filter(k => k.wreck <= 0 && k.onPlayer === true).length;
-  $('pursuit').className = chasing > 0 ? 'on' : '';
-  $('pursuit').textContent = 'PURSUIT \u00D7' + chasing;
   nitroBtn.disabled = nos<=8;
   brakeBtn.disabled = state!=='driving';
   nitroBtn.classList.toggle('hot', nosOn);

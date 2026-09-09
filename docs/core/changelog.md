@@ -14,6 +14,26 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-45"></a>
+## [0.13.45] - 2026-09-08
+- Removed: **the PURSUIT row, from both driving cabinets.** Owner, 2026-09-08: "I wanna just
+  remove the pursuit banner. I think there's a better way we can express being actively engaged or
+  not." It said in words, in its own box, what the stars above it could say in a colour.
+- Changed: **the wanted stars are gold while a cruiser is engaged to you and blue while you are
+  cooling.** Owner: "the outline of the stars should be gold when you're hot and blue when you're
+  cold, along with the fill." Outline and fill move together, so the row answers *how wanted* and
+  *right now?* in one glance. See [RLG-178](../fragments/RLG-178.md).
+- Changed: **the stars have a real outline.** They were solid glyphs, so an unfilled star was the
+  same shape in a paler colour and there was no outline to give a colour to. The edge is a
+  `-webkit-text-stroke` now and the fill is painted through `background-clip:text`, which is how
+  the part-filled star already worked. `--gold` is finally a named variable: `#rotate b` has been
+  asking for it with a literal fallback since it was written.
+- Added: **`tools/stars-shot.py`**, which captures the row in each state at four times device
+  pixels, and **`tools/wanted-stars-test.py`**, which replaces `pursuit-row-test.py`. The check
+  reads the computed stroke and fill rather than trusting the class name - while this was being
+  built the class was toggled onto the WRAPPER while the rule was written for the ROW, so the
+  state was right, the stylesheet was right, and nothing changed on the screen.
+
 <a id="v0-13-44"></a>
 ## [0.13.44] - 2026-09-08
 - Fixed: **the thing that looked like a health bar over police cruisers in the mirror was a second
