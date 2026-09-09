@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.60';
+window.ROAD_BUILD = '0.13.61';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2678,7 +2678,24 @@ function carDomeGlassPath(g, w, h, S){
   const apex    = S.cabTop + h*0.015;
   const sX = springX + 0.055, sY = springY - h*0.006;
   const sSpan = (1 - sX*2);
-  const sApex = apex + h*0.030;
+  /* ---- THE RAIL IS MEASURED FROM THE CROWN, NOT FROM THE CONTROL POINT --
+     Owner, 2026-09-09: "can we add a little bit more metal surface across the
+     top edge, it seems too thin."
+
+     IT WAS THIN BECAUSE `apex` IS NOT WHERE THE ROOF IS. `apex` is the control
+     point of the dome's bezier, and a cubic pulled to a single control height
+     reaches only three quarters of the way to it: the drawn crown sits at
+     `0.25*springY + 0.75*apex`, well below the number the pane was being offset
+     from. Adding 0.030 to the CONTROL point put the pane's top above the metal
+     rather than under it, and the greenhouse clip then trimmed it flush - so
+     the rail was whatever a rounding error left, which is what the owner was
+     looking at.
+
+     Measured from the crown the offset means what it says, and the same
+     arithmetic gives every domed body a rail of the same depth.
+     ------------------------------------------------------------------- */
+  const crown = springY*0.25 + apex*0.75;
+  const sApex = crown + h*0.040;
   g.beginPath();
   g.moveTo(w*sX, sY);
   g.quadraticCurveTo(w*(sX + sSpan*0.10), sApex + h*0.014, w*(sX + sSpan*0.24), sApex);

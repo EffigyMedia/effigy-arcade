@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-61"></a>
+## [0.13.61] - 2026-09-09
+- Fixed: **the CREST's dome keeps a roof rail above its glass.** Owner, 2026-09-09: "can we add a
+  little bit more metal surface across the top edge, it seems too thin." The pane's top was offset
+  from `apex`, which is the CONTROL POINT of the dome's curve rather than the curve - a cubic pulled
+  to one control height reaches three quarters of the way to it - so the offset put the glass above
+  the metal and the greenhouse clip trimmed it flush. The rail is measured from the drawn crown now,
+  at both ends. See [RLG-187](../fragments/RLG-187.md).
+
 <a id="v0-13-60"></a>
 ## [0.13.60] - 2026-09-09
 - Fixed: **the production cars' door mirrors are drawn at both ends.** Owner, 2026-09-09, asking
