@@ -14,6 +14,20 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-46"></a>
+## [0.13.46] - 2026-09-08
+- Fixed: **every run opened with an ambulance going past, not "pretty often".** Owner, 2026-09-08:
+  "It's not a big deal, but pretty often a run will start with an ambulance blowing by me."
+  Measured before the fix: **ten runs out of ten**, with the call-out clock reading 0.0 seconds at
+  the start of every one. `ambT` counts down to the next ambulance and was initialised to zero at
+  module load, so the first frame fired immediately - and `reset` never touched it, so a restarted
+  run inherited whatever was left of the last one's clock. It is seeded with a random offset now,
+  in both places, from the new `AMB_FIRST` window. Measured after: **zero runs out of ten**, with
+  the clock starting between 60 and 109 seconds. See [RLG-176](../fragments/RLG-176.md).
+- Added: **`tools/ambulance-start-test.py`**, which boots the road from scratch ten times and
+  watches the first ten seconds of each. A frequency claim is answered by counting, and each run
+  is a fresh page because whether the clock survives a restart is the question.
+
 <a id="v0-13-45"></a>
 ## [0.13.45] - 2026-09-08
 - Removed: **the PURSUIT row, from both driving cabinets.** Owner, 2026-09-08: "I wanna just

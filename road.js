@@ -9249,6 +9249,10 @@ function reset(){
   if(pw) pw.hidden = (mode !== 'race');
   dist=0; score=0; combo=0; comboTime=0; heat=0; heatPts=0; heatWhy=''; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
   coolT=0; supersEarned=false;
+  /* the ambulance clock is a per-run thing like the rest of these (RLG-176).
+     Left out of this list, it was module state that survived every restart -
+     and started at zero, so the first run always opened with a siren. */
+  ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
   barOn = false; wonTraffic = false; coasting = false;
@@ -12492,8 +12496,32 @@ let curveHold = null;
 let horning = false, hornCool = 0, bustT = 0, behindT = 2, slowFor = 0, audioTick = 0, bendT = 0, skySmooth = 0, pushK = 0;
 /* the radio's own clock - see the dispatch block in `step` */
 let nextChaseT = 6;
+/* ---- AND THE FIRST ONE IS NOT AT ZERO (owner, 2026-09-08, RLG-176) -----
+   Owner: "It's not a big deal, but pretty often a run will start with an
+   ambulance blowing by me." Measured before the fix: TEN runs out of ten, with
+   the call-out clock reading 0.0 seconds at the start of every one. Not often -
+   always.
+
+   THE CLOCK WAS ZERO AND NOBODY SET IT. `ambT` counts down to the next
+   call-out and was initialised to zero at module load, so the first frame of
+   the first run fired immediately. `reset` clears the heat, the score, the
+   racers, the run clock and a dozen other things, and never touched this one -
+   so a restarted run inherited whatever was left of the previous run's clock as
+   well.
+
+   THE FIX IS A RANDOM OFFSET, APPLIED IN BOTH PLACES. An ambulance is a thing
+   that happens to a road you are already driving on; meeting one in the first
+   seconds says the world was waiting for you, which is the opposite of what it
+   is for. The window is a tunable with a committed default rather than a number
+   edited in place.
+   --------------------------------------------------------------------- */
+/* how long before the FIRST ambulance of a run, in seconds. Shorter than the
+   gap between later ones (90-190) on purpose: a run is often over inside two
+   minutes, and never meeting one at all would be a quieter road than the owner
+   asked for. */
+const AMB_FIRST = [40, 140];
 /* how long until the next ambulance is called out - see `spawnEmergency` */
-let ambT = 0;
+let ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
 
 /* ---- rubber on the road --------------------------------------------------
    One system for every car out here. A mark is a short world-space segment at
@@ -27671,6 +27699,10 @@ requestAnimationFrame(frameLoop);
      This is the SAME `spawnEmergency` the clock calls - not a second way of
      making one, which would prove only that the harness can build a car.
      -------------------------------------------------------------------- */
+  /* seconds until the next call-out, for RLG-176's frequency check. A rate on its
+     own says a thing is wrong without saying what; this says where in the cycle a
+     run actually begins. */
+  API.ambClock = function(){ return +ambT.toFixed(2); };
   API.callAmbulance = function(){ return spawnEmergency(); };
   /* what is on a call right now, and what the road is doing about it */
   API.emergency = function(){
