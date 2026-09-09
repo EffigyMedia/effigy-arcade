@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.55';
+window.ROAD_BUILD = '0.13.56';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4616,28 +4616,71 @@ function formulaTyres(g, w, h, S){
     rr(g, wx - S.TW*0.46, S.cyT + S.TH2*0.10, S.TW*0.92, S.TH2*0.10, S.TW*0.06); g.fill();
   }
 }
-/* the wing: a deep plane right across, a bridge above it, endplates that nearly
-   touch the tyres, and the swan necks holding it up. You see it past the car
-   from the front and over the car from behind - it is the same wing. */
-function formulaWing(g, w, h, S){
+/* ---- WHICH WING YOU ARE LOOKING AT (owner, 2026-09-09) -----------------
+   Owner, on the rear view: "can we paint the close wing the same color as the
+   front view's close low wing? So the close wing gets a lighter color, the
+   farther wing gets a darker more shaded color... can we take the darker
+   colored wing and raise its color a bit?"
+
+   A FORMULA CAR HAS A WING AT EACH END AND YOU SEE BOTH FROM EITHER SIDE. The
+   one nearest you is lit and the one at the far end of the car is in its shade,
+   and which is which SWAPS between the two views: from the front the low front
+   wing is near and the tall rear wing is far; from behind it is the other way
+   round. That is depth, and it was the one thing the two views were not saying.
+
+   The far palette is a shaded version of the near one rather than the near-black
+   both wings used to be - which is the "raise its color a bit" half of it.
+   ------------------------------------------------------------------------- */
+const FORMULA_WING_NEAR = ['#e9eef4', '#c6cfd9', '#a2adb8', '#232930', 'rgba(220,232,244,.22)'];
+const FORMULA_WING_FAR  = ['#6f767e', '#5e656d', '#4f565e', '#3b414a', 'rgba(190,205,222,.14)'];
+
+/* the tall wing: a deep plane right across, a bridge above it, endplates that
+   nearly touch the tyres, and the swan necks holding it up. `near` says whether
+   this is the end you are standing at. */
+function formulaWing(g, w, h, S, near){
+  const P = near ? FORMULA_WING_NEAR : FORMULA_WING_FAR;
   const wgY = S.wgY;
-  g.fillStyle = '#14171b';
+  g.fillStyle = P[1];
   g.fillRect(w*0.05, wgY, w*0.90, S.wingH);
-  g.fillStyle = 'rgba(205,220,235,.14)';
+  g.fillStyle = P[0];
   g.fillRect(w*0.05, wgY, w*0.90, h*0.014);
-  g.fillStyle = '#1b1f25';
+  g.fillStyle = P[2];
   g.fillRect(w*0.32, wgY - h*0.030, w*0.36, h*0.020);
   for(const sx of [-1,1]){
-    g.fillStyle = '#14171b';
+    g.fillStyle = P[3];
     g.fillRect(w*0.5 + sx*w*S.epX - (sx>0?w*S.epW:0), S.epY, w*S.epW, S.epH);
   }
   for(const sx of [-1,1]){
-    g.strokeStyle = '#1c2127'; g.lineWidth = Math.max(2.5, w*0.026);
+    g.strokeStyle = P[3]; g.lineWidth = Math.max(2.5, w*0.026);
     g.beginPath();
     g.moveTo(w*0.5 + sx*w*0.115, wgY + h*0.005);
     g.quadraticCurveTo(w*0.5 + sx*w*0.150, wgY + h*0.075,
                        w*0.5 + sx*w*0.105, S.cyT - S.TH2*0.36);
     g.stroke();
+  }
+}
+/* the LOW wing, which is the front wing seen from in front and the same wing
+   seen down the length of the car from behind. One function, two palettes -
+   which is also what keeps the bottom of the outline identical at both ends. */
+function formulaLowWing(g, w, h, S, near){
+  const P = near ? FORMULA_WING_NEAR : FORMULA_WING_FAR;
+  const py = S.lowY + S.lowH - S.planeH, pw = S.planeX1 - S.planeX0;
+  /* the plane the elements sit on */
+  g.fillStyle = P[3];
+  g.fillRect(w*S.planeX0, py, w*pw, S.planeH);
+  /* three elements, each shorter than the one above it */
+  const EL = [[0.000, P[0], 0.00], [0.030, P[1], 0.36], [0.070, P[2], 0.68]];
+  for(const e of EL){
+    g.fillStyle = e[1];
+    g.fillRect(w*(S.planeX0+e[0]), py + S.planeH*e[2],
+               w*(pw-e[0]*2), S.planeH*0.30);
+  }
+  /* the endplates */
+  for(const fx of [S.planeX0, S.planeX1 - S.finW]){
+    g.fillStyle = P[3];
+    g.fillRect(w*fx, py - S.finRise, w*S.finW, S.finRise + S.planeH);
+    g.fillStyle = P[4];
+    g.fillRect(w*fx, py - S.finRise, w*S.finW, h*0.010);
   }
 }
 /* the body between the wheels: low, dark, and clearly narrower than the track */
@@ -4676,17 +4719,9 @@ function paintFormulaTail(g, w, h, o, B, lamps){
   g.fillStyle = rl; g.beginPath(); g.arc(w*0.5, rlY, w*0.085, 0, 6.2832); g.fill();
   g.restore();
 
-  /* the floor edge across the car, and the fence at each end of it - the
-     shared bottom of the outline (see `formulaShell`) */
-  const tpy = S.lowY + S.lowH - S.planeH;
-  g.fillStyle = '#0f1216';
-  g.fillRect(w*S.planeX0, tpy, w*(S.planeX1-S.planeX0), S.planeH);
-  for(const fx of [S.planeX0, S.planeX1 - S.finW]){
-    g.fillStyle = '#171b21';
-    g.fillRect(w*fx, tpy - S.finRise, w*S.finW, S.finRise + S.planeH);
-    g.fillStyle = 'rgba(190,205,220,.10)';
-    g.fillRect(w*fx, tpy - S.finRise, w*S.finW, h*0.008);
-  }
+  /* the FRONT wing, seen from behind down the whole length of the car, so it
+     is the far one and takes the shaded palette */
+  formulaLowWing(g, w, h, S, false);
   /* the diffuser: the tallest, brightest thing down here */
   g.fillStyle = '#0b0d10';
   g.fillRect(w*S.lowX0, S.lowY, w*(S.lowX1-S.lowX0), S.lowH);
@@ -4698,7 +4733,8 @@ function paintFormulaTail(g, w, h, o, B, lamps){
     g.stroke();
   }
 
-  formulaWing(g, w, h, S);
+  /* and the REAR wing, which at this end is the one you are standing at */
+  formulaWing(g, w, h, S, true);
   drawMarque(g, kind, w*0.5, S.wgY + h*0.038, h*0.030);
 }
 
@@ -4762,32 +4798,16 @@ function paintFormulaFace(g, w, h, o, B, parts){
      with nothing behind them left the lower rows short of what the tail draws,
      and the bottom rows of a formula car ARE its outline.
      ------------------------------------------------------------------- */
-  const py = S.lowY + S.lowH - S.planeH;
-  const pw = S.planeX1 - S.planeX0;
   /* the splitter under the nose, in the box the diffuser occupies - behind */
   g.fillStyle = '#0b0d10';
   g.fillRect(w*S.lowX0, S.lowY, w*(S.lowX1-S.lowX0), S.lowH);
   g.fillStyle = 'rgba(150,166,182,.18)';
   g.fillRect(w*(S.lowX0+0.02), S.lowY + h*0.010, w*(S.lowX1-S.lowX0-0.04), h*0.012);
-  /* the plane the elements sit on, which is the tail's floor edge */
-  g.fillStyle = '#2b333c';
-  g.fillRect(w*S.planeX0, py, w*pw, S.planeH);
-  /* three elements, each shorter than the one above it */
-  const EL = [[0.000, '#e9eef4', 0.00], [0.030, '#c6cfd9', 0.36], [0.070, '#a2adb8', 0.68]];
-  for(const e of EL){
-    g.fillStyle = e[1];
-    g.fillRect(w*(S.planeX0+e[0]), py + S.planeH*e[2],
-               w*(pw-e[0]*2), S.planeH*0.30);
-  }
-  /* the endplates, from the same declaration the tail draws its fences from */
-  for(const fx of [S.planeX0, S.planeX1 - S.finW]){
-    g.fillStyle = '#232930';
-    g.fillRect(w*fx, py - S.finRise, w*S.finW, S.finRise + S.planeH);
-    g.fillStyle = 'rgba(220,232,244,.22)';
-    g.fillRect(w*fx, py - S.finRise, w*S.finW, h*0.010);
-  }
+  /* the front wing itself: at this end it is the one you are standing at */
+  formulaLowWing(g, w, h, S, true);
 
-  formulaWing(g, w, h, S);
+  /* the rear wing, at the far end of the car and in its own shade */
+  formulaWing(g, w, h, S, false);
 }
 
 function paintFront(o){

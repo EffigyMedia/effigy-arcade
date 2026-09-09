@@ -14,6 +14,19 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-56"></a>
+## [0.13.56] - 2026-09-09
+- Changed: **a formula car's near wing is lit and its far wing is shaded.** Owner, 2026-09-09: "the
+  close wing gets a lighter color, the farther wing gets a darker more shaded color... can we take
+  the darker colored wing and raise its color a bit?" Which wing is near SWAPS between the two views -
+  from the front the low front wing is nearest and the tall rear wing is at the far end of the car,
+  and from behind it is the other way round. Both were near-black before, so neither view had a far
+  end. The shaded palette is a darkened version of the lit one rather than black.
+- Changed: **the low bodywork is one function at both ends.** The tail drew a floor edge with two
+  fences and the face drew a wing with two endplates - the same rectangle and the same two fins in two
+  places. `formulaLowWing` is the one drawing and the palette is the whole of the difference. See
+  [RLG-185](../fragments/RLG-185.md).
+
 <a id="v0-13-55"></a>
 ## [0.13.55] - 2026-09-09
 - Fixed: **the formula car's front lower wing is back.** Owner, 2026-09-09: bringing the two ends onto
