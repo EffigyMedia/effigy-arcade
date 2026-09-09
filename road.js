@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.56';
+window.ROAD_BUILD = '0.13.57';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2657,6 +2657,37 @@ function carGreenhousePath(g, w, h, S){
   g.lineTo(w*(1-spX), S.topY + h*0.06);
   g.closePath();
 }
+/* ---- THE SCREEN IN A DOMED ROOF, DECLARED ONCE ------------------------
+   Owner, 2026-09-09: on the CREST "the rear window follows the curve of the
+   cabin top whereas in the front there is a giant void between the glass and
+   the roof edge. We should fill that void with glass."
+
+   THE TAIL'S PANE FOLLOWS THE DOME AND THE FACE'S DID NOT. The face built its
+   screen against a SHOULDERED roofline - a roof `rr2` below `roofT`, which is
+   where the greenhouse used to be at this end. Once both ends started tracing
+   one greenhouse ([[RLG-184]]) that roofline stopped existing on a domed car,
+   and the pane sat well inside an arc it had no knowledge of.
+
+   This is the tail's own pane, lifted out whole. A wide, shallow screen set
+   into the dome: flat-ish across the top, tucked in at the sides where the roof
+   rail comes down, springing from the same line the dome springs from.
+   ------------------------------------------------------------------------- */
+function carDomeGlassPath(g, w, h, S){
+  const springX = 0.5 - S.wid + 0.02;
+  const springY = S.topY + h*0.02;
+  const apex    = S.cabTop + h*0.015;
+  const sX = springX + 0.055, sY = springY - h*0.006;
+  const sSpan = (1 - sX*2);
+  const sApex = apex + h*0.030;
+  g.beginPath();
+  g.moveTo(w*sX, sY);
+  g.quadraticCurveTo(w*(sX + sSpan*0.10), sApex + h*0.014, w*(sX + sSpan*0.24), sApex);
+  g.quadraticCurveTo(w*0.5, sApex - h*0.014, w*(1-sX-sSpan*0.24), sApex);
+  g.quadraticCurveTo(w*(1-sX-sSpan*0.10), sApex + h*0.014, w*(1-sX), sY);
+  g.closePath();
+  return { sX: sX, sY: sY, sSpan: sSpan, sApex: sApex };
+}
+
 /* THE WING IS THE HIGHEST AND OFTEN THE WIDEST THING ON THE CAR, which makes
    it outline rather than furniture. Each shape wears a different one; the face
    used to draw its own at its own height, with a comment claiming they were
@@ -4888,16 +4919,33 @@ function paintFront(o){
     const gg4 = g.createLinearGradient(0, roofT, 0, topY + h*0.02);
     gg4.addColorStop(0,'#38495c'); gg4.addColorStop(0.5,'#141c26'); gg4.addColorStop(1,'#0d131b');
     g.fillStyle = gg4;
-    g.beginPath();
-    const gSpring = 0.70 + glassK*0.075;          /* wider at the shoulders */
-    const gRoof   = roofT + rr2 * (1 - glassK*0.55);   /* nearer the roof */
-    const gCtl    = 0.56 + glassK*0.05;
-    const gTop    = 0.40 + glassK*0.05;
-    g.moveTo(w*(0.5-wid*gSpring), topY - h*0.005);
-    g.quadraticCurveTo(w*(0.5-cw2*gCtl), gRoof, w*(0.5-cw2*gTop), gRoof);
-    g.lineTo(w*(0.5+cw2*gTop), gRoof);
-    g.quadraticCurveTo(w*(0.5+cw2*gCtl), gRoof, w*(0.5+wid*gSpring), topY - h*0.005);
-    g.closePath(); g.fill();
+    /* A DOMED CAR TAKES THE DOME'S OWN SCREEN. Building a pane against a
+       shouldered roofline that this body has not got left the void the owner
+       reported between the glass and the roof edge. */
+    let gRoof;
+    if(S.dome){
+      const D = carDomeGlassPath(g, w, h, S);
+      g.fill();
+      gRoof = D.sApex;
+      /* the slim reflection across the top of the pane, as the tail has */
+      g.fillStyle = 'rgba(150,190,230,.16)';
+      g.beginPath();
+      g.moveTo(w*(D.sX+D.sSpan*0.20), D.sApex + h*0.004);
+      g.quadraticCurveTo(w*0.5, D.sApex - h*0.010, w*(1-D.sX-D.sSpan*0.20), D.sApex + h*0.004);
+      g.quadraticCurveTo(w*0.5, D.sApex + h*0.010, w*(D.sX+D.sSpan*0.20), D.sApex + h*0.004);
+      g.closePath(); g.fill();
+    } else {
+      g.beginPath();
+      const gSpring = 0.70 + glassK*0.075;          /* wider at the shoulders */
+      gRoof   = roofT + rr2 * (1 - glassK*0.55);    /* nearer the roof */
+      const gCtl    = 0.56 + glassK*0.05;
+      const gTop    = 0.40 + glassK*0.05;
+      g.moveTo(w*(0.5-wid*gSpring), topY - h*0.005);
+      g.quadraticCurveTo(w*(0.5-cw2*gCtl), gRoof, w*(0.5-cw2*gTop), gRoof);
+      g.lineTo(w*(0.5+cw2*gTop), gRoof);
+      g.quadraticCurveTo(w*(0.5+cw2*gCtl), gRoof, w*(0.5+wid*gSpring), topY - h*0.005);
+      g.closePath(); g.fill();
+    }
     /* registered, not baked - see the note in `paintRigFront`. A supercar's
        glass is a curve rather than a box, so the rectangle is the span it
        fills. */
@@ -5451,18 +5499,9 @@ function paintCar(o){
            ------------------------------------------------------------------ */
         /* the pane was small inside a big dome. Nearer the springing line and
            taller, so it fills the glasshouse without touching the roof rail. */
-        const sX = springX + 0.055, sY = springY - h*0.006;
-        const sSpan = (1 - sX*2);
-        const sApex = apex + h*0.030;
-        g.beginPath();
-        g.moveTo(w*sX, sY);
-        /* up the near pillar */
-        g.quadraticCurveTo(w*(sX + sSpan*0.10), sApex + h*0.014, w*(sX + sSpan*0.24), sApex);
-        /* across the top, barely curved */
-        g.quadraticCurveTo(w*0.5, sApex - h*0.014, w*(1-sX-sSpan*0.24), sApex);
-        /* down the far pillar */
-        g.quadraticCurveTo(w*(1-sX-sSpan*0.10), sApex + h*0.014, w*(1-sX), sY);
-        g.closePath(); g.fill();
+        const D = carDomeGlassPath(g, w, h, S);
+        const sX = D.sX, sSpan = D.sSpan, sApex = D.sApex;
+        g.fill();
         /* a slim reflection across the top of the pane */
         g.fillStyle = 'rgba(150,190,230,.16)';
         g.beginPath();

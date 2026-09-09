@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-57"></a>
+## [0.13.57] - 2026-09-09
+- Fixed: **the CREST's face has glass all the way to the roof edge.** Owner, 2026-09-09: "the rear
+  window on the crest follows the curve of the cabin top whereas in the front there is a giant void
+  between the glass and the roof edge." The face was building its screen against a shouldered
+  roofline, which is what every other supercar has and this one has not - it is the only body with a
+  dome. `carDomeGlassPath` is the tail's own pane, declared once, and both ends trace it. See
+  [RLG-187](../fragments/RLG-187.md).
+
 <a id="v0-13-56"></a>
 ## [0.13.56] - 2026-09-09
 - Changed: **a formula car's near wing is lit and its far wing is shaded.** Owner, 2026-09-09: "the
