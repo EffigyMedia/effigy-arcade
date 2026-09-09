@@ -14,6 +14,46 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-52"></a>
+## [0.13.52] - 2026-09-09
+- Fixed: **every vehicle's front and its own back are now the same shape.** Owner, 2026-09-09: "it's
+  not just the height and the width that need to match, but their silhouettes need to match too,
+  because it's looking at the same vehicle straight on from the front and straight on from the
+  back." Sixteen of the seventeen garage bodies were different shapes; all seventeen agree now, and
+  the two ends of every car are drawn at one height on the garage card. The fix is one outline per
+  vehicle consumed by both painters rather than two drawings adjusted toward each other:
+  `groundShadow`, `vehicleTyres`, `rigFurniture`, `carMirrors`, `carShell`, `carBodyPath`,
+  `carArchPath`, `carGreenhousePath` and `carWing` are each declared once and called by the face and
+  by the tail. See [RLG-184](../fragments/RLG-184.md).
+- Changed: **a car's face is painted into the same sprite box as its tail.** It was 230x215 against
+  the tail's 220x168, and every dimension in both painters is a fraction of the box - so the same
+  fraction was a different shape at each end and no amount of matching numbers could have closed it.
+  The tail's box is unchanged, so nothing about the car you follow down the road has moved.
+- Changed: **the wheels are two slivers at the outer corners**, on every vehicle and at both ends.
+  Owner-approved form: straight on you see a contact patch and a sliver of sidewall rather than a
+  circle. The whole wheels that used to stand outboard of the bodywork at the tail only were most of
+  the width by which each car disagreed with itself.
+- Changed: **a lorry's cab is drawn inside its trailer.** A lorry seen from behind is its box, and a
+  box is wider than the cab in front of it - so the box is the outline both ends share. The face used
+  to draw a cab filling the whole slab, a band of trailer colour wider than it, and two mirrors
+  outside everything.
+- Changed: **the formula cars are one drawing run at both ends.** The tail used to paint the whole
+  supercar body and cover most of it with an open-wheeler built from its own proportions; what showed
+  past the cover was the supercar underneath. `paintFormulaBody` is called by both painters now and
+  the tail adds the rain light, which is the one lamp a single-seater has.
+- Fixed: **a rear screen was drawn above the roof it sits in.** CREST's pane stood nine pixels proud
+  of its own dome and was the topmost ink on the car, so its tail measured four pixels taller than
+  its face. The glass is clipped to the greenhouse at both ends now, which is the general answer: a
+  detail inside the outline cannot become the outline.
+- Fixed: **the shape check mirrored the column numbers rather than the pixels.** `floor` rounds both
+  ends toward the same side of the box, so any edge landing on a sampled column read as ink at one
+  end and nothing at the other. It cost two false failures - an ambulance light bar and a van's
+  shadow - on drawings that were identical.
+- Fixed: **`ROAD_BUILD` had drifted ten versions behind `Arcade.version`**, so `Arcade.buildTag()`
+  reported a MIXED shell-and-engine build on every load. Both read 0.13.52.
+- **Not verified on a device.** The formula cars' tails and the lorry's face are visibly different
+  from what shipped in 0.13.51, and rendering is the owner's call.
+
 <a id="v0-13-51"></a>
 ## [0.13.51] - 2026-09-09
 - Added: **a measurement of whether a car's two ends are the same SHAPE**, not merely the same box.

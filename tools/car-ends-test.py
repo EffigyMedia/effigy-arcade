@@ -134,11 +134,14 @@ def main():
                     continue
                 errs_col.append(max(abs(ca['t'] - cb['t']), abs(ca['b'] - cb['b'])))
             mean = sum(errs_col) / len(errs_col)
-            worst = max(errs_col)
-            prof_rows.append((k, mean, worst))
+            # NOT `worst` - that is the height check's own worst, and shadowing
+            # it here made the height failure report "worst CREST by 0.0px",
+            # which is a number from the profile loop and not a height at all
+            worst_col = max(errs_col)
+            prof_rows.append((k, mean, worst_col))
             print('  %-14s %8.1f%% %8.1f%%   %s'
-                  % (k, mean * 100, worst * 100,
-                     'match' if worst <= 0.04 else 'DIFFERENT SHAPE'))
+                  % (k, mean * 100, worst_col * 100,
+                     'match' if worst_col <= 0.04 else 'DIFFERENT SHAPE'))
         bad_shape = [k for k, m, w in prof_rows if w > 0.04]
         ok(bool(prof_rows), 'every car had its outline read',
            '%d profiled' % len(prof_rows))

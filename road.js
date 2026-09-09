@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.41';
+window.ROAD_BUILD = '0.13.52';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2493,6 +2493,262 @@ function tyresUnder(g, w, h, sill, xs, tw, sit){
   }
 }
 
+/* ---- ONE OUTLINE PER VEHICLE, CONSUMED BY BOTH PAINTERS (RLG-184) --------
+   Owner, 2026-09-09: "it's not just the height and the width that need to match,
+   but their silhouettes need to match too, because thinking about it it's
+   looking at the same vehicle straight on from the front and straight on from
+   the back."
+
+   A FACE AND A TAIL ARE ONE CAR AT ONE DISTANCE. The outline is therefore the
+   same object at both ends and only the details inside it differ - lamps, glass,
+   a grille where a plate is. Measured before this was written, sixteen of the
+   seventeen garage bodies drew two different shapes: LORRY disagreed with itself
+   by 78.5 per cent of its own box in the worst column, VAN by 77.3 and AMBULANCE
+   by 73.6, and CREST was the only car whose two ends agreed.
+
+   THE DECLARATIONS BELOW ARE THE OUTLINE. They are not a second copy of a shape
+   brought into agreement by adjusting numbers until a checker goes quiet - that
+   is the failure this codebase has already paid for three times ([[RLG-053]],
+   [[RLG-177]], [[RLG-179]]). Each is written once and BOTH painters call it, so
+   the two ends cannot disagree about it while the code compiles.
+   ------------------------------------------------------------------------- */
+
+/* THE GROUND SHADOW IS INK LIKE ANY OTHER. Both painters drew one and they drew
+   two different ellipses, so every vehicle disagreed with itself along its whole
+   bottom edge before a panel was painted. One ellipse now, for both ends. */
+function groundShadow(g, w, h){
+  /* ---- AND IT HAS ENDS, NOT TIPS -------------------------------------
+     It was an ellipse, and an ellipse ends in a knife edge: at its outermost
+     column it is a fraction of a pixel tall. That made the widest ink on a
+     vehicle unstable to a single pixel of rounding, and the VAN failed on
+     exactly that - one end had a pixel of shadow in its outermost column and
+     the other did not, which the profile reads as 78.6 per cent of the box.
+
+     A stadium has square ends. The outermost column of it is as tall as the
+     shadow is, so the two ends of a vehicle either both have it or both do
+     not. At the size these draw it is the same picture.
+     ---------------------------------------------------------------- */
+  g.fillStyle = 'rgba(0,0,0,.5)';
+  rr(g, w*0.05, h - h*0.050, w*0.90, h*0.042, h*0.021); g.fill();
+}
+
+/* THE TYRES, IN THE FORM THE OWNER APPROVED: two slivers at the outer corners,
+   not a raised body showing whole wheels. Straight on you see a contact patch
+   and a sliver of sidewall rather than a circle, a raised body reads as a lifted
+   truck, and at the size these render on a phone the sliver is the only version
+   that stays legible.
+
+   THEY ARE IN THE SHARED DEFINITION FOR A REASON. Adding them to two painters
+   separately is what put the fleet out of shape in the first place: the rear
+   painters drew a whole wheel standing outboard of the body and the front
+   painters drew a shorter one further in, which is most of the width every car
+   disagreed with itself about. */
+function tyreSpec(kind){
+  return kind === 'truck'  ? { xs:[0.150, 0.850], tw:0.185, sit:0.058 }
+       : kind === 'van'    ? { xs:[0.155, 0.845], tw:0.185, sit:0.050 }
+       : kind === 'pickup' ? { xs:[0.150, 0.850], tw:0.195, sit:0.055 }
+       : kind === 'car'    ? { xs:[0.170, 0.830], tw:0.165, sit:0.050 }
+       :                     { xs:[0.165, 0.835], tw:0.175, sit:0.055 };
+}
+/* `sill` is the bottom edge of the bodywork the tyre sits under, and it is the
+   one number a caller supplies - because it is the same number at both ends by
+   construction: the two painters share the body's own geometry. */
+function vehicleTyres(g, w, h, kind, sill){
+  const t = tyreSpec(kind);
+  tyresUnder(g, w, h, sill, t.xs, t.tw, h*t.sit);
+}
+
+/* ---- THE FURNITURE AT THE EDGE OF A VEHICLE IS THE OUTLINE ---------------
+   A mirror on its arm, a bumper hanging below the sill, a mud flap behind a
+   wheel and a row of markers along a roof are not details inside a silhouette:
+   at the edge of the vehicle they ARE the silhouette. Each of these was drawn
+   at ONE end only, which is why the van and the lorry were the two worst
+   vehicles in the fleet - 77.3 and 78.5 per cent of the box in the column where
+   one end had a mirror and the other had nothing.
+
+   They are declared here and both painters call it. What the two ends differ
+   about is what a lamp inside them is doing, not whether the vehicle has one.
+   ------------------------------------------------------------------------- */
+const TRUCK_MARKERS = [0.16, 0.34, 0.50, 0.66, 0.84];
+/* the marker's own rectangle, so a lamp that lights it and a lamp that does
+   not are the same shape in the same place */
+function truckMarkerBox(w, h, top, mx){
+  return [w*mx - w*0.018, top - h*0.014, w*0.036, h*0.016];
+}
+/* ---- A SUPERCAR'S OUTLINE, DECLARED ONCE --------------------------------
+   `carShell` is the whole of what decides a supercar's shape: how wide it is,
+   where its deck and its sill are, where the hips stand and where the roof
+   runs. Both painters take these numbers, and the four functions under it draw
+   the four shapes that make the outline - the body, an arch, the greenhouse and
+   the wing.
+
+   THE TWO PAINTERS EACH HAD THEIR OWN SET. The tail put its hips at 42 per cent
+   of the body's depth and the face put them 0.30 of the sprite above the sill;
+   the tail's arches were 0.115 by 0.085 of the sprite and the face's 0.108 by
+   0.100; the face inflated its own half-width by the arch size to compensate
+   for arches it then drew somewhere else. Every one of those pairs was written
+   as "the same as the rear" and none of them was.
+   ------------------------------------------------------------------------- */
+function carShell(w, h, B, o){
+  const wid  = 0.42 + (B && B.wide !== undefined ? B.wide : 0.03);
+  const topY = h*((o && o.bodyTop !== undefined) ? o.bodyTop
+                  : (B ? B.bodyTop : 0.52));
+  const botY = h - h*0.035;
+  return {
+    cy: h, wid: wid, deck: wid - 0.085,
+    topY: topY, botY: botY,
+    hipY: topY + (botY - topY)*0.42,
+    archK: (B && B.arch) || 1,
+    cabTop: h*((o && o.cabinTop !== undefined) ? o.cabinTop
+               : (B ? B.cabinTop : 0.24)),
+    cw: (B ? B.cabW : 0.5)*0.92,
+    spX: 0.5 - wid*0.80,
+    roofY: topY - h*0.19,
+    dome: !!(B && B.dome),
+    wing: (B && B.wing) || 'lip',
+    spoiler: !!(B && B.spoiler)
+  };
+}
+/* a body with a SHOULDER rather than a rounded box: wide hips, a shoulder
+   crease, and a lower edge that pulls in again over the diffuser */
+function carBodyPath(g, w, h, S){
+  const topY = S.topY, botY = S.botY, hipY = S.hipY, wid = S.wid, deck = S.deck;
+  g.beginPath();
+  g.moveTo(w*(0.5-deck), topY + h*0.012);
+  g.quadraticCurveTo(w*0.5, topY - h*0.010, w*(0.5+deck), topY + h*0.012);
+  g.quadraticCurveTo(w*(0.5+wid), topY + h*0.030, w*(0.5+wid), hipY);
+  g.lineTo(w*(0.5+wid), botY - h*0.030);
+  g.quadraticCurveTo(w*(0.5+wid), botY, w*(0.5+wid-0.055), botY);
+  g.lineTo(w*(0.5-wid+0.055), botY);
+  g.quadraticCurveTo(w*(0.5-wid), botY, w*(0.5-wid), botY - h*0.030);
+  g.lineTo(w*(0.5-wid), hipY);
+  g.quadraticCurveTo(w*(0.5-wid), topY + h*0.030, w*(0.5-deck), topY + h*0.012);
+  g.closePath();
+}
+/* the arches are the widest thing on the car, so where they stand IS the
+   outline. Two lobes, at the two shoulders. */
+function carArchX(S){ return [0.5 - S.wid + 0.055, 0.5 + S.wid - 0.055]; }
+function carArchPath(g, w, h, S, sx){
+  g.beginPath();
+  g.ellipse(w*sx, S.hipY + h*0.030, w*0.115*S.archK, h*0.085*S.archK, 0, 0, 6.2832);
+}
+function carGreenhousePath(g, w, h, S){
+  if(S.dome){
+    /* one continuous arc from the top of one arch across to the other */
+    const springX = 0.5 - S.wid + 0.02, springY = S.topY + h*0.02;
+    const apex = S.cabTop + h*0.015;
+    const span = (1 - springX*2), ctl = span*0.30;
+    g.beginPath();
+    g.moveTo(w*springX, springY);
+    g.bezierCurveTo(w*(springX+ctl), apex, w*(1-springX-ctl), apex,
+                    w*(1-springX), springY);
+    g.lineTo(w*(1-springX), springY + h*0.03);
+    g.lineTo(w*springX, springY + h*0.03);
+    g.closePath();
+    return;
+  }
+  const spX = S.spX, cw3 = S.cw, roofY = S.roofY;
+  g.beginPath();
+  g.moveTo(w*spX, S.topY + h*0.06);
+  g.lineTo(w*spX, S.topY + h*0.02);
+  g.quadraticCurveTo(w*(0.5-cw3*0.62), roofY, w*(0.5-cw3*0.46), roofY);
+  g.lineTo(w*(0.5+cw3*0.46), roofY);
+  g.quadraticCurveTo(w*(0.5+cw3*0.62), roofY, w*(1-spX), S.topY + h*0.02);
+  g.lineTo(w*(1-spX), S.topY + h*0.06);
+  g.closePath();
+}
+/* THE WING IS THE HIGHEST AND OFTEN THE WIDEST THING ON THE CAR, which makes
+   it outline rather than furniture. Each shape wears a different one; the face
+   used to draw its own at its own height, with a comment claiming they were
+   the rear's numbers. */
+function carWing(g, w, h, S, o){
+  if(!S.spoiler) return;
+  const topY = S.topY;
+  if(S.wing === 'high'){
+    /* a proper aerofoil on stanchions, clear of the deck */
+    g.fillStyle = o.lo;
+    rr(g, w*0.06, topY-h*0.15, w*0.88, h*0.05, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.16)';
+    rr(g, w*0.06, topY-h*0.15, w*0.88, h*0.016, 3); g.fill();
+    g.fillStyle = o.body;
+    g.fillRect(w*0.19, topY-h*0.11, w*0.055, h*0.10);
+    g.fillRect(w*0.755, topY-h*0.11, w*0.055, h*0.10);
+    return;
+  }
+  if(S.wing === 'ducktail'){
+    /* a swan-neck wing held high above the deck on two uprights that hang from
+       the top of the blade, with a small ducktail below it */
+    g.fillStyle = o.lo;
+    g.beginPath();
+    g.moveTo(w*0.14, topY);
+    g.quadraticCurveTo(w*0.5, topY-h*0.055, w*0.86, topY);
+    g.lineTo(w*0.86, topY+h*0.02);
+    g.lineTo(w*0.14, topY+h*0.02);
+    g.closePath(); g.fill();
+    g.fillStyle = '#15171b';
+    g.fillRect(w*0.285, topY-h*0.20, w*0.028, h*0.20);
+    g.fillRect(w*0.687, topY-h*0.20, w*0.028, h*0.20);
+    g.fillStyle = '#1a1d22';
+    rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.042, 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.18)';
+    rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.013, 2); g.fill();
+    g.fillStyle = '#15171b';
+    g.fillRect(w*0.005, topY-h*0.245, w*0.026, h*0.062);
+    g.fillRect(w*0.969, topY-h*0.245, w*0.026, h*0.062);
+    return;
+  }
+  /* a shallow blade along the deck */
+  g.fillStyle = o.lo;
+  rr(g, w*0.12, topY-h*0.05, w*0.76, h*0.038, 2); g.fill();
+}
+
+/* THE DOOR MIRRORS STAND OUTSIDE THE BODY, so they are outline and not
+   furniture - on the widest cars they are the outermost ink there is. The face
+   drew a pair and the tail drew none, which is the whole of what STALLION and
+   MATADOR still disagreed about once their bodies had been brought together. */
+function carMirrors(g, w, h, S, o){
+  for(const sx of [-1, 1]){
+    g.fillStyle = o.body;
+    g.beginPath();
+    g.ellipse(w*0.5 + sx*w*S.wid*0.94, S.topY + h*0.015,
+              w*0.045, h*0.022, 0, 0, 6.2832);
+    g.fill();
+  }
+}
+
+function rigFurniture(g, w, h, kind, L, P){
+  if(kind === 'van'){
+    /* a van's door mirrors stand outboard of the body and you see them from
+       behind as well as from in front */
+    for(const mx of [0.020, 0.950]){
+      g.fillStyle = P.lo; g.fillRect(w*mx, L.top + h*0.075, w*0.030, h*0.105);
+    }
+    return;
+  }
+  if(kind === 'pickup'){
+    /* the door mirrors, which stand off the cab and are seen from either end */
+    for(const mx of [0.145, 0.825]){
+      g.fillStyle = P.lo; g.fillRect(w*mx, L.top + h*0.075, w*0.030, h*0.070);
+    }
+    /* the chrome bumper, hanging below the sill at both ends */
+    g.fillStyle = '#7d838c';
+    rr(g, w*0.06, L.bot + h*0.020, w*0.88, h*0.040, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.28)';
+    rr(g, w*0.06, L.bot + h*0.020, w*0.88, h*0.014, 3); g.fill();
+    return;
+  }
+  if(kind === 'truck'){
+    /* the low gear: an underrun bar and two mud flaps, which is what hangs
+       under either end of an artic */
+    g.fillStyle = '#23252a';
+    rr(g, w*0.08, L.bot + h*0.020, w*0.84, h*0.028, 2); g.fill();
+    g.fillStyle = '#15161a';
+    g.fillRect(w*0.05, L.bot + h*0.035, w*0.13, h*0.085);
+    g.fillRect(w*0.82, L.bot + h*0.035, w*0.13, h*0.085);
+    return;
+  }
+}
+
 /* ---- A HEADLIGHT IS DARK WHEN IT IS OFF ---------------------------------
    Owner, 2026-08-29: "we need to do the same for the headlights." They were a
    pale grey lens whether they were on or not - `#dbe3ee` off against `#ffffff`
@@ -3056,37 +3312,17 @@ function paintRigFront(kind, o){
        identical from either end and only the FACE differs. Invented dimensions
        are what made the first attempt read as five sizes of one van.
        -------------------------------------------------------------------- */
-    const tw  = kind==='truck'||kind==='van' ? 0.155 : kind==='pickup' ? 0.145 : 0.13;
-    const th2 = kind==='truck' ? 0.20 : kind==='pickup' ? 0.24 : 0.26;
-
-    /* the wheels, exactly where the back puts them */
-    g.fillStyle = '#0b0d10';
-    rr(g, w*0.045, cy-h*th2*0.42, w*tw, h*th2*0.42, 3); g.fill();
-    rr(g, w*(0.955-tw), cy-h*th2*0.42, w*tw, h*th2*0.42, 3); g.fill();
-    g.fillStyle='rgba(0,0,0,.5)';
-    g.beginPath(); g.ellipse(w*0.5, cy-h*0.01, w*0.46, h*0.026, 0, 0, 6.2832); g.fill();
+    /* THE SAME SHADOW THE TAIL DRAWS. It was a flatter, differently placed
+       ellipse here, so the two ends of every vehicle disagreed along their
+       whole bottom edge (RLG-184). The wheels that used to be drawn here have
+       gone with it: `vehicleTyres` is what a vehicle shows of its tyres now,
+       and both painters call the one declaration. */
+    groundShadow(g, w, h);
 
     if(kind === 'truck'){
-      /* ---- A HINT OF THE TRAILER, ABOVE THE CAB --------------------------
-         Owner, 2026-08-29. Seen head on, a lorry is a cab with a box standing
-         behind and above it - without that the front view was just a tall van.
-         A band of the TRAILER's colour across the top, wider than the cab and
-         set behind it, is all it takes: the cab becomes something in front of
-         something bigger.
-
-         `P.body` is the trailer's shade on this rig - the cab's own colour
-         arrives separately under `P.cab` - so this needs no colour of its own
-         and follows the paint automatically.
-         ------------------------------------------------------------------ */
-      {
-        const trlTop = h*0.05 - h*0.032;
-        g.fillStyle = P.body;
-        rr(g, w*0.030, trlTop, w*0.94, h*0.058, w*0.010); g.fill();
-        g.fillStyle = 'rgba(0,0,0,.26)';
-        rr(g, w*0.030, trlTop + h*0.042, w*0.94, h*0.016, w*0.006); g.fill();
-      }
       /* the cab: the SAME slab as the trailer \u2014 0.045 to 0.955, top h*0.05 */
       const top = h*0.05, bot = cy - h*0.135;
+      vehicleTyres(g, w, h, 'truck', bot);
       /* ---- THE CAB WEARS THE COLOUR, THE BOX WEARS THE DARK SHADE ---------
          `P.body` on this rig is the TRAILER's shade and the cab's own colour
          arrives under `P.cab` - which the rear painter never needed, because
@@ -3099,13 +3335,37 @@ function paintRigFront(kind, o){
         b.addColorStop(0, C.hi); b.addColorStop(0.48, C.body); b.addColorStop(1, C.lo);
         return b;
       };
-      g.fillStyle = cabGrad(top, bot);
+      /* ---- THE BOX IS THE OUTLINE AND THE CAB STANDS INSIDE IT (RLG-184) --
+         A lorry seen from behind IS its trailer, and a trailer is wider than
+         the cab in front of it - so the box is the one outline both ends of
+         this vehicle share, and the face draws its cab within it.
+
+         What was here instead was a cab filling the whole slab, a band of
+         trailer colour ABOVE it and WIDER than it at 0.030 to 0.970, and two
+         mirrors standing outside everything at 0.012. Three shapes past the
+         box the tail draws, which is why the lorry was the worst vehicle in
+         the fleet: 78.5 per cent of its own box in the worst column.
+
+         The trailer still reads as something bigger standing behind the cab.
+         It does so because the cab is inset from it on three sides, rather
+         than because a band was drawn over the top of it.
+         ---------------------------------------------------------------- */
+      const box = g.createLinearGradient(0, top, 0, bot);
+      box.addColorStop(0, P.hi); box.addColorStop(0.48, P.body); box.addColorStop(1, P.lo);
+      g.fillStyle = box;
       rr(g, w*0.045, top, w*0.91, bot-top, w*0.015); g.fill();
-      /* a lorry's face is mostly screen */
+      /* the shaded lip under the box roof, so the cab reads as being in front
+         of it rather than painted on it */
+      g.fillStyle = 'rgba(0,0,0,.26)';
+      rr(g, w*0.045, top + h*0.042, w*0.91, h*0.016, w*0.006); g.fill();
+      const cabT = top + h*0.070;
+      g.fillStyle = cabGrad(cabT, bot);
+      rr(g, w*0.085, cabT, w*0.83, bot-cabT, w*0.015); g.fill();
+      /* a lorry face is mostly screen */
       g.fillStyle = '#141c26';
-      rr(g, w*0.085, top+h*0.045, w*0.83, h*0.235, w*0.012); g.fill();
+      rr(g, w*0.125, cabT+h*0.035, w*0.75, h*0.205, w*0.012); g.fill();
       g.fillStyle = 'rgba(90,120,150,.20)';
-      rr(g, w*0.085, top+h*0.045, w*0.83, h*0.070, w*0.012); g.fill();
+      rr(g, w*0.125, cabT+h*0.035, w*0.75, h*0.062, w*0.012); g.fill();
       /* ---- THE UTILITY VEHICLES HAVE WIPERS TOO ------------------------
          These three branches draw their own screens and RETURN before the
          shared code at the bottom of this painter, which is where the wipers
@@ -3119,23 +3379,24 @@ function paintRigFront(kind, o){
          ---------------------------------------------------------------- */
       if(parts){
         const CW = P.cab || P;
-        parts.wipers = wiperPair(w*0.085, w*0.915, top+h*0.045, top+h*0.280,
+        parts.wipers = wiperPair(w*0.125, w*0.875, cabT+h*0.035, cabT+h*0.240,
                                  CW.body, CW.hi);
       }
-      g.fillStyle = P.lo; g.fillRect(w*0.492, top+h*0.045, w*0.016, h*0.235);
-      /* mirrors on arms, outside the cab */
-      for(const mx of [0.012, 0.958]){
-        g.fillStyle = P.lo; g.fillRect(w*mx, top+h*0.075, w*0.030, h*0.145);
+      g.fillStyle = C.lo; g.fillRect(w*0.492, cabT+h*0.035, w*0.016, h*0.205);
+      /* the mirrors are on the CAB arms, so they stand inside the box the tail
+         draws instead of outside everything */
+      for(const mx of [0.050, 0.920]){
+        g.fillStyle = C.lo; g.fillRect(w*mx, cabT+h*0.030, w*0.030, h*0.125);
       }
       /* the grille band, where the trailer has its door seam */
       g.fillStyle='rgba(12,14,18,.88)';
-      rr(g, w*0.10, bot-h*0.165, w*0.80, h*0.095, 3); g.fill();
+      rr(g, w*0.14, bot-h*0.165, w*0.72, h*0.095, 3); g.fill();
       g.strokeStyle='rgba(160,172,186,.22)'; g.lineWidth=1;
       for(let k=1;k<5;k++){
         const yy = bot-h*0.165 + k*h*0.019;
         /* the slats were drawn 0.115–0.885 across a panel that runs 0.10–0.90,
            so they overhung it at both ends */
-        g.beginPath(); g.moveTo(w*0.125, yy); g.lineTo(w*0.875, yy); g.stroke();
+        g.beginPath(); g.moveTo(w*0.165, yy); g.lineTo(w*0.835, yy); g.stroke();
       }
       /* ---- A HEADLIGHT IS A LAMP TOO (RLG-053) --------------------------
          The glow was baked into the sprite, so every car on the road had its
@@ -3152,15 +3413,23 @@ function paintRigFront(kind, o){
       decl(g, lamps, 'turn.l', turnBulb(w*0.055, cy-h*0.155, w*0.040, h*0.032, true));
       decl(g, lamps, 'turn.r', turnBulb(w*0.905, cy-h*0.155, w*0.040, h*0.032, true));
       drawMarque(g, 'GENERIC', w*0.5, bot-h*0.215, h*0.030);   /* the cab, front only */
-      g.fillStyle='#20242a'; g.fillRect(w*0.055, bot-h*0.055, w*0.89, h*0.055);
-      g.fillStyle='#2a2f36'; g.fillRect(w*0.06, cy-h*0.115, w*0.88, h*0.014);
+      g.fillStyle='#20242a'; g.fillRect(w*0.095, bot-h*0.055, w*0.81, h*0.055);
+      /* the marker row along the roof and the gear under the sill are both the
+         tail declarations - amber at this end and red at that one, in the same
+         shapes and the same places (RLG-184) */
+      g.fillStyle = AMBER_OFF;
+      for(const mx of TRUCK_MARKERS){
+        const b = truckMarkerBox(w, h, top, mx);
+        rr(g, b[0], b[1], b[2], b[3], 2); g.fill();
+      }
+      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P);
       return;
     }
 
     if(kind === 'van'){
       /* same slab: 0.055 to 0.945, top h*0.10, bot cy-h*0.10 */
       const top = h*0.10, bot = cy - h*0.10;
-      tyresUnder(g, w, h, bot, [0.155, 0.845], 0.185, h*0.050);
+      vehicleTyres(g, w, h, 'van', bot);
       g.fillStyle = grad(top, bot);
       rr(g, w*0.055, top, w*0.89, bot-top, w*0.045); g.fill();
       g.fillStyle = 'rgba(255,255,255,.10)';
@@ -3173,9 +3442,7 @@ function paintRigFront(kind, o){
       if(parts)
         parts.wipers = wiperPair(w*0.11, w*0.89, top+h*0.055, top+h*0.200,
                                  P.body, P.hi);
-      for(const mx of [0.020, 0.950]){
-        g.fillStyle = P.lo; g.fillRect(w*mx, top+h*0.075, w*0.030, h*0.105);
-      }
+      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P);
       /* a van's face is a big flat panel: the grille takes most of it, not a
          letterbox slot */
       g.fillStyle='rgba(12,14,18,.86)';
@@ -3245,6 +3512,10 @@ function paintRigFront(kind, o){
          vehicle. A pickup's cab is narrow and tall and its body is wide and
          low, and the front has to say so. */
       const cabTop = h*0.10, bedTop = h*0.40, bot = cy - h*0.135;
+      /* the same tyres and the same low bumper the back carries - it had
+         neither here, and the bumper is why the two ends disagreed */
+      vehicleTyres(g, w, h, 'pickup', bot);
+      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P);
       /* the cab, exactly as wide as the back's */
       g.fillStyle = grad(cabTop, bedTop);
       rr(g, w*0.20, cabTop, w*0.60, bedTop-cabTop+h*0.03, w*0.035); g.fill();
@@ -3258,9 +3529,6 @@ function paintRigFront(kind, o){
                                  P.body, P.hi);
       g.fillStyle = 'rgba(130,170,210,.18)';
       rr(g, w*0.255, cabTop+h*0.042, w*0.49, h*0.048, 2); g.fill();
-      for(const mx of [0.145, 0.825]){
-        g.fillStyle = P.lo; g.fillRect(w*mx, cabTop+h*0.075, w*0.030, h*0.070);
-      }
       /* the front body, the same 0.055 to 0.945 the bed uses */
       g.fillStyle = grad(bedTop, bot);
       rr(g, w*0.055, bedTop, w*0.89, bot-bedTop, w*0.02); g.fill();
@@ -3404,7 +3672,7 @@ function paintRigFront(kind, o){
        ---------------------------------------------------------------- */
     const pHip = pDeck + (bot-pDeck)*0.40;
     /* a little tyre under it, drawn before the body - see `tyresUnder` */
-    tyresUnder(g, w, h, bot, [0.165, 0.835], 0.175, h*0.055);
+    vehicleTyres(g, w, h, kind, bot);
     g.fillStyle = grad(pDeck, bot);
     g.beginPath();
     g.moveTo(w*0.115, pDeck);
@@ -3730,20 +3998,26 @@ function paintRig(kind, o){
     const grad = (y0,y1) => { const b = g.createLinearGradient(0,y0,0,y1);
       b.addColorStop(0,P.hi); b.addColorStop(0.48,P.body); b.addColorStop(1,P.lo); return b; };
 
-    /* ground shadow — wider and softer under the tall things */
-    g.fillStyle='rgba(0,0,0,.5)';
-    g.beginPath(); g.ellipse(w/2, cy-5, w*0.46, h*0.045, 0, 0, 6.2832); g.fill();
+    /* the shadow is one declaration for both ends now - see `groundShadow` */
+    groundShadow(g, w, h);
 
-    /* ---- wheels, at the right track for the vehicle --------------------- */
-    const tw = kind==='truck'||kind==='van' ? 0.155 : kind==='pickup' ? 0.145 : 0.13;
-    const th2 = kind==='truck' ? 0.20 : kind==='pickup' ? 0.24 : 0.26;
-    g.fillStyle='#0c0d11';
-    rr(g, w*0.012, cy-h*th2, w*tw, h*(th2-0.02), 3); g.fill();
-    rr(g, w-w*0.012-w*tw, cy-h*th2, w*tw, h*(th2-0.02), 3); g.fill();
+    /* ---- THE WHEELS STOOD OUTBOARD OF THE BODY AND THE FACE HAD NO SUCH
+       THING (RLG-184) --------------------------------------------------------
+       A whole wheel was drawn here at x 0.012 and again at 0.988, wider than
+       the bodywork above it, while the front painter drew a shorter one at
+       0.045. That single disagreement is most of the width by which every
+       generic body differed from itself - COUPE's back measured 202 pixels of
+       ink against its own face's 192.
+
+       They are gone from both ends. What a vehicle shows of its tyres is
+       `vehicleTyres`, declared once, called by both painters from the body's
+       own sill - which is the form the owner approved.
+       ------------------------------------------------------------------- */
 
     if(kind === 'truck'){
       /* a box trailer: one tall slab, roof markers, doors with a centre seam */
       const top = h*0.05, bot = cy - h*0.135;
+      vehicleTyres(g, w, h, 'truck', bot);
       g.fillStyle = grad(top, bot);
       rr(g, w*0.045, top, w*0.91, bot-top, w*0.015); g.fill();
       /* the two door leaves */
@@ -3762,12 +4036,9 @@ function paintRig(kind, o){
       /* roof marker lamps - see the tail declaration below: owner's ruling of
          2026-08-29 is that these light with the brakes as well, so they are
          part of the same lamp rather than decoration painted once. */
-      /* rear underrun bar and mud flaps */
-      g.fillStyle='#23252a';
-      rr(g, w*0.08, cy-h*0.115, w*0.84, h*0.028, 2); g.fill();
-      g.fillStyle='#15161a';
-      g.fillRect(w*0.05, cy-h*0.10, w*0.13, h*0.085);
-      g.fillRect(w*0.82, cy-h*0.10, w*0.13, h*0.085);
+      /* the underrun bar and the mud flaps, from the one declaration the face
+         calls too - they hung under this end only before (RLG-184) */
+      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P);
       /* the low lamps on the frame AND the row of markers along the roof.
          Owner, 2026-08-29: the running lights illuminate as brake lights too -
          which is what a lorry does, and it is the thing you actually see of one
@@ -3785,8 +4056,9 @@ function paintRig(kind, o){
            are. The amber ones are on the front.
            -------------------------------------------------------------- */
         gg.fillStyle = redOf(on);
-        for(const mx of [0.16,0.34,0.5,0.66,0.84]){
-          rr(gg, w*mx-w*0.018, top-h*0.014, w*0.036, h*0.016, 2); gg.fill();
+        for(const mx of TRUCK_MARKERS){
+          const b = truckMarkerBox(w, h, top, mx);
+          rr(gg, b[0], b[1], b[2], b[3], 2); gg.fill();
         }
       });
       /* a lorry indicates from the outer end of the same cluster */
@@ -3799,7 +4071,9 @@ function paintRig(kind, o){
       /* a tall slab with a distinct roof edge, small high glass, twin doors */
       /* the generic badge goes on after the doors, below */
       const top = h*0.10, bot = cy - h*0.10;
-      tyresUnder(g, w, h, bot, [0.155, 0.845], 0.185, h*0.050);
+      vehicleTyres(g, w, h, 'van', bot);
+      /* the mirrors are the same declaration the face uses - see `rigFurniture` */
+      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P);
       g.fillStyle = grad(top, bot);
       rr(g, w*0.055, top, w*0.89, bot-top, w*0.045); g.fill();
       /* roof cap */
@@ -3910,7 +4184,7 @@ function paintRig(kind, o){
     if(kind === 'pickup'){
       /* narrow cab up top, wide open BED below — the giveaway silhouette */
       const cabTop = h*0.10, bedTop = h*0.40, bot = cy - h*0.135;
-      tyresUnder(g, w, h, bot, [0.150, 0.850], 0.195, h*0.055);
+      vehicleTyres(g, w, h, 'pickup', bot);
       /* the cab */
       g.fillStyle = grad(cabTop, bedTop);
       rr(g, w*0.20, cabTop, w*0.60, bedTop-cabTop+h*0.03, w*0.035); g.fill();
@@ -3938,11 +4212,9 @@ function paintRig(kind, o){
       /* the amber is the outboard third of the cluster, as a pickup carries it */
       decl(g, lamps, 'turn.l', turnBulb(w*0.075, bot-h*0.085, w*0.048, h*0.065));
       decl(g, lamps, 'turn.r', turnBulb(w*0.877, bot-h*0.085, w*0.048, h*0.065));
-      /* chrome bumper, hanging low */
-      g.fillStyle='#7d838c';
-      rr(g, w*0.06, cy-h*0.115, w*0.88, h*0.040, 3); g.fill();
-      g.fillStyle='rgba(255,255,255,.28)';
-      rr(g, w*0.06, cy-h*0.115, w*0.88, h*0.014, 3); g.fill();
+      /* the chrome bumper hangs below the sill, and it is the same one the
+         face carries - see `rigFurniture` */
+      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P);
       return;
     }
 
@@ -4013,7 +4285,7 @@ function paintRig(kind, o){
 
     /* the body: widest at the arches, tucked at the deck */
     const hipY = deckY + (bot-deckY)*0.40;
-    tyresUnder(g, w, h, bot, [0.165, 0.835], 0.175, h*0.055);
+    vehicleTyres(g, w, h, kind, bot);
     g.fillStyle = grad(deckY, bot);
     g.beginPath();
     g.moveTo(w*0.115, deckY);
@@ -4284,6 +4556,210 @@ function slats(g, x, y, w2, h2, n){
   }
 }
 
+/* ---- A FORMULA CAR IS ONE DRAWING, RUN AT BOTH ENDS (RLG-184) -----------
+   Owner, 2026-09-09: a face and a tail are the same vehicle seen from opposite
+   ends, so the outline is the same object and only the details inside it
+   differ.
+
+   A FORMULA CAR MAKES THAT LITERAL. What you see of one from the front is two
+   tyres, a tub, a roll hoop, an engine cover and a rear wing standing past all
+   of it - and what you see from behind is the same list. Nothing in the picture
+   below is particular to one end.
+
+   So it is not two drawings brought into agreement. It is ONE function, called
+   by `paintFront` for the face and by `paintCar` for the tail, and the tail
+   then declares its lamps over it. The tail used to be the SUPERCAR body with a
+   wing on it, which is why the three formula cars disagreed with their own
+   faces by 27 per cent of the box.
+   ------------------------------------------------------------------------- */
+function paintFormulaBody(g, w, h, o, B){
+  /* ---- THE CAR KEEPS ITS OWN PROPORTIONS, NOT THE BOX'S ----------------
+     This was drawn against a 230 by 215 sprite and every vertical number in it
+     is a fraction of that height. The two ends share one 220 by 168 box now
+     (see `CAR_BOX`), and reading the same fractions off the shorter box
+     flattened the car by a fifth - the tyres stopped being the tallest thing
+     in the picture, which is the whole stance of a single-seater.
+
+     `H` is the height the drawing was composed at, carried as a multiple of
+     the WIDTH so it survives any box: 215/230 of it. Both painters call this
+     function with the same `w`, so both get the same shape.
+     ------------------------------------------------------------------ */
+  const H = w * (215/230);
+  /* ONE CAR, THREE ENTRIES. Owner, 2026-08-29: the three do not need
+     separate designs. They are cars from a single formula - in a real one
+     they are near enough identical from behind - and what separates them is
+     the name, the badge and the stat block. So this painter draws one shape
+     and the badge is looked up per car. */
+  /* ---- A FORMULA NOSE, from the reference ------------------------------
+     The old one was a tall narrow tower. The real thing is LOW and WIDE:
+     the wheels sit far outboard and are the tallest things in the picture,
+     the body between them is a shallow wedge, the nose cone is broad and
+     close to the ground, and the roll hoop rises from a deck that is
+     barely above axle height. Nothing here is tall except the tyres.
+     -------------------------------------------------------------------- */
+  /* The rear fills its sprite; the front was drawn at two thirds the scale
+     and read as a different, smaller car. Same tyre height and the same
+     track as the rear, so the two ends are one vehicle. */
+  const TW = w*0.230, TH2 = H*0.440;      /* a front tyre */
+  const axle = H*0.620;
+  const track = w*0.340;
+
+  /* ---- WHAT IS BEHIND IT --------------------------------------------
+     An F1 car seen head-on shows its REAR tyres past the front ones — they
+     are wider and set further out — and the rear wing standing above the
+     body. Drawn first, dimmed and slightly higher, so they read as being
+     further away rather than as a second car.
+     ------------------------------------------------------------------- */
+  const RTW = w*0.215, RTH = H*0.420;
+  const rAxle = H*0.606;
+  /* far enough out that they clearly show past the front tyres */
+  const rTrack = w*0.455;
+  /* ---- IT HAS TO BE VISIBLE --------------------------------------
+     At 38% none of this read at all: on a white car the whole background
+     vanished and the front looked like a tub between two tyres. 0.62 is
+     still clearly further away than the front but is actually THERE. */
+  g.save();
+  g.globalAlpha = 0.62;
+  for(const sx of [-1,1]){
+    const wx = w*0.5 + sx*rTrack;
+    g.fillStyle = '#0d0f12';
+    rr(g, wx - RTW*0.5, rAxle - RTH*0.5, RTW, RTH, RTW*0.30); g.fill();
+    g.fillStyle = 'rgba(150,165,180,.10)';
+    rr(g, wx - RTW*0.40, rAxle - RTH*0.42, RTW*0.80, RTH*0.15, RTW*0.14); g.fill();
+  }
+  /* the rear wing, above the body, on its endplates */
+  /* just above the roll hoop, not up in the sky — at RTH*0.66 it floated
+     clear of the whole car and read as a black bar across the frame */
+  /* ---- THE ENGINE COVER, BEHIND THE COCKPIT ------------------------
+     From the reference: past the roll hoop there is a body of metal
+     running back to the rear axle — the airbox and the engine cover — and
+     the wing sits ABOVE that, not floating on its own. Without it the car
+     had nothing between the cockpit and the wing but air.
+     ---------------------------------------------------------------- */
+  const ecTop = rAxle - RTH*0.34, ecBot = rAxle + RTH*0.18;
+  const ec = g.createLinearGradient(w*0.42, 0, w*0.58, 0);
+  ec.addColorStop(0, o.lo); ec.addColorStop(0.42, o.body);
+  ec.addColorStop(0.58, o.hi); ec.addColorStop(1, o.lo);
+  g.fillStyle = ec;
+  g.beginPath();
+  g.moveTo(w*0.452, ecTop);
+  g.quadraticCurveTo(w*0.5, ecTop - H*0.030, w*0.548, ecTop);
+  g.lineTo(w*0.600, ecBot);
+  g.lineTo(w*0.400, ecBot);
+  g.closePath(); g.fill();
+  /* No sidepods. They were two dark blocks either side of the cover and at
+     this size they read as clutter rather than bodywork — the cover and
+     the wing are the two things you actually see past a formula car's
+     cockpit, and adding a third only muddied them. */
+
+  /* the rear wing, standing on the engine cover */
+  const rwY = rAxle - RTH*0.50;
+  g.fillStyle = '#191d22';
+  g.fillRect(w*0.115, rwY, w*0.770, H*0.046);
+  g.fillStyle = 'rgba(200,215,230,.14)';
+  g.fillRect(w*0.115, rwY, w*0.770, H*0.011);
+  /* the swan necks holding it up off the cover */
+  for(const sx of [-1,1]){
+    g.strokeStyle = '#1b1f26'; g.lineWidth = Math.max(2, w*0.020);
+    g.beginPath();
+    g.moveTo(w*0.5 + sx*w*0.090, rwY + H*0.044);
+    g.lineTo(w*0.5 + sx*w*0.075, ecTop);
+    g.stroke();
+  }
+  for(const sx of [-1,1]){
+    g.fillStyle = '#141820';
+    g.fillRect(w*0.5 + sx*w*0.385 - (sx>0?w*0.030:0), rwY - H*0.020,
+               w*0.030, H*0.095);
+  }
+  g.restore();
+
+  /* ---- the tyres, first: the tallest things here --------------------- */
+  for(const sx of [-1,1]){
+    const wx = w*0.5 + sx*track;
+    g.fillStyle = 'rgba(0,0,0,.40)';
+    g.beginPath(); g.ellipse(wx, axle + TH2*0.52, TW*0.60, H*0.020, 0, 0, 6.2832); g.fill();
+    g.fillStyle = '#0a0b0d';
+    rr(g, wx - TW*0.5, axle - TH2*0.5, TW, TH2, TW*0.30); g.fill();
+    /* the shoulder, and a band low down */
+    g.fillStyle = 'rgba(170,184,198,.13)';
+    rr(g, wx - TW*0.40, axle - TH2*0.42, TW*0.80, TH2*0.16, TW*0.14); g.fill();
+    g.fillStyle = 'rgba(0,0,0,.55)';
+    rr(g, wx - TW*0.44, axle + TH2*0.16, TW*0.88, TH2*0.12, TW*0.10); g.fill();
+    /* the rim, seen edge-on */
+    g.fillStyle = '#4a545d';
+    g.beginPath(); g.ellipse(wx, axle, TW*0.19, TH2*0.17, 0, 0, 6.2832); g.fill();
+  }
+
+  /* ---- the body: a shallow wedge, low between the wheels ------------- */
+  const deckY = axle - TH2*0.30;
+  const tub = g.createLinearGradient(w*0.34, 0, w*0.66, 0);
+  tub.addColorStop(0, o.lo); tub.addColorStop(0.38, o.body);
+  tub.addColorStop(0.56, o.hi); tub.addColorStop(1, o.lo);
+  g.fillStyle = tub;
+  g.beginPath();
+  g.moveTo(w*0.408, deckY);
+  g.quadraticCurveTo(w*0.5, deckY - H*0.030, w*0.592, deckY);
+  g.lineTo(w*0.640, axle + TH2*0.40);
+  g.quadraticCurveTo(w*0.5, axle + TH2*0.50, w*0.360, axle + TH2*0.40);
+  g.closePath(); g.fill();
+
+  /* the nose cone: broad, low, and forward of everything */
+  g.fillStyle = o.hi;
+  g.beginPath();
+  g.moveTo(w*0.432, axle + TH2*0.02);
+  g.quadraticCurveTo(w*0.5, axle - TH2*0.05, w*0.568, axle + TH2*0.02);
+  g.lineTo(w*0.596, axle + TH2*0.44);
+  g.quadraticCurveTo(w*0.5, axle + TH2*0.54, w*0.404, axle + TH2*0.44);
+  g.closePath(); g.fill();
+  /* the number on it */
+  /* the car's OWN badge, not the class's - it was hard-coded to the bolt,
+     which put APEX's marque on all three noses */
+  drawMarque(g, (B && B.rear) || 'FORMULA', w*0.5, axle + TH2*0.26, H*0.034);
+
+  /* ---- the roll hoop, low over a low deck ---------------------------- */
+  g.fillStyle = o.lo;
+  g.beginPath();
+  g.moveTo(w*0.452, deckY);
+  g.quadraticCurveTo(w*0.5, deckY - H*0.098, w*0.548, deckY);
+  g.closePath(); g.fill();
+  /* the halo, hugging it */
+  g.strokeStyle = '#1d2229';
+  g.lineWidth = Math.max(2.6, w*0.024);
+  g.beginPath();
+  g.moveTo(w*0.392, deckY + H*0.016);
+  g.quadraticCurveTo(w*0.5, deckY - H*0.072, w*0.608, deckY + H*0.016);
+  g.stroke();
+  g.lineWidth = Math.max(2, w*0.018);
+  g.beginPath();
+  g.moveTo(w*0.5, deckY - H*0.038); g.lineTo(w*0.5, deckY + H*0.016);
+  g.stroke();
+
+  /* ---- suspension: two wishbones a side, out to the hubs ------------- */
+  for(const sx of [-1,1]){
+    const wx = w*0.5 + sx*track;
+    g.strokeStyle = '#39424b'; g.lineWidth = Math.max(1.6, w*0.014);
+    g.beginPath();
+    g.moveTo(wx - sx*TW*0.34, axle - TH2*0.14);
+    g.lineTo(w*0.5 - sx*w*0.030, deckY + H*0.020); g.stroke();
+    g.beginPath();
+    g.moveTo(wx - sx*TW*0.34, axle + TH2*0.16);
+    g.lineTo(w*0.5 - sx*w*0.030, axle + TH2*0.30); g.stroke();
+  }
+
+  /* ---- the front wing: LOW, wide, and in front of the wheels --------- */
+  for(let k=0;k<3;k++){
+    const wy = axle + TH2*0.34 - k*H*0.028;
+    const ww = 0.470 - k*0.012;
+    g.fillStyle = k === 0 ? '#e9eef4' : (k === 1 ? '#c6cfd9' : '#a2adb8');
+    rr(g, w*(0.5-ww), wy, w*ww*2, H*0.024, H*0.007); g.fill();
+  }
+  for(const sx of [-1,1]){
+    g.fillStyle = '#232930';
+    rr(g, w*0.5 + sx*w*0.470 - (sx>0?w*0.034:0), axle + TH2*0.02,
+       w*0.034, H*0.150, 3); g.fill();
+  }
+}
+
 function paintFront(o){
   return function(g, w, h, lamps, parts){
     /* `o.body` is a COLOUR on every other painter, so the type comes in under
@@ -4296,187 +4772,22 @@ function paintFront(o){
        drawn at bare `wide` came out narrower than its own back. The arches are
        included here the same way, and every face is laid out against the
        result — so F is the widest at both ends, P the narrowest at both. */
-    const wid = (0.42 + (B.wide || 0.03)) * (1 + (B.arch || 1) * 0.055);
-    let topY = h*B.bodyTop; const botY = h*0.93;
+    /* ---- THE OUTLINE IS THE TAIL'S OWN (RLG-184) -------------------------
+       This used to compute its own half-width - the body's `wide` inflated by
+       the arch size - and its own sill at 0.93 of the sprite, against a tail
+       that sits at 0.965 and puts its arches somewhere else entirely. Both
+       ends read `carShell` now, so there is one answer to how wide the car is
+       and where it stands. */
+    const S = carShell(w, h, B, { bodyTop:B.bodyTop, cabinTop:B.cabinTop });
+    const wid = S.wid;
+    const topY = S.topY, botY = S.botY;
 
-    /* the shadow it sits in */
-    g.fillStyle = 'rgba(0,0,0,.45)';
-    g.beginPath(); g.ellipse(w*0.5, botY, w*wid*1.05, h*0.045, 0, 0, 6.2832); g.fill();
+    /* the shadow it sits in - the tail's own, so the two ends stand on one
+       floor and cast one shape */
+    groundShadow(g, w, h);
 
     if(isFormula(kind)){
-      /* ONE CAR, THREE ENTRIES. Owner, 2026-08-29: the three do not need
-         separate designs. They are cars from a single formula - in a real one
-         they are near enough identical from behind - and what separates them is
-         the name, the badge and the stat block. So this painter draws one shape
-         and the badge is looked up per car. */
-      /* ---- A FORMULA NOSE, from the reference ------------------------------
-         The old one was a tall narrow tower. The real thing is LOW and WIDE:
-         the wheels sit far outboard and are the tallest things in the picture,
-         the body between them is a shallow wedge, the nose cone is broad and
-         close to the ground, and the roll hoop rises from a deck that is
-         barely above axle height. Nothing here is tall except the tyres.
-         -------------------------------------------------------------------- */
-      /* The rear fills its sprite; the front was drawn at two thirds the scale
-         and read as a different, smaller car. Same tyre height and the same
-         track as the rear, so the two ends are one vehicle. */
-      const TW = w*0.230, TH2 = h*0.440;      /* a front tyre */
-      const axle = h*0.620;
-      const track = w*0.340;
-
-      /* ---- WHAT IS BEHIND IT --------------------------------------------
-         An F1 car seen head-on shows its REAR tyres past the front ones — they
-         are wider and set further out — and the rear wing standing above the
-         body. Drawn first, dimmed and slightly higher, so they read as being
-         further away rather than as a second car.
-         ------------------------------------------------------------------- */
-      const RTW = w*0.215, RTH = h*0.420;
-      const rAxle = h*0.606;
-      /* far enough out that they clearly show past the front tyres */
-      const rTrack = w*0.455;
-      /* ---- IT HAS TO BE VISIBLE --------------------------------------
-         At 38% none of this read at all: on a white car the whole background
-         vanished and the front looked like a tub between two tyres. 0.62 is
-         still clearly further away than the front but is actually THERE. */
-      g.save();
-      g.globalAlpha = 0.62;
-      for(const sx of [-1,1]){
-        const wx = w*0.5 + sx*rTrack;
-        g.fillStyle = '#0d0f12';
-        rr(g, wx - RTW*0.5, rAxle - RTH*0.5, RTW, RTH, RTW*0.30); g.fill();
-        g.fillStyle = 'rgba(150,165,180,.10)';
-        rr(g, wx - RTW*0.40, rAxle - RTH*0.42, RTW*0.80, RTH*0.15, RTW*0.14); g.fill();
-      }
-      /* the rear wing, above the body, on its endplates */
-      /* just above the roll hoop, not up in the sky — at RTH*0.66 it floated
-         clear of the whole car and read as a black bar across the frame */
-      /* ---- THE ENGINE COVER, BEHIND THE COCKPIT ------------------------
-         From the reference: past the roll hoop there is a body of metal
-         running back to the rear axle — the airbox and the engine cover — and
-         the wing sits ABOVE that, not floating on its own. Without it the car
-         had nothing between the cockpit and the wing but air.
-         ---------------------------------------------------------------- */
-      const ecTop = rAxle - RTH*0.34, ecBot = rAxle + RTH*0.18;
-      const ec = g.createLinearGradient(w*0.42, 0, w*0.58, 0);
-      ec.addColorStop(0, o.lo); ec.addColorStop(0.42, o.body);
-      ec.addColorStop(0.58, o.hi); ec.addColorStop(1, o.lo);
-      g.fillStyle = ec;
-      g.beginPath();
-      g.moveTo(w*0.452, ecTop);
-      g.quadraticCurveTo(w*0.5, ecTop - h*0.030, w*0.548, ecTop);
-      g.lineTo(w*0.600, ecBot);
-      g.lineTo(w*0.400, ecBot);
-      g.closePath(); g.fill();
-      /* No sidepods. They were two dark blocks either side of the cover and at
-         this size they read as clutter rather than bodywork — the cover and
-         the wing are the two things you actually see past a formula car's
-         cockpit, and adding a third only muddied them. */
-
-      /* the rear wing, standing on the engine cover */
-      const rwY = rAxle - RTH*0.50;
-      g.fillStyle = '#191d22';
-      g.fillRect(w*0.115, rwY, w*0.770, h*0.046);
-      g.fillStyle = 'rgba(200,215,230,.14)';
-      g.fillRect(w*0.115, rwY, w*0.770, h*0.011);
-      /* the swan necks holding it up off the cover */
-      for(const sx of [-1,1]){
-        g.strokeStyle = '#1b1f26'; g.lineWidth = Math.max(2, w*0.020);
-        g.beginPath();
-        g.moveTo(w*0.5 + sx*w*0.090, rwY + h*0.044);
-        g.lineTo(w*0.5 + sx*w*0.075, ecTop);
-        g.stroke();
-      }
-      for(const sx of [-1,1]){
-        g.fillStyle = '#141820';
-        g.fillRect(w*0.5 + sx*w*0.385 - (sx>0?w*0.030:0), rwY - h*0.020,
-                   w*0.030, h*0.095);
-      }
-      g.restore();
-
-      /* ---- the tyres, first: the tallest things here --------------------- */
-      for(const sx of [-1,1]){
-        const wx = w*0.5 + sx*track;
-        g.fillStyle = 'rgba(0,0,0,.40)';
-        g.beginPath(); g.ellipse(wx, axle + TH2*0.52, TW*0.60, h*0.020, 0, 0, 6.2832); g.fill();
-        g.fillStyle = '#0a0b0d';
-        rr(g, wx - TW*0.5, axle - TH2*0.5, TW, TH2, TW*0.30); g.fill();
-        /* the shoulder, and a band low down */
-        g.fillStyle = 'rgba(170,184,198,.13)';
-        rr(g, wx - TW*0.40, axle - TH2*0.42, TW*0.80, TH2*0.16, TW*0.14); g.fill();
-        g.fillStyle = 'rgba(0,0,0,.55)';
-        rr(g, wx - TW*0.44, axle + TH2*0.16, TW*0.88, TH2*0.12, TW*0.10); g.fill();
-        /* the rim, seen edge-on */
-        g.fillStyle = '#4a545d';
-        g.beginPath(); g.ellipse(wx, axle, TW*0.19, TH2*0.17, 0, 0, 6.2832); g.fill();
-      }
-
-      /* ---- the body: a shallow wedge, low between the wheels ------------- */
-      const deckY = axle - TH2*0.30;
-      const tub = g.createLinearGradient(w*0.34, 0, w*0.66, 0);
-      tub.addColorStop(0, o.lo); tub.addColorStop(0.38, o.body);
-      tub.addColorStop(0.56, o.hi); tub.addColorStop(1, o.lo);
-      g.fillStyle = tub;
-      g.beginPath();
-      g.moveTo(w*0.408, deckY);
-      g.quadraticCurveTo(w*0.5, deckY - h*0.030, w*0.592, deckY);
-      g.lineTo(w*0.640, axle + TH2*0.40);
-      g.quadraticCurveTo(w*0.5, axle + TH2*0.50, w*0.360, axle + TH2*0.40);
-      g.closePath(); g.fill();
-
-      /* the nose cone: broad, low, and forward of everything */
-      g.fillStyle = o.hi;
-      g.beginPath();
-      g.moveTo(w*0.432, axle + TH2*0.02);
-      g.quadraticCurveTo(w*0.5, axle - TH2*0.05, w*0.568, axle + TH2*0.02);
-      g.lineTo(w*0.596, axle + TH2*0.44);
-      g.quadraticCurveTo(w*0.5, axle + TH2*0.54, w*0.404, axle + TH2*0.44);
-      g.closePath(); g.fill();
-      /* the number on it */
-      /* the car's OWN badge, not the class's - it was hard-coded to the bolt,
-         which put APEX's marque on all three noses */
-      drawMarque(g, (B && B.rear) || 'FORMULA', w*0.5, axle + TH2*0.26, h*0.034);
-
-      /* ---- the roll hoop, low over a low deck ---------------------------- */
-      g.fillStyle = o.lo;
-      g.beginPath();
-      g.moveTo(w*0.452, deckY);
-      g.quadraticCurveTo(w*0.5, deckY - h*0.098, w*0.548, deckY);
-      g.closePath(); g.fill();
-      /* the halo, hugging it */
-      g.strokeStyle = '#1d2229';
-      g.lineWidth = Math.max(2.6, w*0.024);
-      g.beginPath();
-      g.moveTo(w*0.392, deckY + h*0.016);
-      g.quadraticCurveTo(w*0.5, deckY - h*0.072, w*0.608, deckY + h*0.016);
-      g.stroke();
-      g.lineWidth = Math.max(2, w*0.018);
-      g.beginPath();
-      g.moveTo(w*0.5, deckY - h*0.038); g.lineTo(w*0.5, deckY + h*0.016);
-      g.stroke();
-
-      /* ---- suspension: two wishbones a side, out to the hubs ------------- */
-      for(const sx of [-1,1]){
-        const wx = w*0.5 + sx*track;
-        g.strokeStyle = '#39424b'; g.lineWidth = Math.max(1.6, w*0.014);
-        g.beginPath();
-        g.moveTo(wx - sx*TW*0.34, axle - TH2*0.14);
-        g.lineTo(w*0.5 - sx*w*0.030, deckY + h*0.020); g.stroke();
-        g.beginPath();
-        g.moveTo(wx - sx*TW*0.34, axle + TH2*0.16);
-        g.lineTo(w*0.5 - sx*w*0.030, axle + TH2*0.30); g.stroke();
-      }
-
-      /* ---- the front wing: LOW, wide, and in front of the wheels --------- */
-      for(let k=0;k<3;k++){
-        const wy = axle + TH2*0.34 - k*h*0.028;
-        const ww = 0.470 - k*0.012;
-        g.fillStyle = k === 0 ? '#e9eef4' : (k === 1 ? '#c6cfd9' : '#a2adb8');
-        rr(g, w*(0.5-ww), wy, w*ww*2, h*0.024, h*0.007); g.fill();
-      }
-      for(const sx of [-1,1]){
-        g.fillStyle = '#232930';
-        rr(g, w*0.5 + sx*w*0.470 - (sx>0?w*0.034:0), axle + TH2*0.02,
-           w*0.034, h*0.150, 3); g.fill();
-      }
+      paintFormulaBody(g, w, h, o, B);
       return;
     }
 
@@ -4488,15 +4799,13 @@ function paintFront(o){
        same size; they are not the same face.
        -------------------------------------------------------------------- */
     const F = kind === 'STALLION' ? 'F' : kind === 'CREST' ? 'P' : 'L';
-    /* a rear-engined car has almost no nose, and it should look it: P's body
-       starts lower and its deck is shallower than the other two */
-    if(F === 'P') topY = h*(B.bodyTop + 0.055);
-    const archK = B.arch || 1;
-    const hipY  = botY - h*0.30;
-    /* the roofline is needed by the WING, which now draws first — so it is
-       computed here rather than down in the greenhouse block */
-    const cw2 = (B.cabW || 0.5) * 0.92, rr2 = h*((B.roofR||0.1)*0.4 + 0.03);
-    const roofT = topY - h*0.19;
+    /* P's deck used to be dropped by 0.055 of the sprite at this end only,
+       which made a rear-engined car a different height from its own back. A
+       body is one body: whatever its deck does, it does at both ends. */
+    const archK = S.archK;
+    const hipY  = S.hipY;
+    const cw2 = S.cw, rr2 = h*((B.roofR||0.1)*0.4 + 0.03);
+    const roofT = S.roofY;
 
     /* ---- THE SPOILER SITS BEHIND THE CAR ---------------------------------
        Drawn last it was in FRONT of the roof and the glass, which is backwards:
@@ -4504,72 +4813,28 @@ function paintFront(o){
        the whole body. So it goes first, before the arches and the greenhouse,
        and everything else covers it — you see the ends of it past the roof and
        nothing more, which is exactly what you see on the road. */
-    if(B.spoiler){
-      /* `roofT` is already near the top of the sprite, so anything above it
-         ran off the canvas — L's and P's wings were clipped away entirely. The
-         wing sits just BELOW the roofline, which is also where it really is:
-         you see it through and around the glasshouse, not floating over it. */
-      const wingY = F === 'L' ? roofT + h*0.020
-                  : F === 'P' ? roofT + h*0.038
-                  :             roofT + h*0.075;
-      /* ---- MATCH THE REAR, EXACTLY -----------------------------------
-         The rear wings are measured against the SPRITE, not against `wid`:
-         L's aerofoil runs 0.06 to 0.94 (0.88 across) and P's blade 0.015 to
-         0.985 (0.97). Deriving the front from `wid` made L's 1.02 wide —
-         wider than the car and wider than its own back. These are the rear's
-         numbers, halved. */
-      const wingW = F === 'L' ? 0.440 : F === 'P' ? 0.485 : wid*0.72;
-      g.fillStyle = o.lo;
-      if(F === 'F'){
-        /* a lip: shallow, close to the deck, the body's own colour */
-        rr(g, w*(0.5-wingW), wingY, w*wingW*2, h*0.022, h*0.008); g.fill();
-        g.fillStyle = 'rgba(255,255,255,.16)';
-        g.fillRect(w*(0.5-wingW), wingY, w*wingW*2, Math.max(1.5, h*0.007));
-      } else {
-        /* ---- and the rear's COLOUR too ----------------------------------
-           L's aerofoil is body-coloured (`o.lo`); P's blade is dark
-           ('#1a1d22'). One rule for both was always going to be wrong for one
-           of them, so each front takes what its own back uses. */
-        g.fillStyle = (F === 'P') ? '#1a1d22' : o.lo;
-        rr(g, w*(0.5-wingW), wingY, w*wingW*2, h*0.026, h*0.006); g.fill();
-        /* the REAR lifts its blade with `rgba(255,255,255,.16)`; the front was
-           using a dimmer, bluer 12% and came out visibly darker than the same
-           wing seen from behind. Same value both ends. */
-        g.fillStyle = 'rgba(255,255,255,.16)';
-        g.fillRect(w*(0.5-wingW), wingY, w*wingW*2, Math.max(1.5, h*0.009));
-        for(const sx of [-1,1]){
-          /* P's uprights hang from the blade and are darker still */
-          g.fillStyle = (F === 'P') ? '#15171b' : o.body;
-          g.fillRect(w*0.5 + sx*w*wingW*0.62 - w*0.010, wingY + h*0.024,
-                     w*0.020, h*0.038);
-        }
-      }
-    }
+    carWing(g, w, h, S, o);
 
-
-    /* the arches, proud of the body, so the width reads before anything else */
-    for(const sx of [-1,1]){
+    /* the arches, proud of the body, from the one declaration the tail uses */
+    for(const ax of carArchX(S)){
       g.fillStyle = o.lo;
-      g.beginPath();
-      g.ellipse(w*0.5 + sx*w*wid*0.88, hipY + h*0.05,
-                w*0.108*archK, h*0.100*archK, 0, 0, 6.2832);
+      carArchPath(g, w, h, S, ax);
       g.fill();
     }
 
     /* stripes on the nose: over the roof and down the bonnet, glass clear */
     const stripeOn = o.stripes && !isFormula(kind);
 
-    /* the greenhouse */
+    /* the greenhouse, from the same declaration the tail draws */
     g.fillStyle = o.lo;
-    g.beginPath();
-    g.moveTo(w*(0.5-wid*0.80), topY + h*0.02);
-    g.quadraticCurveTo(w*(0.5-cw2*0.62), roofT, w*(0.5-cw2*0.46), roofT);
-    g.lineTo(w*(0.5+cw2*0.46), roofT);
-    g.quadraticCurveTo(w*(0.5+cw2*0.62), roofT, w*(0.5+wid*0.80), topY + h*0.02);
-    g.closePath(); g.fill();
+    carGreenhousePath(g, w, h, S);
+    g.fill();
     /* P's dome is right; its GLASS was small inside it. The pane springs
        wider and reaches higher for that body only — the shell is untouched. */
     const glassK = F === 'P' ? 1.0 : 0.0;
+    /* clipped to the greenhouse for the same reason the tail's is */
+    g.save();
+    carGreenhousePath(g, w, h, S); g.clip();
     const gg4 = g.createLinearGradient(0, roofT, 0, topY + h*0.02);
     gg4.addColorStop(0,'#38495c'); gg4.addColorStop(0.5,'#141c26'); gg4.addColorStop(1,'#0d131b');
     g.fillStyle = gg4;
@@ -4586,16 +4851,12 @@ function paintFront(o){
     /* registered, not baked - see the note in `paintRigFront`. A supercar's
        glass is a curve rather than a box, so the rectangle is the span it
        fills. */
+    g.restore();
     if(parts){
       parts.wipers = wiperPair(w*(0.5-wid*0.62), w*(0.5+wid*0.62),
                                gRoof, topY - h*0.005, o.body, o.hi);
     }
-    for(const sx of [-1,1]){
-      g.fillStyle = o.body;
-      g.beginPath();
-      g.ellipse(w*0.5 + sx*w*wid*0.94, topY + h*0.015, w*0.045, h*0.022, 0, 0, 6.2832);
-      g.fill();
-    }
+    carMirrors(g, w, h, S, o);
 
     /* ---- THE LIGHT BAR, SEEN HEAD ON ------------------------------------
        The tail draws one for any `force` body and the nose drew none, so the
@@ -4639,20 +4900,14 @@ function paintFront(o){
       for(const sx of [0.285, 0.695]) g.fillRect(w*sx, bY + h*0.040, w*0.020, h*0.020);
     }
 
-    /* the body, shouldered like its own tail */
+    /* the body, and it is not shouldered LIKE its own tail - it is the same
+       path, from `carBodyPath` */
     const bg2 = g.createLinearGradient(w*(0.5-wid), 0, w*(0.5+wid), 0);
     bg2.addColorStop(0, o.lo); bg2.addColorStop(0.28, o.body);
     bg2.addColorStop(0.50, o.hi); bg2.addColorStop(0.76, o.body); bg2.addColorStop(1, o.lo);
     g.fillStyle = bg2;
-    g.beginPath();
-    g.moveTo(w*(0.5-wid*0.90), topY);
-    g.lineTo(w*(0.5+wid*0.90), topY);
-    g.quadraticCurveTo(w*(0.5+wid), topY + h*0.05, w*(0.5+wid), hipY);
-    g.lineTo(w*(0.5+wid*0.94), botY);
-    g.lineTo(w*(0.5-wid*0.94), botY);
-    g.lineTo(w*(0.5-wid), hipY);
-    g.quadraticCurveTo(w*(0.5-wid), topY + h*0.05, w*(0.5-wid*0.90), topY);
-    g.closePath(); g.fill();
+    carBodyPath(g, w, h, S);
+    g.fill();
 
     if(stripeOn){
       /* the same table the rear reads, so front and back match exactly */
@@ -4849,14 +5104,56 @@ function paintFront(o){
 function paintCar(o){
   return (g,w,h,lamps)=>{
     const cy = h;
-    // ground shadow
-    g.fillStyle='rgba(0,0,0,.5)';
-    g.beginPath(); g.ellipse(w/2, cy-6, w*0.47, h*0.055, 0, 0, 6.2832); g.fill();
-    // wheels
-    g.fillStyle='#0d0e12';
-    rr(g, w*0.015, cy-h*0.30, w*0.13, h*0.27, 3); g.fill();
-    rr(g, w-w*0.145, cy-h*0.30, w*0.13, h*0.27, 3); g.fill();
     const B = o.shape || null;
+    /* the outline, and the face reads the same one (RLG-184) */
+    const S = carShell(w, h, B, o);
+    groundShadow(g, w, h);
+    /* ---- WHOLE WHEELS BECAME TWO SLIVERS (owner, 2026-09-09) -----------
+       Two dark blocks a quarter of the sprite tall stood outboard of the body
+       here, and the face had nothing of the sort. What you see of a tyre from
+       straight on is a contact patch and a sliver of sidewall, not a circle -
+       and a body raised enough to show a whole wheel reads as a lifted truck.
+       One declaration, both ends: see `vehicleTyres`.
+       ---------------------------------------------------------------- */
+    vehicleTyres(g, w, h, 'car', S.botY);
+
+    /* ---- A FORMULA CAR IS THE SAME DRAWING AT BOTH ENDS (RLG-184) --------
+       This end used to paint the whole SUPERCAR body - shouldered flanks,
+       arches, a greenhouse, a wing - and then cover most of it with a tail
+       built from its own set of proportions: 0.30 by 0.50 tyres on a 0.335
+       track against the face's 0.230 by 0.440 on 0.340. What showed past the
+       cover was the supercar underneath, and that is what the two ends
+       disagreed about by 27 per cent of the box.
+
+       There is one drawing now and both painters call it. The tail adds the
+       rain light, which is the one lamp this car has.
+       ------------------------------------------------------------------- */
+    if(isFormula(o.bodyKey) || isFormulaBody(B)){
+      paintFormulaBody(g, w, h, o, B);
+      /* ---- THE RAIN LIGHT, AND NO INDICATORS --------------------------
+         Owner's ruling, 2026-08-29: "The formula car does not need turn
+         indicators." A single-seater has none, and that is not an omission to
+         be corrected later - it is what the car is. RLG-052's rule is that
+         every vehicle's lamps are WIRED and that only the driver decides
+         whether they come on; this is the one body where the lamp itself does
+         not exist, so there is nothing to wire.
+
+         It sits on the tub, inside the outline, so declaring it changes no
+         part of the silhouette.
+         -------------------------------------------------------------- */
+      const rlY = h*0.620 - h*0.440*0.10;
+      decl(g, lamps, 'tail', (gg, on) => {
+        gg.fillStyle = redOf(on);
+        gg.beginPath(); gg.arc(w*0.5, rlY, w*0.028, 0, 6.2832); gg.fill();
+      });
+      g.save(); g.globalCompositeOperation = 'lighter';
+      const rl = g.createRadialGradient(w*0.5, rlY, 0, w*0.5, rlY, w*0.085);
+      rl.addColorStop(0, 'rgba(255,55,64,.6)'); rl.addColorStop(1, 'rgba(255,45,55,0)');
+      g.fillStyle = rl;
+      g.beginPath(); g.arc(w*0.5, rlY, w*0.085, 0, 6.2832); g.fill();
+      g.restore();
+      return;
+    }
     // lower body
     const bg = g.createLinearGradient(0, h*o.bodyTop, 0, cy);
     bg.addColorStop(0, o.hi); bg.addColorStop(0.5, o.body); bg.addColorStop(1, o.lo);
@@ -4868,35 +5165,20 @@ function paintCar(o){
        is that silhouette as a single path: wide hips, a shoulder crease, and a
        tapered lower edge.
        ------------------------------------------------------------------- */
-    const topY = h*o.bodyTop, botY = cy - h*0.035;
-    const hipY = topY + (botY-topY)*0.42;
-    /* overall width is its OWN number now rather than a function of the hips */
-    const wid  = 0.42 + (B ? B.wide : 0.03);
-    const deck = wid - 0.085;                     /* narrower across the deck */
-    g.beginPath();
-    g.moveTo(w*(0.5-deck), topY + h*0.012);
-    g.quadraticCurveTo(w*0.5, topY - h*0.010, w*(0.5+deck), topY + h*0.012);
-    g.quadraticCurveTo(w*(0.5+wid), topY + h*0.030, w*(0.5+wid), hipY);
-    g.lineTo(w*(0.5+wid), botY - h*0.030);
-    g.quadraticCurveTo(w*(0.5+wid), botY, w*(0.5+wid-0.055), botY);
-    g.lineTo(w*(0.5-wid+0.055), botY);
-    g.quadraticCurveTo(w*(0.5-wid), botY, w*(0.5-wid), botY - h*0.030);
-    g.lineTo(w*(0.5-wid), hipY);
-    g.quadraticCurveTo(w*(0.5-wid), topY + h*0.030, w*(0.5-deck), topY + h*0.012);
-    g.closePath(); g.fill();
+    const topY = S.topY, botY = S.botY, hipY = S.hipY, wid = S.wid;
+    carBodyPath(g, w, h, S);
+    g.fill();
     /* ---- the arches stand PROUD ----------------------------------------
        A rear arch is a blister that catches its own light, not part of the
        flank. Drawn as separate lobes over the body with their own highlight,
        which is most of what stops these reading as slabs.
        ------------------------------------------------------------------- */
     if(B){
-      for(const sx of [0.5-wid+0.055, 0.5+wid-0.055]){
+      for(const sx of carArchX(S)){
         const ag = g.createLinearGradient(0, hipY - h*0.05, 0, botY);
         ag.addColorStop(0, o.hi); ag.addColorStop(0.45, o.body); ag.addColorStop(1, o.lo);
         g.fillStyle = ag;
-        g.beginPath();
-        const aw = 0.115 * (B.arch || 1), ah = 0.085 * (B.arch || 1);
-        g.ellipse(w*sx, hipY + h*0.030, w*aw, h*ah, 0, 0, 6.2832);
+        carArchPath(g, w, h, S, sx);
         g.fill();
         /* the crown highlight */
         g.fillStyle = 'rgba(255,255,255,.20)';
@@ -4970,6 +5252,9 @@ function paintCar(o){
       for(const sx of [0.285, 0.695]) g.fillRect(w*sx, bY + h*0.040, w*0.020, h*0.020);
     }
 
+    /* the door mirrors, which the tail never drew - see `carMirrors` */
+    if(B) carMirrors(g, w, h, S, o);
+
     /* the shoulder crease that runs across every one of them */
     g.strokeStyle = 'rgba(255,255,255,.16)'; g.lineWidth = Math.max(1, h*0.006);
     g.beginPath();
@@ -4987,7 +5272,6 @@ function paintCar(o){
       const wid = 0.42 + (B ? B.wide : 0.03);
       /* shared by the dome shell AND the screen, so they cannot drift apart */
       const springX = 0.5 - wid + 0.02;
-      let cabinPath = null;
       const springY = h*o.bodyTop + h*0.02;
       const apex    = h*o.cabinTop + h*0.015;
       const cg = g.createLinearGradient(0, h*o.cabinTop, 0, h*o.bodyTop+4);
@@ -4999,74 +5283,16 @@ function paintCar(o){
          parallel-sided, which is the other half of why they looked like toys. */
       const cw = (B ? B.cabW*0.80 : 0.60), co = (B ? B.cabOff : 0);
       const rad = w * (B ? B.roofR*0.5 + 0.02 : 0.05);
-      if(B && B.dome){
-        /* ---- a full-width dome ------------------------------------------
-           The 911 roofline is one continuous arc from the top of one rear
-           arch across to the other — there is no flat roof panel and no
-           separate pillar, which is the whole shape of the car. Drawn as a
-           single curve springing from the shoulders rather than a rounded
-           box sitting on the deck.
-           ---------------------------------------------------------------- */
-        /* Springs from the ARCHES, not from the cabin width — the first pass
-           used the greenhouse dimension and covered barely half the car. */
-        /* The control points were only 0.02 in from the springing line, so the
-           curve went up almost vertically and then flattened — a pointed
-           marquee rather than a dome. For a smooth arc they belong about a
-           third of the span in, and the apex a little below the old one. */
-        const span = (1 - springX*2), ctl = span*0.30;
-        g.beginPath();
-        g.moveTo(w*springX, springY);
-        g.bezierCurveTo(w*(springX+ctl), apex,
-                        w*(1-springX-ctl), apex,
-                        w*(1-springX), springY);
-        g.lineTo(w*(1-springX), springY + h*0.03);
-        g.lineTo(w*springX, springY + h*0.03);
-        g.closePath(); g.fill();
-        /* the DOME sets the clip path too — it did not, so CREST fell back to
-           a plain rect and its stripe overhung the arc by seven pixels */
-        cabinPath = function(){
-          g.beginPath();
-          g.moveTo(w*springX, springY);
-          g.bezierCurveTo(w*(springX+ctl), apex,
-                          w*(1-springX-ctl), apex,
-                          w*(1-springX), springY);
-          g.lineTo(w*(1-springX), springY + h*0.03);
-          g.lineTo(w*springX, springY + h*0.03);
-          g.closePath();
-        };
-      } else {
-        /* ---- THE SAME GREENHOUSE AS THE FRONT --------------------------------
-           The rear cabin was a rounded BOX; the front is a shouldered curve
-           springing from the body, and that shape is much better. Same
-           construction here, driven by the same `cabW` and `roofR`, so a car
-           has one roofline seen from either end. */
-        /* ---- IDENTICAL TO THE FRONT ------------------------------------
-           The front springs from `wid*0.80` and pulls its control points to
-           `cabW*0.92 * 0.62`, with the roof line 0.19h above the body. Those
-           are the numbers, verbatim, so the two ends cannot disagree. */
-        const cw3 = (B ? B.cabW*0.92 : 0.46);
-        const spX = 0.5 - wid*0.80;
-        const roofY = h*o.bodyTop - h*0.19;
-        g.beginPath();
-        g.moveTo(w*spX, h*o.bodyTop + h*0.06);
-        g.lineTo(w*spX, h*o.bodyTop + h*0.02);
-        g.quadraticCurveTo(w*(0.5-cw3*0.62), roofY, w*(0.5-cw3*0.46), roofY);
-        g.lineTo(w*(0.5+cw3*0.46), roofY);
-        g.quadraticCurveTo(w*(0.5+cw3*0.62), roofY, w*(1-spX), h*o.bodyTop + h*0.02);
-        g.lineTo(w*(1-spX), h*o.bodyTop + h*0.06);
-        g.closePath(); g.fill();
-        /* keep the shell's own path so the stripe can be clipped to it */
-        cabinPath = function(){
-          g.beginPath();
-          g.moveTo(w*spX, h*o.bodyTop + h*0.06);
-          g.lineTo(w*spX, h*o.bodyTop + h*0.02);
-          g.quadraticCurveTo(w*(0.5-cw3*0.62), roofY, w*(0.5-cw3*0.46), roofY);
-          g.lineTo(w*(0.5+cw3*0.46), roofY);
-          g.quadraticCurveTo(w*(0.5+cw3*0.62), roofY, w*(1-spX), h*o.bodyTop + h*0.02);
-          g.lineTo(w*(1-spX), h*o.bodyTop + h*0.06);
-          g.closePath();
-        };
-      }
+      /* ---- THE GREENHOUSE IS THE OUTLINE'S TOP EDGE (RLG-184) ------------
+         Two copies of it stood here, a dome and a shouldered curve, each with
+         a second copy of itself kept as a clip path for the stripe - four
+         drawings of one roof. `carGreenhousePath` is the one declaration, and
+         the face traces the same one.
+         ---------------------------------------------------------------- */
+      carGreenhousePath(g, w, h, S);
+      g.fill();
+      const cabinPath = function(){ carGreenhousePath(g, w, h, S); };
+
       /* ---- THE ROOF RUN, TRIMMED BY THE GLASS ITSELF --------------------
          Every attempt to compute where the roof ends and the screen begins was
          off by a few pixels, because the roof is a curve and the glass is
@@ -5090,6 +5316,18 @@ function paintCar(o){
         g.restore();
       }
 
+      /* ---- THE SCREEN IS SET INTO THE ROOF, SO IT IS CLIPPED TO IT -------
+         CREST's rear pane was drawn nine pixels ABOVE the dome it sits in, and
+         it was the topmost ink on the whole car - so the tail measured four
+         pixels taller than its own face on the garage card, from a piece of
+         glass floating over the roof.
+
+         Clipping it to the greenhouse is the general answer rather than a
+         nudged number: a detail inside the outline cannot become the outline,
+         whatever it is and whichever end draws it.
+         ---------------------------------------------------------------- */
+      g.save();
+      cabinPath(); g.clip();
       // rear glass
       const gg = g.createLinearGradient(0, h*o.cabinTop, 0, h*o.bodyTop);
       gg.addColorStop(0,'#4a5a6e'); gg.addColorStop(0.35,'#141a24'); gg.addColorStop(1,'#0b0e14');
@@ -5137,9 +5375,8 @@ function paintCar(o){
         g.quadraticCurveTo(w*(0.5+cw4*0.56), roofY2, w*(1-spX2), h*o.bodyTop - h*0.005);
         g.closePath(); g.fill();
       }
+      g.restore();
     }
-    /* the wing, and each shape wears a different one */
-    const wing = B ? B.wing : 'lip';
     if(o.stripes){
       /* FATTER on a supercar — 0.055 on a body this wide read as pinstripes.
          0.085 with a narrower gap is a proper pair of racing stripes. */
@@ -5193,43 +5430,9 @@ function paintCar(o){
       }
     }
 
-    if(o.spoiler && wing === 'high'){
-      /* a proper aerofoil on stanchions, clear of the deck */
-      g.fillStyle=o.lo;
-      rr(g, w*0.06, h*o.bodyTop-h*0.15, w*0.88, h*0.05, 3); g.fill();
-      g.fillStyle='rgba(255,255,255,.16)';
-      rr(g, w*0.06, h*o.bodyTop-h*0.15, w*0.88, h*0.016, 3); g.fill();
-      g.fillStyle=o.body;
-      g.fillRect(w*0.19, h*o.bodyTop-h*0.11, w*0.055, h*0.10);
-      g.fillRect(w*0.755, h*o.bodyTop-h*0.11, w*0.055, h*0.10);
-    } else if(o.spoiler && wing === 'ducktail'){
-      /* GT3 RS: a swan-neck wing held HIGH above the deck on two uprights that
-         hang from the top of the blade, with a small ducktail below it */
-      g.fillStyle=o.lo;
-      g.beginPath();
-      g.moveTo(w*0.14, h*o.bodyTop);
-      g.quadraticCurveTo(w*0.5, h*o.bodyTop-h*0.055, w*0.86, h*o.bodyTop);
-      g.lineTo(w*0.86, h*o.bodyTop+h*0.02);
-      g.lineTo(w*0.14, h*o.bodyTop+h*0.02);
-      g.closePath(); g.fill();
-      /* the uprights, hanging from above */
-      g.fillStyle='#15171b';
-      g.fillRect(w*0.285, h*o.bodyTop-h*0.20, w*0.028, h*0.20);
-      g.fillRect(w*0.687, h*o.bodyTop-h*0.20, w*0.028, h*0.20);
-      /* the blade, wider than the car */
-      g.fillStyle='#1a1d22';
-      rr(g, w*0.015, h*o.bodyTop-h*0.235, w*0.97, h*0.042, 2); g.fill();
-      g.fillStyle='rgba(255,255,255,.18)';
-      rr(g, w*0.015, h*o.bodyTop-h*0.235, w*0.97, h*0.013, 2); g.fill();
-      /* end plates */
-      g.fillStyle='#15171b';
-      g.fillRect(w*0.005, h*o.bodyTop-h*0.245, w*0.026, h*0.062);
-      g.fillRect(w*0.969, h*o.bodyTop-h*0.245, w*0.026, h*0.062);
-    } else if(o.spoiler){
-      /* a shallow blade along the deck */
-      g.fillStyle=o.lo;
-      rr(g, w*0.12, h*o.bodyTop-h*0.05, w*0.76, h*0.038, 2); g.fill();
-    }
+    /* the wing, from the one declaration the face traces too (RLG-184) */
+    if(o.spoiler) carWing(g, w, h, S, o);
+
     /* ---- the rear end, drawn from the real cars ------------------------
        F  four ROUND lamps, two a side, a slim dark band between them and
           twin round pipes low in a finned diffuser  (SF90)
@@ -5633,6 +5836,14 @@ const SUPER_BODIES  = ['STALLION','MATADOR','CREST'];
    ---------------------------------------------------------------------- */
 const FORMULA_BODIES = ['VECTOR','APEX','COMET'];
 function isFormula(k){ return FORMULA_BODIES.indexOf(k) >= 0; }
+/* the same question asked of the BODY OBJECT rather than of its key. A rival is
+   built from the object and does not always carry the key with it, and a test
+   that only reads the key drew a supercar tail on an open-wheeler once already. */
+function isFormulaBody(B){
+  if(!B) return false;
+  for(const k of FORMULA_BODIES) if(BODY[k] === B) return true;
+  return false;
+}
 function classOf(k){
   if(isFormula(k)) return 'formula';
   return SPORTS_BODIES.indexOf(k) >= 0 ? 'sports' : 'super';
@@ -5676,7 +5887,7 @@ function rivalFront(bodyKey, paintKey, striped){
     ? sprite(rz[0], rz[1], paintRigFront(rs.rig, Object.assign({}, L, pt)))
     /* `bodyType`, not `kind` - `paintFront` reads the body from there, and
        passing the wrong field is what once put one nose on five supercars */
-    : sprite(230,215, paintFront(Object.assign({ bodyType:bodyKey }, L, pt)));
+    : sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({ bodyType:bodyKey }, L, pt)));
   return RIVAL_FRONT_SP[k];
 }
 
@@ -5692,6 +5903,19 @@ function rivalFront(bodyKey, paintKey, striped){
    traffic build and in the fleet sheet - and the fourth copy was the one that
    was wrong. There is one now.
    ------------------------------------------------------------------------- */
+/* ---- A CAR'S SPRITE BOX, AND IT IS ONE BOX (RLG-184) --------------------
+   The tail was painted into 220x168 and the face into 230x215, and every
+   dimension in both painters is a fraction of the box. The same fraction is a
+   different shape in a box of a different aspect ratio, so the two ends of a
+   supercar could not be made to agree however carefully their numbers were
+   matched - which is what several attempts at matching them had been doing.
+
+   The rigs learned this already: "the SAME box as its tail. A different one is
+   a different car." The face keeps the tail's box now, and the tail's box is
+   unchanged - so nothing about the car you follow down the road has moved.
+   ------------------------------------------------------------------------- */
+const CAR_BOX = [220, 168];
+
 function rigBox(rig){
   return rig === 'muscle' ? [210,158]
        : rig === 'cop'    ? [200,164]
@@ -5771,7 +5995,7 @@ function buildPlayer(){
                                           player:true, marque:shape.rear,
                                           stripes:optStripes && stripesAllowed() }, rigPaint)));
   } else {
-    SP.player = sprite(220,168, paintCar(Object.assign({
+    SP.player = sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({
       cabin:true, spoiler:true, shape, bodyKey:optBody, force:!!shape.force,
       bar:shape.bar,
       bodyTop:shape.bodyTop, cabinTop:shape.cabinTop,
@@ -5789,7 +6013,7 @@ function buildPlayer(){
        same as the fleet sheet builds. Built here rather than on demand, so the
        cost is paid once per change of car and paint instead of once per frame
        of a menu. */
-    SP.playerFront = sprite(230,215, paintFront(Object.assign({
+    SP.playerFront = sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({
       bodyType:optBody, marque:shape.rear, player:true,
       stripes:optStripes && stripesAllowed(),
       lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -5837,7 +6061,7 @@ function buildFleet(){
             player:true, marque:rs.rear, stripes:true,
             lamp:'#d61b3c', lamp2:'#ff7a86'
           }, PAINT[k])))
-        : sprite(220,168, paintCar(Object.assign({
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({
             cabin:true, spoiler:true, shape:rs, bodyKey:bk, stripes:true,
             bodyTop:rs.bodyTop, cabinTop:rs.cabinTop,
             lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -5847,7 +6071,7 @@ function buildFleet(){
             player:true, marque:rs.rear,
             lamp:'#d61b3c', lamp2:'#ff7a86'
           }, PAINT[k])))
-        : sprite(220,168, paintCar(Object.assign({
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({
             cabin:true, spoiler:true, shape:rs, bodyKey:bk,
             bodyTop:rs.bodyTop, cabinTop:rs.cabinTop,
             lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -5881,7 +6105,7 @@ function buildFleet(){
     /* built from its OWN record now that it has one, so its stats and its
        picture can never drift apart */
     const SC = BODY['SUPERCRUISER'];
-    SP.superCop = sprite(220,168, paintCar(Object.assign({}, SC, {
+    SP.superCop = sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({}, SC, {
       body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0',
       lamp:'#d61b3c', lamp2:'#ff7a86',
       cabin:true, spoiler:true, shape:SC,
@@ -5890,7 +6114,7 @@ function buildFleet(){
     /* and its face, for the mirror. `paintFront` reads the body from
        `bodyType`, not from `shape` - the same field that once put one nose on
        five supercars. */
-    SP.superCopFront = sprite(230,215, paintFront(Object.assign({}, SC, {
+    SP.superCopFront = sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({}, SC, {
       body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0',
       lamp:'#d61b3c', lamp2:'#ff7a86',
       bodyType:'SUPERCRUISER', marque:'CRUISER', player:true, stripes:false, force:true, bar:'police'
@@ -5987,7 +6211,7 @@ function buildFleet(){
     if(!rs || rs.rig) continue;
     const key = bk.toLowerCase();
     TRAFFIC_SP[key] = TRAFFIC_PAINT.map((c,i2) =>
-      sprite(220,168, paintCar(Object.assign({
+      sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({
         cabin:true, spoiler:true, shape:rs, bodyKey:bk,
         bodyTop:rs.bodyTop, cabinTop:rs.cabinTop,
         lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -6029,7 +6253,7 @@ function buildFleet(){
     const rs = BODY[bk];
     if(!rs || rs.rig) continue;
     FRONT_SP[bk.toLowerCase()] = TRAFFIC_PAINT.map((c,i2) =>
-      sprite(230,215, paintFront(Object.assign({ bodyType:bk }, rs, trafficPaint(i2)))));
+      sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({ bodyType:bk }, rs, trafficPaint(i2)))));
   }
 
   /* the taxi has ONE colour, because a cab is yellow */
@@ -26969,8 +27193,22 @@ requestAnimationFrame(frameLoop);
       catch(e){ return null; }
       const out = [];
       for(let i = 0; i < N; i++){
-        const frac = mirror ? (N - 1 - i) : i;
-        const x = Math.min(box.w - 1, Math.floor((frac + 0.5) / N * box.w));
+        /* ---- MIRRORED BY THE PIXEL, NOT BY THE COLUMN NUMBER -------------
+           Reversing the column ORDER samples column i of one end against
+           column N-1-i of the other, and the two land on pixels that are not
+           each other's reflection: `floor` rounds both toward the same side of
+           the box, so the pair sits one pixel off centre. Any edge that falls
+           exactly on a sample then reads as ink at one end and as nothing at
+           the other, and the check reports a whole column of disagreement for
+           two drawings that are identical.
+
+           It cost two false failures before it was found: an AMBULANCE light
+           bar spanning exactly 0.24 to 0.76 of the sprite, and a VAN whose
+           shadow ended on the sampled column. Reflecting the pixel index makes
+           column i of the face the true mirror of column i of the tail.
+           -------------------------------------------------------------- */
+        let x = Math.min(box.w - 1, Math.floor((i + 0.5) / N * box.w));
+        if(mirror) x = box.w - 1 - x;
         let top = -1, bot = -1;
         for(let y = 0; y < box.h; y++){
           if(d[(y * box.w + x) * 4 + 3] > 8){ if(top < 0) top = y; bot = y; }
@@ -27495,7 +27733,7 @@ requestAnimationFrame(frameLoop);
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1],
             paintRig(rs.rig, Object.assign({ player:true, marque:rs.rear,
             lamp:'#d61b3c', lamp2:'#ff7a86' }, rigPt)))
-        : sprite(220,168, paintCar(Object.assign({ cabin:true, spoiler:true, shape:rs,
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({ cabin:true, spoiler:true, shape:rs,
             bodyKey:k, bodyTop:rs.bodyTop, cabinTop:rs.cabinTop, force:!!rs.force,
             lamp:'#d61b3c', lamp2:'#ff7a86' }, pCol))));
       const front = rs.rig
@@ -27507,7 +27745,7 @@ requestAnimationFrame(frameLoop);
            meant every supercar fell back to MATADOR and the sheet showed one
            nose on five cars. The size is the one the garage uses, 230x215,
            because a front is taller than a back. */
-        : sprite(230,215, paintFront(Object.assign({ bodyType:k, marque:rs.rear,
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({ bodyType:k, marque:rs.rear,
             player:true, lamp:'#d61b3c', lamp2:'#ff7a86' }, pCol)));
       /* ---- STRIPES ARE PAINT, AND NOT EVERY CAR TAKES THEM --------------
          `stripesOn` is the garage's own rule, asked about a body rather than
@@ -27524,14 +27762,14 @@ requestAnimationFrame(frameLoop);
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1],
             paintRig(rs.rig, Object.assign({ player:true, marque:rs.rear,
             stripes:true, lamp:'#d61b3c', lamp2:'#ff7a86' }, rigPt)))
-        : sprite(220,168, paintCar(Object.assign({ cabin:true, spoiler:true, shape:rs,
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({ cabin:true, spoiler:true, shape:rs,
             bodyKey:k, bodyTop:rs.bodyTop, cabinTop:rs.cabinTop, force:!!rs.force,
             stripes:true, lamp:'#d61b3c', lamp2:'#ff7a86' }, pCol))));
       const frontS = !striped ? null : (rs.rig
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1],
             paintRigFront(rs.rig, Object.assign({ player:true, marque:rs.rear,
             stripes:true, lamp:'#d61b3c', lamp2:'#ff7a86' }, rigPt)))
-        : sprite(230,215, paintFront(Object.assign({ bodyType:k, marque:rs.rear,
+        : sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({ bodyType:k, marque:rs.rear,
             player:true, stripes:true, lamp:'#d61b3c', lamp2:'#ff7a86' }, pCol))));
       const base = rs.rig ? 'rig:'+rs.rig : 'car:'+k;
       add(liv.length > 1 ? k + ' \u00B7 ' + pKey : k,
@@ -28065,7 +28303,7 @@ requestAnimationFrame(frameLoop);
       const pa=Object.assign({lamp:"#d61b3c",lamp2:"#ff7a86",player:true,marque:B.rear},base);
       let im;
       if(B.rig){const sz=sizeFor(B.rig); im=sprite(sz[0],sz[1],paintRigFront(B.rig,pa));}
-      else im=sprite(230,215,paintFront(Object.assign({bodyType:bt},pa)));
+      else im=sprite(CAR_BOX[0], CAR_BOX[1],paintFront(Object.assign({bodyType:bt},pa)));
       const yy=y+rw*FRONT,bw=CW-28,bh=bw*im.height/im.width;
       g.drawImage(im,cl*CW+14,yy+140-bh,bw,bh); lab(bt,cl*CW+CW/2,yy+160);
     });
