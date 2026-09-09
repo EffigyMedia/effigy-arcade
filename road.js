@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.61';
+window.ROAD_BUILD = '0.13.62';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4791,7 +4791,7 @@ function paintFormulaTail(g, w, h, o, B, lamps){
   drawMarque(g, kind, w*0.5, S.wgY + h*0.038, h*0.030);
 }
 
-function paintFormulaFace(g, w, h, o, B, parts){
+function paintFormulaFace(g, w, h, o, B, lamps, parts){
   const S = formulaShell(w, h);
   formulaTyres(g, w, h, S);
 
@@ -4859,6 +4859,29 @@ function paintFormulaFace(g, w, h, o, B, parts){
   /* the front wing itself: at this end it is the one you are standing at */
   formulaLowWing(g, w, h, S, true);
 
+  /* ---- HEADLIGHTS, RULED IN BY THE OWNER (RLG-191) ---------------------
+     Owner, 2026-09-09, asked whether the formula car's headlight was actually
+     wired. IT HAD NO LAMP AT ALL - this painter declared nothing, so the blank
+     headlight frame on the fleet sheet was accurate rather than a fault, and a
+     formula rival in the mirror after dark showed nothing. Given the choice
+     between leaving them unlit, a marker light and real headlights, the owner
+     ruled for headlights.
+
+     A pair on the tub, either side of the nose cone, INSIDE the outline both
+     ends share - a lamp is a detail, and details are what the two ends are
+     allowed to differ about. `head` is the name the mirror asks for, so they
+     light with every other car on the road and need no wiring of their own.
+     ------------------------------------------------------------------- */
+  const hlW = 0.058, hlH = h*0.040, hlY = S.bodyBot - h*0.052;
+  decl(g, lamps, 'head', (gg, on) => {
+    for(const hx of [0.405, 0.537]){
+      gg.fillStyle = headOf(on);
+      rr(gg, w*hx, hlY, w*hlW, hlH, h*0.010); gg.fill();
+      gg.fillStyle = headHiOf(on);
+      rr(gg, w*(hx+0.010), hlY + hlH*0.20, w*(hlW-0.020), hlH*0.34, h*0.006); gg.fill();
+    }
+  });
+
   /* the rear wing, at the far end of the car and in its own shade */
   formulaWing(g, w, h, S, false);
 }
@@ -4890,7 +4913,7 @@ function paintFront(o){
     groundShadow(g, w, h);
 
     if(isFormula(kind)){
-      paintFormulaFace(g, w, h, o, B, parts);
+      paintFormulaFace(g, w, h, o, B, lamps, parts);
       return;
     }
 

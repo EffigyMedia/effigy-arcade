@@ -14,6 +14,16 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-62"></a>
+## [0.13.62] - 2026-09-09
+- Added: **headlights on the three formula cars, wired.** Owner, 2026-09-09, asked whether the
+  formula headlight was actually wired: it had no lamp at all, so the blank headlight frame on the
+  fleet sheet was accurate rather than a fault, and a formula rival in the mirror after dark showed
+  nothing. A real single-seater has none and the 2026-08-29 ruling already says so of its indicators,
+  so the question went to the owner, who ruled for real headlights. A pair on the tub either side of
+  the nose cone, inside the shared outline, declared under `head` so the existing night logic drives
+  them. See [RLG-191](../fragments/RLG-191.md).
+
 <a id="v0-13-61"></a>
 ## [0.13.61] - 2026-09-09
 - Fixed: **the CREST's dome keeps a roof rail above its glass.** Owner, 2026-09-09: "can we add a
