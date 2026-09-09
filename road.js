@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.65';
+window.ROAD_BUILD = '0.13.66';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -531,6 +531,22 @@ function timeFlash(label, secs){ return label + '  ' + timeAward(secs); }
 let timedRun = true;
 /* stripes are paint, not a body — any car can wear them */
 let optStripes = false;
+/* ---- THE NOVELTY VEHICLES CAN BE PUT AWAY (owner, 2026-09-09) -----------
+   Owner: "there needs to be a toggle that hides the unlocked production and
+   utility vehicles from the garage to prevent clutter since they are novelty
+   vehicles."
+
+   THEY ARE A REWARD THAT MAKES THE GARAGE WORSE THE MOMENT IT IS COLLECTED.
+   Production and utility are the two SECRET unlocks - fifty and twenty-five
+   miles of test driving - and until they are won they are not listed at all.
+   Winning them adds seven cars nobody picks between two they do, and the
+   player pays for that on every garage visit for the rest of the save.
+
+   SO IT IS A TOGGLE AND NOT A SETTING THAT UNDOES THE UNLOCK. Off, the cars
+   are still owned, still in the save, still one press from coming back. The
+   flag says what is SHOWN and nothing else.
+   -------------------------------------------------------------------- */
+let optNovelty = true;
 /* ---- WHAT TIME YOU SET OFF ------------------------------------------------
    The day cycle has always existed and always started wherever the last run
    left it. This picks the phase a run BEGINS at; the four minutes then run on
@@ -24886,6 +24902,20 @@ function showGarage(){
         ? '<button class="go ghost" data-act="stripes">STRIPES \u00B7 <b>' +
             (optStripes ? 'ON' : 'OFF') + '</b></button>'
         : '') +
+      /* ---- AND THE NOVELTY VEHICLES, ONCE THERE ARE ANY ------------------
+         The control appears the moment one of the two secret classes is won
+         and not before, for the same reason those cars are absent rather than
+         greyed until then: a switch for something the player has never seen
+         advertises a thing the game is not ready to explain.
+
+         It names what it SHOWS rather than what it hides, so ON is the fuller
+         garage and OFF is the quiet one - the same way the stripes control
+         above names what it adds.
+         ---------------------------------------------------------------- */
+      (noveltyOwned()
+        ? '<button class="go ghost" data-act="novelty">WORK VEHICLES \u00B7 <b>' +
+            (optNovelty ? 'SHOWN' : 'HIDDEN') + '</b></button>'
+        : '') +
       /* ---- THE MODE CONTROL, AND WHY IT MAY BE SHUT (RLG-115) ------------
          Owner, 2026-09-05, choosing between three shapes for what the player
          sees: the modes GREY OUT WITH THE REASON GIVEN. Not hidden - a control
@@ -24943,6 +24973,18 @@ function showGarage(){
       stripes: () => { if(stripesAllowed()) optStripes = !optStripes;
                        buildPlayer();
                        if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { stripes:optStripes });
+                       showGarage(); },
+      /* ---- HIDING THE CAR YOU ARE STANDING IN ---------------------------
+         `enforceCarRules` is what makes this safe, and it is called rather than
+         reimplemented here: it already holds the rule that a car the garage
+         will not list must not stay selected, and it swaps to one the garage
+         WILL list. So turning the toggle off while sitting in the van moves you
+         to a car you can see, and turning it back on leaves you there rather
+         than dragging you back into the van.
+         ---------------------------------------------------------------- */
+      novelty: () => { optNovelty = !optNovelty;
+                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { novelty:optNovelty });
+                       enforceCarRules();
                        showGarage(); },
       mode:  () => {
         /* the button is `disabled` as well, so this is the second lock rather
@@ -25082,6 +25124,25 @@ function unlockHow(k){
   const need = BODY_CLASS[k];
   return (need && UNLOCK_HOW[need]) || '';
 }
+/* ---- WHAT COUNTS AS A NOVELTY VEHICLE ---------------------------------
+   The two SECRET unlock classes and nothing else. A cruiser is not a novelty -
+   it is police, it has its own unlock and its own reason to be driven - and a
+   sports car is not one either. Written as a test on the CLASS rather than as
+   a list of bodies, so a van added tomorrow is covered without a second edit.
+   ---------------------------------------------------------------------- */
+function isNovelty(k){
+  const c = BODY_CLASS[k];
+  return c === 'production' || c === 'utility';
+}
+/* whether the toggle has anything to act on. A control that hides nothing is
+   worse than no control: it asks the player to make a choice that changes
+   their screen not at all, and it teaches them that the button is broken. */
+function noveltyOwned(){
+  return Object.keys(BODY).some(k =>
+    !BODY[k].npc && isNovelty(k) && !carLocked(k) &&
+    (!CFG.raceOnlyGarage || raceLegal(k)));
+}
+
 /* the cars that can actually be driven - what `garageBodies` used to return */
 function playableBodies(){
   return garageBodies().filter(k => !carLocked(k));
@@ -25128,6 +25189,18 @@ function garageBodies(){
      engine never asks which game it is.
      ------------------------------------------------------------------- */
   if(CFG.raceOnlyGarage) ks = ks.filter(raceLegal);
+  /* ---- AND THE NOVELTY VEHICLES CAN BE PUT AWAY (owner, 2026-09-09) -----
+     `optNovelty` hides the production and utility cars once they are won. It
+     hides them from the LIST, which is the only thing it touches: the unlock
+     flags are untouched, `carLocked` still says they are yours, and turning it
+     back on returns them exactly as they were.
+
+     IT RUNS AFTER THE CIRCUIT FILTER because the two rules are different in
+     kind. A circuit will not list a bus at all, ever; this is a preference
+     about a garage that would list one. Where both apply the circuit has
+     already removed them and this does nothing, which is correct.
+     ------------------------------------------------------------------- */
+  if(!optNovelty) ks = ks.filter(k => !isNovelty(k));
   /* never hand back an empty list: the arrows would divide by zero and the
      garage would have no car to draw */
   return ks.length ? ks : ['ROADSTER'];
@@ -25166,7 +25239,19 @@ function enforceCarRules(){
      ------------------------------------------------------------------- */
   const ks = garageBodies();
   if(ks.indexOf(optBody) < 0){
-    optBody = ks[0];
+    /* ---- MOVE THEM TO A CAR, NOT TO A SILHOUETTE (RLG-194) -------------
+       `garageBodies` lists the cars still to be WON as well as the cars owned,
+       so `ks[0]` can be a locked silhouette - and a player who has just put the
+       work vehicles away would land on a card reading `???` with a DRIVE button
+       that refuses. Being moved at all is a small cost; being moved onto
+       something you cannot drive is a fault.
+
+       The novelty toggle is what made this reachable. Before it, the only thing
+       that removed your car from the list was a circuit garage refusing a bus,
+       and that path happens before a player ever sees the card.
+       ---------------------------------------------------------------- */
+    const play = playableBodies();
+    optBody = play.length ? play[0] : ks[0];
     syncPaintForBody();
     buildPlayer();
     syncBoxClass();
@@ -26058,6 +26143,7 @@ if (AR && AR.options) AR.options.define([
     if(typeof g0.manual === 'boolean') optManual = g0.manual;
     if(typeof g0.timed === 'boolean') timedRun = g0.timed;
     if(typeof g0.stripes === 'boolean') optStripes = g0.stripes;
+    if(typeof g0.novelty === 'boolean') optNovelty = g0.novelty;
     /* range-checked rather than trusted: a save written by a future build with
        more times in it must not index past the end of this build's table */
     if(typeof g0.time === 'number' && g0.time >= 0 && g0.time < TIMES.length)

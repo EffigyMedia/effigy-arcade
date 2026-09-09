@@ -14,6 +14,20 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-66"></a>
+## [0.13.66] - 2026-09-09
+- Added: **a garage toggle that puts the work vehicles away.** Owner, 2026-09-09: "there needs to be a
+  toggle that hides the unlocked production and utility vehicles from the garage to prevent clutter
+  since they are novelty vehicles." Winning the two secret classes takes the garage from ten cars to
+  seventeen, and the seven added are the ones nobody picks. `WORK VEHICLES - SHOWN / HIDDEN` filters
+  the list only: the unlocks are untouched and turning it back on returns the same cars. The control
+  is absent until one of the classes is won. See [RLG-194](../fragments/RLG-194.md).
+- Fixed: **being moved onto a locked silhouette.** `enforceCarRules` moves the player off a car the
+  garage will not list, and it moved them to the first car in the list - which can be a car still to
+  be won, so hiding the work vehicles while sitting in the van landed on a card reading `???` with a
+  DRIVE button that refuses. It takes the first playable car now.
+- Added: `tools/novelty-test.py`, which checks WHICH cars moved rather than that the list got shorter.
+
 <a id="v0-13-65"></a>
 ## [0.13.65] - 2026-09-09
 - Changed: **the pickup's cab is shaded at the rear, where it is the far end of the truck.** Owner,
