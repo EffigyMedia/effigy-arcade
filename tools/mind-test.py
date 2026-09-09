@@ -136,11 +136,11 @@ def main():
         mix = {}
         for t in ORDINARY + SPORTY:
             m = page.evaluate('([t, n]) => window.__probe.road.sampleMinds(t, n)', [t, SAMPLE])
-            tot = m['civilian'] + m['speeder'] + m['racer']
+            tot = m['civilian'] + m['speeder'] + m['outlaw']
             mix[t] = {'civ': m['civilian'] / tot, 'spd': m['speeder'] / tot,
-                      'rac': m['racer'] / tot, 'cruise': m['cruise'],
+                      'rac': m['outlaw'] / tot, 'cruise': m['cruise'],
                       'vmax': page.evaluate('(t) => window.__probe.road.typeVmax(t)', t)}
-            print('      %-7s civilian %4.0f%%   speeder %4.0f%%   racer %4.1f%%   can do %3.0f mph'
+            print('      %-7s civilian %4.0f%%   speeder %4.0f%%   outlaw %4.1f%%   can do %3.0f mph'
                   % (t, mix[t]['civ'] * 100, mix[t]['spd'] * 100, mix[t]['rac'] * 100,
                      mix[t]['vmax'] * 200))
 
@@ -206,20 +206,20 @@ def main():
         # assigned every driver the same mind. Traffic turns over as you drive, so the run watches
         # and keeps the most it ever saw of each.
         page.keyboard.down('ArrowUp')
-        best = {'seen': 0, 'civilian': 0, 'speeder': 0, 'racer': 0, 'overLimit': 0}
+        best = {'seen': 0, 'civilian': 0, 'speeder': 0, 'outlaw': 0, 'overLimit': 0}
         mismatched = 0
         for _ in range(24):
             page.wait_for_timeout(900)
             m = page.evaluate("() => window.__probe.road.minds()")
-            if m['civilian'] + m['speeder'] + m['racer'] != m['seen']:
+            if m['civilian'] + m['speeder'] + m['outlaw'] != m['seen']:
                 mismatched += 1
             for k in best:
                 if m[k] > best[k]:
                     best[k] = m[k]
         page.keyboard.up('ArrowUp')
-        print('      at their most, over 24 looks: %d cars, %d civilian, %d speeder, %d racer, '
+        print('      at their most, over 24 looks: %d cars, %d civilian, %d speeder, %d outlaw, '
               '%d actually over the limit'
-              % (best['seen'], best['civilian'], best['speeder'], best['racer'],
+              % (best['seen'], best['civilian'], best['speeder'], best['outlaw'],
                  best['overLimit']))
         res.check(best['seen'] > 10, 'there was traffic to look at', '%d cars' % best['seen'])
         res.check(mismatched == 0,

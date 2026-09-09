@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-67"></a>
+## [0.13.67] - 2026-09-09
+- Changed: **the aggressive traffic personality is an OUTLAW, and a race opponent is a RACER.** Owner,
+  2026-09-09: "we need to rename the racer personality to outlaw and the rival personality to racer."
+  The game called the lawbreaker a racer and the competitor a rival, which is the wrong way round in a
+  product that has both on the same road. Nothing about behaviour changed - same target speed, same
+  merge urge, same spawn odds. `mind-test.py` moved with it because it reads the personality counts by
+  key. See [RLG-195](../fragments/RLG-195.md).
+
 <a id="v0-13-66"></a>
 ## [0.13.66] - 2026-09-09
 - Added: **a garage toggle that puts the work vehicles away.** Owner, 2026-09-09: "there needs to be a

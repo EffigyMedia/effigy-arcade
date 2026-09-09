@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.66';
+window.ROAD_BUILD = '0.13.67';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -598,7 +598,7 @@ const COP_PAINT = {
    ------------------------------------------------------------------------ */
 /* how often a race opponent wears stripes. A chance rather than a rule: at 1.0
    every grid is a team, and at 0 the signal does not exist (RLG-117). */
-let RIVAL_STRIPES = 0.35;
+let RACER_STRIPES = 0.35;
 const STRIPE_BODIES = { STALLION:1, MATADOR:1, CREST:1,
                         ROADSTER:1, TUNER:1, MUSCLE:1,
                         tuner:1, muscle:1 };
@@ -958,7 +958,7 @@ var snd = {
       /* the same BODY the driveable version uses */
       /* ---- A RIVAL IS ITS OWN CAR, NOT A GENERIC ONE ------------------
          `rigBody()[c.type]` maps a TRAFFIC TYPE (a rig name) to a body. A
-         RACER has no `type` at all - it carries `body`, a BODY key - so every
+         An OUTLAW has no `type` at all - it carries `body`, a BODY key - so every
          rival fell through to `B2 = null` and was voiced at pitch 1.0 against
          a shared 0.9 ceiling. Eleven cars of three different models all sounded
          like the same engine. `c.body` is preferred where it exists. */
@@ -6107,13 +6107,13 @@ function classOf(k){
   if(isFormula(k)) return 'formula';
   return SPORTS_BODIES.indexOf(k) >= 0 ? 'sports' : 'super';
 }
-function rivalBodies(){
+function racerBodies(){
   const c = classOf(optBody);
   return c === 'sports' ? SPORTS_BODIES : c === 'formula' ? FORMULA_BODIES : SUPER_BODIES;
 }
 /* kept for the sprite pre-build, which needs every body a rival might use */
-const RIVAL_BODIES = SPORTS_BODIES.concat(SUPER_BODIES).concat(FORMULA_BODIES);
-const RIVAL_SP = {};
+const RACER_BODIES = SPORTS_BODIES.concat(SUPER_BODIES).concat(FORMULA_BODIES);
+const RACER_SP = {};
 let TRAFFIC_SP = {}, FRONT_SP = {};
 /* ---- A RIVAL'S FACE, BUILT WHEN IT IS FIRST WANTED -----------------------
    Every racer in the mirror was drawn as the simplified block: the front cache
@@ -6130,24 +6130,24 @@ let TRAFFIC_SP = {}, FRONT_SP = {};
    `null` is cached as well as a sprite. A body that cannot produce a front must
    not be retried sixty times a second.
    ------------------------------------------------------------------------- */
-const RIVAL_FRONT_SP = {};
-function rivalFront(bodyKey, paintKey, striped){
+const RACER_FRONT_SP = {};
+function racerFront(bodyKey, paintKey, striped){
   /* A CAR STRIPED FROM BEHIND AND PLAIN FROM THE FRONT IS TWO CARS. This cache
      is lazy where the rear one is eager, so the flag joins the key rather than
      doubling a loop - each cache keeps the policy it already had (RLG-117). */
   const st = striped && stripesOn(bodyKey);
   const k = (bodyKey || '') + '|' + (paintKey || '') + (st ? '|S' : '');
-  if(RIVAL_FRONT_SP[k] !== undefined) return RIVAL_FRONT_SP[k];
+  if(RACER_FRONT_SP[k] !== undefined) return RACER_FRONT_SP[k];
   const rs = BODY[bodyKey], pt = PAINT[paintKey];
-  if(!rs || !pt) return (RIVAL_FRONT_SP[k] = null);
+  if(!rs || !pt) return (RACER_FRONT_SP[k] = null);
   const L = { lamp:'#d61b3c', lamp2:'#ff7a86', player:true, marque:rs.rear, stripes:st };
   const rz = rs.rig ? rigBox(rs.rig) : null;
-  RIVAL_FRONT_SP[k] = rs.rig
+  RACER_FRONT_SP[k] = rs.rig
     ? sprite(rz[0], rz[1], paintRigFront(rs.rig, Object.assign({}, L, pt)))
     /* `bodyType`, not `kind` - `paintFront` reads the body from there, and
        passing the wrong field is what once put one nose on five supercars */
     : sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({ bodyType:bodyKey }, L, pt)));
-  return RIVAL_FRONT_SP[k];
+  return RACER_FRONT_SP[k];
 }
 
 /* ---- A RIG'S SPRITE BOX, IN ONE PLACE -----------------------------------
@@ -6291,7 +6291,7 @@ function buildFleet(){
   /* one sprite per body AND paint, so a rival's shape and colour are both its
      own — keyed 'MATADOR|CYAN' and cached, which is 36 small canvases */
   /* and the cache only needs the bodies a rival can actually be given */
-  for(const bk of RIVAL_BODIES){
+  for(const bk of RACER_BODIES){
     const rs = BODY[bk];
     for(const k of PAINT_KEYS){
       /* ---- A SPORTS CAR IS NOT A SUPERCAR SHAPE ------------------------
@@ -6315,7 +6315,7 @@ function buildFleet(){
          Eager rather than lazy, because the cache around it is eager and a
          second policy in one table is the thing that drifts. Six bodies against
          the whole paint list, built once at boot. */
-      if(stripesOn(bk)) RIVAL_SP[bk+'|'+k+'|S'] = rs.rig
+      if(stripesOn(bk)) RACER_SP[bk+'|'+k+'|S'] = rs.rig
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1], paintRig(rs.rig, Object.assign({
             player:true, marque:rs.rear, stripes:true,
             lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -6325,7 +6325,7 @@ function buildFleet(){
             bodyTop:rs.bodyTop, cabinTop:rs.cabinTop,
             lamp:'#d61b3c', lamp2:'#ff7a86'
           }, PAINT[k])));
-      RIVAL_SP[bk+'|'+k] = rs.rig
+      RACER_SP[bk+'|'+k] = rs.rig
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1], paintRig(rs.rig, Object.assign({
             player:true, marque:rs.rear,
             lamp:'#d61b3c', lamp2:'#ff7a86'
@@ -6483,7 +6483,7 @@ function buildFleet(){
      painted per frame.
 
      This cache is keyed by traffic TYPE. A racer has a body and a paint and no
-     type at all, so it is served by `rivalFront` instead - which is where the
+     type at all, so it is served by `racerFront` instead - which is where the
      fault came from that made every rival in the mirror a drawn block. */
   FRONT_SP = {};
   /* ---- EVERY VEHICLE THAT CAN BE BEHIND YOU HAS A FACE --------------------
@@ -8898,8 +8898,8 @@ function arriveFade(o){
    you are doing, which makes it an EVENT on its own clock rather than a type in
    a table.
 
-   AS FAST AS IT GOES, WHICH IS THE RACER'S DEFINITION. The personality system
-   chooses a TARGET and the vehicle caps it (RLG-054), so `RACER` here means the
+   AS FAST AS IT GOES, WHICH IS THE OUTLAW'S DEFINITION. The personality system
+   chooses a TARGET and the vehicle caps it (RLG-054), so `OUTLAW` here means the
    driver wants everything the ambulance has and the ambulance's own 0.55 is what
    they get. Nothing about the vehicle changes to let it hurry - that is the rule
    the whole fleet is built on, and an emergency is not an exemption from it.
@@ -8920,9 +8920,9 @@ function spawnEmergency(){
   traffic.push({
     z, lane, x: LANE_X[lane] + rnd(-TRAF_JITTER, TRAF_JITTER) * LANE_W,
     /* everything it has. `cruiseFor` takes the smaller of what the driver wants
-       and what the vehicle can do, and a RACER wants more than this van has. */
-    spd: 0, cruise: cruiseFor('ambulance', RACER),
-    mind: RACER, type: 'ambulance',
+       and what the vehicle can do, and an OUTLAW wants more than this van has. */
+    spd: 0, cruise: cruiseFor('ambulance', OUTLAW),
+    mind: OUTLAW, type: 'ambulance',
     w: typeW('ambulance'), len: typeLen('ambulance'),
     /* the one field that separates it from the ambulance going home */
     emergency: true, barPhase: Math.random() * 6.2832,
@@ -9067,7 +9067,22 @@ const SPEED_LIMIT = 80 / 200;          /* as a fraction of MAX_SPD */
    about 2.8% of traffic and a Racer is about 2% - because the owner asked for
    rarity and this is a supersession rather than an increase.
    ======================================================================== */
-const CIVILIAN = 0, SPEEDER = 1, RACER = 2;
+/* ---- THE THIRD PERSONALITY IS AN OUTLAW (owner, 2026-09-09) -----------
+   Owner: "we need to rename the racer personality to outlaw and the rival
+   personality to racer."
+
+   THE OLD NAMES DESCRIBED TWO DIFFERENT THINGS WITH ONE WORD. This constant is
+   a personality a CIVILIAN DRIVER can have on a public road - somebody who
+   drives their own car as fast as it will go, in traffic, among people who are
+   not racing. The cars you race against on a circuit or in a tournament were
+   `rival`. So "racer" named the lawbreaker and not the competitor, which is
+   the wrong way round in a game that has both.
+
+   OUTLAW is what that driver is, and it leaves `racer` free to mean what
+   everyone assumes it means. Nothing about behaviour changed with the name:
+   the same target speed, the same merge urge, the same spawn odds.
+   ------------------------------------------------------------------- */
+const CIVILIAN = 0, SPEEDER = 1, OUTLAW = 2;
 /* ---- AND A FOURTH MIND THAT IS NOT DRIVING AT ALL (RLG-152) ----------
    Owner, 2026-09-01: "in the forest biome I'd like a very very small chance
    for deer to sprint across the road from one tree line to the other."
@@ -9297,14 +9312,14 @@ function rollMind(t){
      ------------------------------------------------------------------ */
   if(t === 'cop') return CIVILIAN;
   const fast = !!SPORTY[t];
-  if(Math.random() < (fast ? 0.05 : 0.01)) return RACER;
+  if(Math.random() < (fast ? 0.05 : 0.01)) return OUTLAW;
   if(Math.random() < (fast ? 0.30 : 0.10)) return SPEEDER;
   return CIVILIAN;
 }
 /* the speed a driver of this mind WANTS. Civilians keep the limit, which
    RLG-045 puts at 60-80 with the limit itself at 80. */
 function mindCruise(mind){
-  return (mind === RACER   ? rnd(0.58, 0.70)
+  return (mind === OUTLAW  ? rnd(0.58, 0.70)
         : mind === SPEEDER ? rnd(0.42, 0.54)
                            : rnd(0.30, 0.40)) * MAX_SPD;
 }
@@ -9315,10 +9330,10 @@ function mindCruise(mind){
    the personality is read OFF the speed. A driver is what they are doing.
    -------------------------------------------------------------------- */
 function mindFor(v){
-  return v >= 0.55 * MAX_SPD ? RACER
+  return v >= 0.55 * MAX_SPD ? OUTLAW
        : v >  SPEED_LIMIT * MAX_SPD ? SPEEDER : CIVILIAN;
 }
-/* ---- A RACER DOES NOT QUEUE (owner, 2026-09-07) -------------------------
+/* ---- AN OUTLAW DOES NOT QUEUE (owner, 2026-09-07) -----------------------
    "As a racer personality, it shouldn't queue up behind anybody, it should
    always work to get around obstacles and continue as fast as it can."
 
@@ -9346,10 +9361,10 @@ function mindFor(v){
    one traffic car in a hundred, five in a hundred among the sporty bodies, plus
    an ambulance on a call. RLG-054 set those rates and they are untouched.
    ---------------------------------------------------------------------- */
-function mergeUrge(c){ return c.mind === RACER ? 0.99 : 0.86; }
-function mergeEdge(c){ return c.mind === RACER ? 40 : 200; }
+function mergeUrge(c){ return c.mind === OUTLAW ? 0.99 : 0.86; }
+function mergeEdge(c){ return c.mind === OUTLAW ? 40 : 200; }
 function lookAgain(c, lo, hi){
-  return c.mind === RACER ? rnd(0.25, 0.5) : rnd(lo, hi);
+  return c.mind === OUTLAW ? rnd(0.25, 0.5) : rnd(lo, hi);
 }
 /* the cruise a vehicle of this type ends up with, given who is driving it */
 function cruiseFor(t, mind){
@@ -9500,7 +9515,7 @@ function trapWatch(dt){
 
          IT DID NOT GO WITHOUT SAYING, because this loop asks only how fast a
          car is going and an emergency ambulance is the fastest thing in the
-         traffic by design - a RACER at the vehicle's own ceiling, well over the
+         traffic by design - an OUTLAW at the vehicle's own ceiling, well over the
          limit, every single time. A trap would have pulled one over on the
          first pass, siren and all, which is the one thing everybody on the road
          is supposed to be getting out of the way of.
@@ -13639,7 +13654,7 @@ function buildField(){
      out seven STALLION from eleven. */
   /* only the three starting cars — `Object.keys(BODY)` now includes the three
      unlockables, and a grid handing you a FORMULA you have not won is absurd */
-  const kinds = rivalBodies();
+  const kinds = racerBodies();
   const deck = [];
   for(let i=0;i<racers.length;i++) deck.push(kinds[i % kinds.length]);
   for(let i=deck.length-1;i>0;i--){
@@ -13667,7 +13682,7 @@ function buildField(){
        says class and RLG-054 has just put supercars into traffic in muted
        paint; a striped car is unambiguously an opponent, which makes the muted
        one unambiguously not. */
-    r.striped = stripesOn(deck[i]) && Math.random() < RIVAL_STRIPES;
+    r.striped = stripesOn(deck[i]) && Math.random() < RACER_STRIPES;
     const B = BODY[r.body];
     r.vmax  = MAX_SPD * B.vmax;
     r.pull  = accelOf(r.body);
@@ -14113,13 +14128,13 @@ function stepRacers(dt){
          stated as two constants.
 
          Racers keep their SMALLER damage - a rub between two cars racing is the
-         sport, and spinning a rival on contact would empty the field in the
+         sport, and spinning a racer on contact would empty the field in the
          first mile - but the physics is now one function for the whole road.
          ------------------------------------------------------------- */
       const rsev = impactWith(r);
       hurt(8 * rsev, 'racer');
       /* and it hurts them now - but on THEIR end's severity, not yours. Running
-         into the back of a rival is your front and their tail, so the same
+         into the back of a racer is your front and their tail, so the same
          impact costs you the most it can and them the least. `impactWith` left
          their number on the car. */
       hurtRival(r, 8 * (r.hitSev === undefined ? rsev : r.hitSev));
@@ -21394,8 +21409,8 @@ function paintBucket(list, onRoad){
          Interstate made into a circuit racer. That was the whole idea, and the
          angled views were solving a problem the design did not have to have.
          ------------------------------------------------------------- */
-      const box = drawSprite(RIVAL_SP[(r.body||'MATADOR')+'|'+r.paint+(r.striped?'|S':'')]
-                          || RIVAL_SP[(r.body||'MATADOR')+'|'+r.paint] || SP.player,
+      const box = drawSprite(RACER_SP[(r.body||'MATADOR')+'|'+r.paint+(r.striped?'|S':'')]
+                          || RACER_SP[(r.body||'MATADOR')+'|'+r.paint] || SP.player,
                              r.x, r.z, r.w, r.wreck>0?0.85:1, false, damageFxOn(r));
       noteSprite(r);
       /* a boosting rival wears the same flame the player does, drawn additively
@@ -23801,7 +23816,7 @@ function drawMirrorFull(mx, my, mw, mh){
         ? (it.o.superc ? (SP.superCopFront || null) : (FRONT_SP.cop || [])[0] || null)
       : (it.o.type && FRONT_SP[it.o.type])
         ? FRONT_SP[it.o.type][(it.o.paintN|0) % FRONT_SP[it.o.type].length]
-      : it.o.body ? rivalFront(it.o.body, it.o.paint, it.o.striped)
+      : it.o.body ? racerFront(it.o.body, it.o.paint, it.o.striped)
       : null;
 
     /* a car that has just been dropped in behind you is faded up over its first
@@ -27868,14 +27883,14 @@ requestAnimationFrame(frameLoop);
      assigns them from one that also acts on them.
      -------------------------------------------------------------------- */
   API.minds = function(){
-    const out = { civilian:0, speeder:0, racer:0, seen:0, overLimit:0, byType:{} };
+    const out = { civilian:0, speeder:0, outlaw:0, seen:0, overLimit:0, byType:{} };
     for(const c of traffic){
       out.seen++;
-      out[c.mind === RACER ? 'racer' : c.mind === SPEEDER ? 'speeder' : 'civilian']++;
+      out[c.mind === OUTLAW ? 'outlaw' : c.mind === SPEEDER ? 'speeder' : 'civilian']++;
       if((c.spd || c.cruise || 0) > MAX_SPD * SPEED_LIMIT) out.overLimit++;
-      const b = out.byType[c.type] || (out.byType[c.type] = { seen:0, racer:0, speeder:0 });
+      const b = out.byType[c.type] || (out.byType[c.type] = { seen:0, outlaw:0, speeder:0 });
       b.seen++;
-      if(c.mind === RACER) b.racer++;
+      if(c.mind === OUTLAW) b.outlaw++;
       if(c.mind === SPEEDER) b.speeder++;
     }
     return out;
@@ -27909,7 +27924,7 @@ requestAnimationFrame(frameLoop);
      that it was handed the right palette (RLG-044, RLG-054) */
   API.spriteInk = function(which, key, i){
     const tbl = which === 'traffic' ? TRAFFIC_SP : which === 'front' ? FRONT_SP : null;
-    const img = tbl ? (tbl[key] || [])[i|0] : RIVAL_SP[key];
+    const img = tbl ? (tbl[key] || [])[i|0] : RACER_SP[key];
     if(!img) return null;
     const g = img.getContext('2d');
     const d = g.getImageData(0, 0, img.width, img.height).data;
@@ -27923,10 +27938,10 @@ requestAnimationFrame(frameLoop);
              sat: +(mx ? (mx-mn)/mx : 0).toFixed(4) };
   };
   API.sampleMinds = function(t, n){
-    const out = { civilian:0, speeder:0, racer:0, cruise:[] };
+    const out = { civilian:0, speeder:0, outlaw:0, cruise:[] };
     for(let i = 0; i < (n || 2000); i++){
       const m = rollMind(t);
-      out[m === RACER ? 'racer' : m === SPEEDER ? 'speeder' : 'civilian']++;
+      out[m === OUTLAW ? 'outlaw' : m === SPEEDER ? 'speeder' : 'civilian']++;
       if(out.cruise.length < 400) out.cruise.push(+(cruiseFor(t, m) / MAX_SPD).toFixed(4));
     }
     return out;
@@ -28068,7 +28083,7 @@ requestAnimationFrame(frameLoop);
         : pt0;
       /* the rival cache is keyed by paint, and it only holds the ordinary
          white one - a livery that is not in it is built here the same way */
-      const rear = (pKey === 'WHITE' && !LIVERY[k] && RIVAL_SP[k+'|WHITE']) || (rs.rig
+      const rear = (pKey === 'WHITE' && !LIVERY[k] && RACER_SP[k+'|WHITE']) || (rs.rig
         ? sprite(rigBox(rs.rig)[0], rigBox(rs.rig)[1],
             paintRig(rs.rig, Object.assign({ player:true, marque:rs.rear,
             lamp:'#d61b3c', lamp2:'#ff7a86' }, rigPt)))
@@ -28231,7 +28246,7 @@ requestAnimationFrame(frameLoop);
     const w2 = pp.scale*PLAYER_W*ROAD*W;
     return (w2 < 1.2 || w2 > W*3.4) ? null : w2;
   };
-  API.rivalSprite = function(k){ return RIVAL_SP[k]; };
+  API.rivalSprite = function(k){ return RACER_SP[k]; };
   /* who on the grid is wearing stripes, and what body they are in. A check that
      only counted them could not tell "some are striped" from "the formula cars
      got stripes", which is the one thing that must not happen (RLG-117). */
@@ -28324,7 +28339,7 @@ requestAnimationFrame(frameLoop);
                                 look: Math.round(hurtLook(o)) });
     return traffic.map(c => row(c, 'traffic'))
       .concat(cops.filter(k => !k.trap).map(k => row(k, 'cop')))
-      .concat(racers.map(r => row(r, 'rival')));
+      .concat(racers.map(r => row(r, 'racer')));
   };
   API.hardyOf = function(k){ const B = BODY[k];
     return B && B.hardy !== undefined ? B.hardy : 1; };
@@ -28392,8 +28407,8 @@ requestAnimationFrame(frameLoop);
   };
   /* the roll itself, so rarity can be sampled without running a hundred races */
   API.stripeChance = function(v){
-    if(typeof v === 'number') RIVAL_STRIPES = v;
-    return RIVAL_STRIPES;
+    if(typeof v === 'number') RACER_STRIPES = v;
+    return RACER_STRIPES;
   };
   /* the road's own vehicles, by name - `truck`, `van`, `cop` and so on. It
      exists so a harness can ask whether a garage tap REBUILT one, by marking
@@ -28413,7 +28428,7 @@ requestAnimationFrame(frameLoop);
     if(kind === 'cop') return (FRONT_SP.cop || [])[0] || null;
     if(kind === 'supercop') return SP.superCopFront || null;
     if(FRONT_SP[kind]) return FRONT_SP[kind][0] || null;
-    if(BODY[kind]) return rivalFront(kind, paint || 'WHITE');
+    if(BODY[kind]) return racerFront(kind, paint || 'WHITE');
     return null;
   };
   API.yawTo = function(z){ return yawTo(z); };
