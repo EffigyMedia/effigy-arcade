@@ -14,6 +14,23 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-49"></a>
+## [0.13.49] - 2026-09-09
+- Fixed: **a car's front and its own back were different heights in the garage, and did not stand
+  on the same floor.** Owner, 2026-09-09, on seeing a silhouette. Measured across all seventeen
+  garage bodies: ten agreed exactly and **seven did not, every one of them a winged car** -
+  STALLION out by 17 pixels, MATADOR by 14.2, the three formula cars by 9.3 each. `garageFit` took
+  one scale from the larger end and `drawGarageCar` placed each end's content TOP on the ceiling
+  line, so two drawings with different ink started together and finished apart. Each end has its
+  own scale now, matched in height, and the BOTTOM is what is placed. Re-measured: all seventeen at
+  0.0. See [RLG-182](../fragments/RLG-182.md).
+- Added: **`tools/car-ends-test.py`**, which measures every garage body's two ends and prints the
+  table either way, because the owner asked to see the check run against every vehicle.
+- Not done: **the tyres.** The owner also asked to see a little of them at the bottom. The
+  silhouette answers why they are missing - the sprite carries no wheel ink below the body, on
+  either end of any car - so it is a painter change across the fleet rather than a layout one, and
+  it is its own unit.
+
 <a id="v0-13-48"></a>
 ## [0.13.48] - 2026-09-09
 - Added: **locked cars appear in the garage as grey silhouettes with the way to win them written

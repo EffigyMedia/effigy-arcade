@@ -29,6 +29,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=None)
     ap.add_argument('--cars', type=int, default=14)
+    ap.add_argument('--only', default=None, help='capture just this car, by name')
     args = ap.parse_args()
     console_utf8()
     out = Path(args.out) if args.out else ROOT / '_garage'
@@ -77,12 +78,14 @@ def main():
                          disabled: d ? d.hasAttribute('disabled') : null };
             }""")
             seen.append(info['name'])
+            real = page.evaluate("() => window.__road.currentBody()") or ('car%02d' % i)
             tag = 'locked' if info['locked'] else 'owned'
             # AND THE FILE IS NAMED BY POSITION, not by the card. `???` is not a legal
             # Windows filename and the capture died on it.
             el = page.query_selector('.gwrap')
-            if el:
-                el.screenshot(path=str(out / ('garage-%02d-%s.png' % (i, tag))))
+            if el and (not args.only or args.only.upper() == (info['name'] or '').upper()
+                       or args.only.upper() == real.upper()):
+                el.screenshot(path=str(out / ('garage-%02d-%s-%s.png' % (i, tag, real))))
             print('  %-14s %-7s drive=%-7s disabled=%s   %s'
                   % (info['name'], tag, info['drive'], info['disabled'], info['how'] or ''))
             page.click('[data-act="next"]')

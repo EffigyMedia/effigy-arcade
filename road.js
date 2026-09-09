@@ -24177,7 +24177,32 @@ function garageFit(){
   const maxH = Math.max.apply(null, boxes.map(b => b.h));
   const sc = Math.min((GARAGE_HALF - GARAGE_PAD*2) / maxW,
                       (GARAGE_DEEP - GARAGE_TOP) / maxH);
-  return { boxes: boxes, sc: sc, h: Math.ceil(GARAGE_TOP + maxH*sc + 6) };
+  /* ---- EACH END TO THE SAME HEIGHT (owner, 2026-09-09, RLG-182) ---------
+     Owner, from the garage: "the height of the vehicles aren't the same. Every
+     vehicle needs to have the same height" - and, clarifying, "its front
+     relative to its back, not different vehicles relative to each other".
+
+     MEASURED ACROSS ALL SEVENTEEN GARAGE CARS: ten agreed exactly and SEVEN did
+     not, every one of them a winged car. STALLION was 69.0 against 86.0, a
+     seventeen-pixel disagreement; MATADOR 14.2; the three formula cars 9.3 each.
+     The two ends carry different amounts of ink because they are different
+     drawings, and one shared scale turns that straight into two different
+     heights on the card.
+
+     SO THE SCALE IS PER END NOW, chosen so both ends reach the same drawn
+     height. `sc` above is still what decides that height - it is the size the
+     LARGER end would have taken, so nothing grows and nothing leaves its half.
+     The width follows the height, so neither end is stretched.
+
+     THIS IS WHAT THE CODE ALREADY CLAIMED. The comment in `drawGarageCar` says
+     "A car is the same size from both ends and stands on the same floor, which
+     is the whole of what the owner asked for" - written for RLG-087, true of the
+     scale and never true of the result.
+     ------------------------------------------------------------------- */
+  const drawnH = maxH * sc;
+  const scales = boxes.map(b => drawnH / b.h);
+  return { boxes: boxes, sc: sc, scales: scales,
+           drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
 }
 /* ---- THE CARD IS ONE HEIGHT, AND IT IS THE TALLEST CAR'S (RLG-087) ----
    Owner, 2026-08-30: set the car render to the same static height, using the
@@ -24282,22 +24307,33 @@ function drawGarageCar(){
   const TOP = GARAGE_TOP;
   const fit = garageFit();
   if(!fit) return;
-  const boxes = fit.boxes, sc = fit.sc;
+  const boxes = fit.boxes, sc = fit.sc, scales = fit.scales || [sc, sc];
   /* the card is the tallest car's card, whichever car is in it (RLG-087) */
   const CARD_H = garageCardHeight(optBody);
   cv.width = 300*dpr; cv.height = CARD_H*dpr;
   cv.style.width = '300px'; cv.style.height = CARD_H + 'px';
   g2.setTransform(dpr,0,0,dpr,0,0);
   g2.clearRect(0,0,300,CARD_H);
-  const put = (img, box, cx) => {
+  /* ---- ONE FLOOR, AND EACH END AT ITS OWN SCALE (RLG-182) --------------
+     The comment above has always said the two ends stand "on the same floor".
+     They did not: `put` placed each one's content TOP on the ceiling line, so
+     two ends of different heights started together and finished apart - the
+     rear of a STALLION stopped seventeen pixels above its own front.
+
+     Both halves are fixed here. The scale comes from `garageFit`, one per end,
+     so the two are the same height; and the BOTTOM is what is placed, so they
+     stand on one line whatever they are.
+     ------------------------------------------------------------------- */
+  const FLOOR = TOP + (fit.drawnH || 0);
+  const put = (img, box, cx, sci) => {
     if(!img) return;
-    /* place the CONTENT: its centre on cx, its TOP on the ceiling line */
-    const dx = cx - (box.x + box.w/2)*sc;
-    const dy = TOP - box.y*sc;
-    g2.drawImage(img, dx, dy, img.width*sc, img.height*sc);
+    const k = sci === undefined ? sc : sci;
+    const dx = cx - (box.x + box.w/2)*k;
+    const dy = FLOOR - (box.y + box.h)*k;
+    g2.drawImage(img, dx, dy, img.width*k, img.height*k);
   };
-  if(!front){ put(back, boxes[0], 150); }
-  else { put(back,  boxes[0],  75); put(front, boxes[1], 225); }
+  if(!front){ put(back, boxes[0], 150, scales[0]); }
+  else { put(back,  boxes[0],  75, scales[0]); put(front, boxes[1], 225, scales[1]); }
   /* ---- AND A CAR YOU HAVE NOT WON IS A SHAPE (owner, 2026-09-08) --------
      Flattened rather than redrawn. `source-atop` fills only where the sprites
      already painted, so the silhouette is the car's own outline at its own
@@ -26876,6 +26912,39 @@ requestAnimationFrame(frameLoop);
   /* the card height every body would ask for, and the one that is reserved.
      A harness needs both to say whether the reservation actually covers the
      fleet, and by how much it overshoots the smallest car (RLG-087). */
+  /* ---- WHERE EACH END OF EACH CAR ACTUALLY LANDS (RLG-182) -------------
+     Owner, 2026-09-09: "the height of the vehicles aren't the same... its front
+     relative to its back", and "we need to show a little bit of the tires on the
+     bottom". Both are questions about the drawn RESULT rather than about the
+     sprites, so this reports the result: the ink box of each end, the one scale
+     they share, and the top and bottom line each one is placed on.
+     ------------------------------------------------------------------- */
+  /* which car the garage is showing, by name. The card says `???` for a locked
+     one (RLG-180), so a capture walking the garage has no other way to name the
+     file it is writing. */
+  API.currentBody = function(){ return optBody; };
+  API.carEnds = function(){
+    const was = optBody, out = {};
+    for(const k of Object.keys(BODY)){
+      if(BODY[k].npc) continue;
+      optBody = k; buildPlayer();
+      const f = garageFit();
+      if(!f){ out[k] = null; continue; }
+      const b = f.boxes, sc = f.sc, scs = f.scales || [sc, sc];
+      const floor = GARAGE_TOP + (f.drawnH || 0);
+      const row = (box, i) => ({
+        inkH: box.h, inkW: box.w,
+        drawnH: +(box.h * scs[i]).toFixed(1),
+        /* both ends stand on one floor now (RLG-182), so the top is what moves */
+        top: +(floor - box.h * scs[i]).toFixed(1),
+        bottom: +floor.toFixed(1)
+      });
+      out[k] = { sc: +sc.toFixed(4), cardH: f.h,
+                 back: row(b[0], 0), front: b[1] ? row(b[1], 1) : null };
+    }
+    optBody = was; buildPlayer(); garageCardHeight(was);
+    return out;
+  };
   API.garageFits = function(){
     const was = optBody, out = {}, big = {};
     for(const k of Object.keys(BODY)){
