@@ -14,6 +14,15 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-65"></a>
+## [0.13.65] - 2026-09-09
+- Changed: **the pickup's cab is shaded at the rear, where it is the far end of the truck.** Owner,
+  2026-09-09: "the pickup's cab should be shaded slightly dark from the back since it's further from
+  the camera than from the front perspective." Both ends drew the cab in the body's own gradient, so
+  neither view had a far end. The bed is deliberately untouched: it is the near end at the rear view
+  and staying the brightest thing there is what makes the cab read as being behind it. See
+  [RLG-193](../fragments/RLG-193.md).
+
 <a id="v0-13-64"></a>
 ## [0.13.64] - 2026-09-09
 - Changed: **the CREST's spoiler wears the car's own paint.** Owner, 2026-09-09: "let's make its

@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.64';
+window.ROAD_BUILD = '0.13.65';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4263,8 +4263,30 @@ function paintRig(kind, o){
       /* narrow cab up top, wide open BED below — the giveaway silhouette */
       const cabTop = h*0.10, bedTop = h*0.40, bot = cy - h*0.135;
       vehicleTyres(g, w, h, 'pickup', bot);
+      /* ---- THE CAB IS THE FAR END FROM HERE (owner, 2026-09-09) --------
+         "the pickup's cab should be shaded slightly dark from the back since
+         it's further from the camera than from the front perspective."
+
+         IT IS THE RULE THE FORMULA WINGS ALREADY TAKE ([[RLG-185]]). A pickup
+         is a cab at one end and a bed at the other, so from behind you are
+         looking at the bed with the cab beyond it, and from the front it is the
+         cab you are standing at. Both ends drew the cab in the body's own
+         gradient, so neither view had a far end.
+
+         THE BED IS UNTOUCHED, and that is the half that makes it work. It is
+         the near end at this view and it should stay the brightest thing here -
+         a cab darkened against an equally bright bed reads as depth; darkening
+         both would just be a darker truck.
+         ---------------------------------------------------------------- */
+      const farCab = (y0, y1) => {
+        const b = g.createLinearGradient(0, y0, 0, y1);
+        b.addColorStop(0, shade(P.hi, 0.74));
+        b.addColorStop(0.48, shade(P.body, 0.74));
+        b.addColorStop(1, shade(P.lo, 0.74));
+        return b;
+      };
       /* the cab */
-      g.fillStyle = grad(cabTop, bedTop);
+      g.fillStyle = farCab(cabTop, bedTop);
       rr(g, w*0.20, cabTop, w*0.60, bedTop-cabTop+h*0.03, w*0.035); g.fill();
       g.fillStyle='#10151d';
       rr(g, w*0.245, cabTop+h*0.035, w*0.51, h*0.145, 3); g.fill();
