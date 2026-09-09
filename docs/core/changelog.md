@@ -14,6 +14,18 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-54"></a>
+## [0.13.54] - 2026-09-09
+- Added: **a face for the CREST.** Owner, 2026-09-09: "since there is so much unused space on the
+  front of the crest, I'd like to fill much of that in with a big grill. Let's put some interest in
+  detail inside that grill and maybe show bumper detail." A mouth running from under the light bar to
+  just above the bumper in a bright surround, a lattice inside it rather than a row of bars, a blade
+  across the middle in the car's own paint, a brake duct outboard of each end, and a bumper that is a
+  lip with a bright edge and a vent at each end instead of one flat band. All of it inside the body
+  path, so the seventeen silhouettes still match. See [RLG-186](../fragments/RLG-186.md).
+- **Not verified on a device.** Whether the grille is the right size and whether the blade reads on a
+  white car are the owner's call.
+
 <a id="v0-13-53"></a>
 ## [0.13.53] - 2026-09-09
 - Fixed: **a formula car's tail is its own drawing again.** Owner, 2026-09-09, on 0.13.52: "the

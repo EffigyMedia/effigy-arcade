@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.53';
+window.ROAD_BUILD = '0.13.54';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -5082,8 +5082,93 @@ function paintFront(o){
       };
       decl(g, lamps, 'turn.l', pTurn(-1));
       decl(g, lamps, 'turn.r', pTurn(1));
-      g.fillStyle = 'rgba(10,12,16,.85)';
-      rr(g, w*(0.5-wid*0.42), topY + h*0.235, w*wid*0.84, h*0.060, h*0.024); g.fill();
+      /* ---- A BIG GRILLE, BECAUSE THIS FACE WAS MOSTLY NOTHING ------------
+         Owner, 2026-09-09: "since there is so much unused space on the front of
+         the crest, I'd like to fill much of that in with a big grill. Let's put
+         some interest in detail inside that grill and maybe show bumper
+         detail."
+
+         There was a slot 0.06 of the sprite deep and then a quarter of the
+         car's height of bare paint under it. What is here now runs from just
+         below the light bar to just above the bumper: a bright surround, a dark
+         mouth with a lattice in it, a blade across the middle in the car's own
+         colour, and a brake duct standing outboard of each end.
+
+         IT IS ALL INSIDE THE BODY PATH, so none of it touches the silhouette -
+         which is the rule [[RLG-184]] set and the thing every added detail has
+         to answer to from here on.
+         ---------------------------------------------------------------- */
+      const gT = topY + h*0.215, gB = botY - h*0.085, gW = wid*0.62;
+      /* the surround: brightwork around a dark mouth */
+      g.fillStyle = 'rgba(150,162,176,.30)';
+      rr(g, w*(0.5-gW)-w*0.012, gT-h*0.012, w*gW*2+w*0.024, (gB-gT)+h*0.024,
+         h*0.034); g.fill();
+      const gmo = g.createLinearGradient(0, gT, 0, gB);
+      gmo.addColorStop(0, '#161b22'); gmo.addColorStop(0.55, '#0a0d12');
+      gmo.addColorStop(1, '#121721');
+      g.fillStyle = gmo;
+      rr(g, w*(0.5-gW), gT, w*gW*2, gB-gT, h*0.028); g.fill();
+      /* the lattice. A row of bars reads as a stripe at the size a car is drawn
+         on the road; crossing them is what makes it a grille. */
+      g.save();
+      rr(g, w*(0.5-gW), gT, w*gW*2, gB-gT, h*0.028); g.clip();
+      g.strokeStyle = 'rgba(168,184,202,.20)';
+      g.lineWidth = Math.max(1, h*0.005);
+      for(let k=1;k<8;k++){
+        const yy = gT + (gB-gT)*(k/8);
+        g.beginPath(); g.moveTo(w*(0.5-gW), yy); g.lineTo(w*(0.5+gW), yy); g.stroke();
+      }
+      g.strokeStyle = 'rgba(140,158,178,.13)';
+      g.lineWidth = Math.max(1, h*0.004);
+      for(let k=1;k<12;k++){
+        const xx = w*(0.5-gW) + w*gW*2*(k/12);
+        g.beginPath(); g.moveTo(xx, gT); g.lineTo(xx, gB); g.stroke();
+      }
+      /* the blade across the middle, in the car's own paint - it is what stops
+         the mouth reading as a black hole, and it is where a plate would sit */
+      const blY = gT + (gB-gT)*0.44, blH = h*0.052;
+      const bl = g.createLinearGradient(0, blY, 0, blY+blH);
+      bl.addColorStop(0, o.hi); bl.addColorStop(0.55, o.body); bl.addColorStop(1, o.lo);
+      g.fillStyle = bl;
+      rr(g, w*(0.5-gW*0.96), blY, w*gW*1.92, blH, h*0.012); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.20)';
+      rr(g, w*(0.5-gW*0.96), blY, w*gW*1.92, h*0.012, h*0.006); g.fill();
+      /* and a shadow under it, so it stands off the mesh */
+      g.fillStyle = 'rgba(0,0,0,.45)';
+      g.fillRect(w*(0.5-gW*0.96), blY+blH, w*gW*1.92, h*0.010);
+      g.restore();
+      /* the brake ducts, one outboard of each end of the mouth */
+      for(const sx of [-1,1]){
+        g.fillStyle = 'rgba(8,10,14,.88)';
+        g.beginPath();
+        g.moveTo(w*0.5 + sx*w*wid*0.92, gT + h*0.020);
+        g.lineTo(w*0.5 + sx*w*(gW+0.030), gT + h*0.050);
+        g.lineTo(w*0.5 + sx*w*(gW+0.030), gB - h*0.020);
+        g.lineTo(w*0.5 + sx*w*wid*0.92, gB - h*0.070);
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(150,166,184,.16)'; g.lineWidth = Math.max(1, h*0.004);
+        for(let k=1;k<3;k++){
+          const yy = gT + (gB-gT)*(k/3);
+          g.beginPath();
+          g.moveTo(w*0.5 + sx*w*wid*0.90, yy);
+          g.lineTo(w*0.5 + sx*w*(gW+0.034), yy);
+          g.stroke();
+        }
+      }
+      /* ---- AND THE BUMPER, which was one flat band ---------------------
+         A lip with a bright top edge, and a vent let into each end of it. The
+         band underneath is drawn for all three faces below; this is what sits
+         on it. */
+      const buY = botY - h*0.072;
+      g.fillStyle = 'rgba(16,20,26,.92)';
+      rr(g, w*(0.5-wid*0.90), buY, w*wid*1.80, h*0.030, h*0.008); g.fill();
+      g.fillStyle = 'rgba(190,204,220,.22)';
+      rr(g, w*(0.5-wid*0.90), buY, w*wid*1.80, h*0.008, h*0.004); g.fill();
+      for(const sx of [-1,1]){
+        g.fillStyle = 'rgba(6,8,12,.9)';
+        rr(g, w*0.5 + sx*w*wid*0.86 - (sx>0 ? w*wid*0.26 : 0), buY - h*0.014,
+           w*wid*0.26, h*0.044, h*0.008); g.fill();
+      }
     }
 
     /* splitter and shadow, common to all three */
