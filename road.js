@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.67';
+window.ROAD_BUILD = '0.13.68';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2729,14 +2729,40 @@ function carDomeGlassPath(g, w, h, S){
    it outline rather than furniture. Each shape wears a different one; the face
    used to draw its own at its own height, with a comment claiming they were
    the rear's numbers. */
-function carWing(g, w, h, S, o){
+function carWing(g, w, h, S, o, near){
   if(!S.spoiler) return;
   const topY = S.topY;
+  /* ---- A REAR WING SEEN FROM THE FRONT IS THE FAR END (owner, 2026-09-09)
+     Owner: "we need to do the same thing with the rear spoilers from the front
+     view as we did with the pick up truck since they are further away, they
+     need to be slightly darker from the front than they are from the back."
+
+     IT IS THE THIRD PLACE THIS RULE HAS LANDED, and by now it is a rule rather
+     than three fixes: the formula car's two wings ([[RLG-185]]), the pickup's
+     cab ([[RLG-193]]), and now the supercars' wings. Two ends of a vehicle share
+     one outline ([[RLG-184]]), so what tells the player which end they are
+     looking at is the DETAIL inside it - and depth is a detail. A wing is at the
+     BACK of the car: from behind you are standing at it, and from the front it
+     is the furthest thing away, past the whole length of the body.
+
+     `wingPaint` shades the three values rather than replacing them, so a wing
+     stays the car's own colour and simply sits further off. The same factor the
+     pickup's cab uses, for the same reason - it is the same distance being
+     described.
+     ------------------------------------------------------------------- */
+  const wingPaint = near ? o : {
+    body: shade(o.body, 0.74), hi: shade(o.hi, 0.74), lo: shade(o.lo, 0.74)
+  };
+  /* the lift along a blade's top edge is a highlight and not paint, so it dims
+     with the distance instead of following the body colour */
+  const lift = near ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.10)';
+  const liftHi = near ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.11)';
+  o = wingPaint;
   if(S.wing === 'high'){
     /* a proper aerofoil on stanchions, clear of the deck */
     g.fillStyle = o.lo;
     rr(g, w*0.06, topY-h*0.15, w*0.88, h*0.05, 3); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.16)';
+    g.fillStyle = lift;
     rr(g, w*0.06, topY-h*0.15, w*0.88, h*0.016, 3); g.fill();
     g.fillStyle = o.body;
     g.fillRect(w*0.19, topY-h*0.11, w*0.055, h*0.10);
@@ -2769,7 +2795,7 @@ function carWing(g, w, h, S, o){
     g.fillRect(w*0.687, topY-h*0.20, w*0.028, h*0.20);
     g.fillStyle = o.lo;
     rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.042, 2); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.16)';
+    g.fillStyle = liftHi;
     rr(g, w*0.015, topY-h*0.235, w*0.97, h*0.013, 2); g.fill();
     g.fillStyle = o.body;
     g.fillRect(w*0.005, topY-h*0.245, w*0.026, h*0.062);
@@ -4992,7 +5018,8 @@ function paintFront(o){
        the whole body. So it goes first, before the arches and the greenhouse,
        and everything else covers it — you see the ends of it past the roof and
        nothing more, which is exactly what you see on the road. */
-    carWing(g, w, h, S, o);
+    /* from the face, the wing is at the far end of the car */
+    carWing(g, w, h, S, o, false);
 
     /* the arches, proud of the body, from the one declaration the tail uses */
     for(const ax of carArchX(S)){
@@ -5690,7 +5717,7 @@ function paintCar(o){
     }
 
     /* the wing, from the one declaration the face traces too (RLG-184) */
-    if(o.spoiler) carWing(g, w, h, S, o);
+    if(o.spoiler) carWing(g, w, h, S, o, true);
 
     /* ---- the rear end, drawn from the real cars ------------------------
        F  four ROUND lamps, two a side, a slim dark band between them and

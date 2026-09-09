@@ -14,6 +14,18 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-68"></a>
+## [0.13.68] - 2026-09-09
+- Changed: **a supercar's rear wing is shaded on the front view, where it is the far end of the car.**
+  Owner, 2026-09-09: "the same thing with the rear spoilers from the front view as we did with the pick
+  up truck since they are further away." A wing is at the back, so from behind you are standing at it
+  and from the front it is the furthest thing away - and both ends drew it in the same three colours.
+  The white lift along its top edge dims separately, because a highlight shaded with the body values
+  would read as a brighter object rather than a more distant one. See
+  [RLG-196](../fragments/RLG-196.md).
+- This is the third part to take the near/far rule, after the formula wings and the pickup's cab, and
+  RLG-196 states it once so it need not be rediscovered a fourth time.
+
 <a id="v0-13-67"></a>
 ## [0.13.67] - 2026-09-09
 - Changed: **the aggressive traffic personality is an OUTLAW, and a race opponent is a RACER.** Owner,
