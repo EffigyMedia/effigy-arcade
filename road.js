@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.59';
+window.ROAD_BUILD = '0.13.60';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2768,6 +2768,26 @@ function rigFurniture(g, w, h, kind, L, P){
     rr(g, w*0.06, L.bot + h*0.020, w*0.88, h*0.014, 3); g.fill();
     return;
   }
+  if(kind === 'saloon'){
+    /* ---- AND THE SALOON FAMILY HAS MIRRORS TOO (RLG-190) ---------------
+       Seven bodies - COUPE, SALOON, CAB, CRUISER, MUSCLE, TUNER, ROADSTER -
+       carried a door mirror on the face and none on the tail. It is a small
+       shape and it was passing: each of those cars measured 2.8 to 3.8 per cent
+       against a limit of 4, so the whole family sat one edit away from failing
+       a check it was never actually satisfying.
+
+       The mirror stands proud of the greenhouse at the shoulder, which is
+       exactly where the profile said the two ends disagreed.
+       ---------------------------------------------------------------- */
+    for(const sx of [-1,1]){
+      g.fillStyle = P.lo;
+      g.beginPath();
+      g.ellipse(w*0.5 + sx*w*(L.cab/2 + 0.075), L.deck - h*0.005,
+                w*0.038, h*0.020, 0, 0, 6.2832);
+      g.fill();
+    }
+    return;
+  }
   if(kind === 'truck'){
     /* the low gear: an underrun bar and two mud flaps, which is what hangs
        under either end of an artic */
@@ -3834,13 +3854,8 @@ function paintRigFront(kind, o){
       if(parts) parts.overWipers = blower;
     }
 
-    /* mirrors */
-    for(const sx of [-1,1]){
-      g.fillStyle = P.lo;
-      g.beginPath();
-      g.ellipse(w*0.5 + sx*w*(pCab/2+0.075), pDeck-h*0.005, w*0.038, h*0.020, 0, 0, 6.2832);
-      g.fill();
-    }
+    /* the mirrors, from the one declaration the tail draws them from too */
+    rigFurniture(g, w, h, 'saloon', { cab:pCab, deck:pDeck }, P);
 
     /* lamps at the rear's own lamp line: ly = deckY + (bot-deckY)*0.40 */
     const ly = pDeck + (bot-pDeck)*0.40, lh = h*0.055;
@@ -4350,18 +4365,8 @@ function paintRig(kind, o){
       }
     }
 
-    /* the twin humps behind the cabin — the one thing on the back of a
-       roadster that no other body has */
-    if(isOpen){
-      for(const sx of [-1,1]){
-        g.fillStyle = P.lo;
-        rr(g, w*0.5 + sx*w*0.135 - w*0.062, deckY - h*0.052,
-           w*0.124, h*0.062, h*0.028); g.fill();
-        g.fillStyle = 'rgba(255,255,255,.16)';
-        rr(g, w*0.5 + sx*w*0.135 - w*0.062, deckY - h*0.052,
-           w*0.124, h*0.016, h*0.010); g.fill();
-      }
-    }
+    /* the mirrors this end never drew - see `rigFurniture` */
+    rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P);
 
     /* the boot shut line, which is what says saloon */
     if(!isCoupe){

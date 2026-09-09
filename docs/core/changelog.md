@@ -14,6 +14,16 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-60"></a>
+## [0.13.60] - 2026-09-09
+- Fixed: **the production cars' door mirrors are drawn at both ends.** Owner, 2026-09-09, asking
+  whether the production cars had been reworked at all: they had, and they were passing at 2.8 to 3.8
+  per cent against a 4 per cent limit while thirteen other bodies measured 0.0 - so the whole saloon
+  family sat one edit from failing a check it was never satisfying. The residual was a mirror on the
+  face and none on the tail. All seven read 0.0 now. See [RLG-190](../fragments/RLG-190.md).
+- Removed: **a duplicate block.** The roadster's twin humps were written twice in `paintRig`, one
+  immediately after the other, drawing the same two opaque shapes in the same place.
+
 <a id="v0-13-59"></a>
 ## [0.13.59] - 2026-09-09
 - Changed: **the badge sits on the face of a supercar rather than under its windscreen.** Owner,
