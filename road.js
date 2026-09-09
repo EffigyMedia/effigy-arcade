@@ -24199,8 +24199,22 @@ function garageFit(){
      is the whole of what the owner asked for" - written for RLG-087, true of the
      scale and never true of the result.
      ------------------------------------------------------------------- */
+  /* ---- AND THE WIDTH IS A CONSTRAINT TOO (owner, 2026-09-09) -----------
+     THE FIRST BUILD OF THIS CLIPPED THE CARS. Matching the two heights by
+     scaling each end independently grew the shorter end's WIDTH by the same
+     factor - the rear of a STALLION went up by a quarter - and the half of the
+     card it has to fit in did not grow with it. The owner saw it immediately:
+     "You've made them the same height, but now the width is cut off."
+
+     So each end's scale is capped by its own width as well. Where the two ends
+     disagree in shape, that leaves the heights unequal again - which is the
+     real fault, and it is in the SPRITES rather than here. See RLG-184: the
+     fleet's front and rear drawings do not agree in either dimension, and no
+     amount of arithmetic on this card can make two different shapes the same.
+     ------------------------------------------------------------------- */
   const drawnH = maxH * sc;
-  const scales = boxes.map(b => drawnH / b.h);
+  const halfW = GARAGE_HALF - GARAGE_PAD*2;
+  const scales = boxes.map(b => Math.min(drawnH / b.h, halfW / b.w));
   return { boxes: boxes, sc: sc, scales: scales,
            drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
 }

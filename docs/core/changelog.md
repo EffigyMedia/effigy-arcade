@@ -14,6 +14,21 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-50"></a>
+## [0.13.50] - 2026-09-09
+- Fixed: **the garage clipped the width of a car after 0.13.49 matched its two heights.** Owner,
+  2026-09-09: "You've made them the same height, but now the width is cut off." Scaling the shorter
+  end up to match grew its width by the same factor - a STALLION's tail by a quarter - past the
+  half of the card it has to fit in. Each end's scale is capped by its own width as well now.
+- Measured, not fixed: **every one of the seventeen garage bodies has a front and a rear that
+  disagree**, in two groups with two different causes. The supercars and formula cars are built on
+  two different canvases - 220x168 for the tail and 230x215 for the face - while every other car
+  already shares one box under a comment saying why. The rest disagree inside a shared box, which
+  is the painters. The full table, the experiment that separates the two causes, and the order the
+  work has to be done in are in [RLG-184](../fragments/RLG-184.md). **Capping by width re-opens the
+  height difference for six cars, and that is correct:** no arithmetic on the card can make two
+  drawings of different shapes into one shape.
+
 <a id="v0-13-49"></a>
 ## [0.13.49] - 2026-09-09
 - Fixed: **a car's front and its own back were different heights in the garage, and did not stand

@@ -87,8 +87,8 @@ def main():
 
         ends = page.evaluate('() => window.__road.carEnds()')
         rows, worst, worst_car = [], 0.0, None
-        print('  %-14s %7s %7s %8s %8s %8s' %
-              ('CAR', 'backH', 'frontH', 'diff', 'backBot', 'frontBot'))
+        print('  %-14s %9s %9s %8s %8s' %
+              ('CAR', 'back WxH', 'front WxH', 'dW', 'dH'))
         for k in sorted(ends):
             e = ends[k]
             if not e or not e['front']:
@@ -99,8 +99,11 @@ def main():
             rows.append((k, diff))
             if diff > worst:
                 worst, worst_car = diff, k
-            print('  %-14s %7.1f %7.1f %8.1f %8.1f %8.1f'
-                  % (k, bh, fh, diff, e['back']['bottom'], e['front']['bottom']))
+            bw, fw = e['back']['inkW'], e['front']['inkW']
+            bih, fih = e['back']['inkH'], e['front']['inkH']
+            print('  %-14s %4dx%-4d %4dx%-4d %8d %8d%s'
+                  % (k, bw, bih, fw, fih, fw - bw, fih - bih,
+                     '' if (fw == bw and fih == bih) else '   <-- differs'))
 
         off = [k for k, d in rows if d > args.tol]
         ok(bool(rows), 'every garage car was measured', '%d cars with two ends' % len(rows))
