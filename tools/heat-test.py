@@ -102,11 +102,30 @@ def main():
         # past, which is one of the two things that now EARNS heat. A check for what time
         # does has to be a check for what time does, so nothing is moving and there is
         # nothing to hit.
+        # ---- AND THE SPEED IS HELD, NOT RE-ASKED FOR (RLG-199) ------------------
+        # This called `setSpd` once every 250ms and let go. Nothing is on the
+        # throttle in a harness, so the car started slowing on the very next frame
+        # and spent the rest of the quarter-second falling: asked for 160 it
+        # actually ran between 144 and 157, sitting ON the 150 the super cruiser
+        # gate watches and dropping under it a third of the time.
+        #
+        # `fastFor` resets to zero every time it does, so the four unbroken
+        # seconds an interceptor needs were banked at 3.7 to 4.8 depending on
+        # where the sag fell - which is the whole of why this check read 4 supers
+        # on one run and 0 on the next, and why lengthening the hold from nine
+        # seconds to sixteen changed nothing. More time does not help when the
+        # clock keeps going back to zero.
+        #
+        # `holdSpd` pins it every frame from inside the engine, so the number the
+        # check asks for is the number the car is doing. See
+        # `tools/super-gate-proof.py`, which measures both ways round and shows
+        # that zero is still reachable when the car is genuinely too slow.
         def hold(ms, spd=0.0, clear=True, heat=None):
+            pg.evaluate('(v) => window.__probe.road.holdSpd(window.__probe.road.MAX_SPD*v)', spd)
             for _ in range(max(1, ms // 250)):
-                pg.evaluate('([v, c, h]) => { const R = window.__probe.road;'
-                            ' R.setSpd(R.MAX_SPD*v); R.parkTraffic(9, 60000);'
-                            ' if(c) R.copsClear(); if(h) R.heat(h); }', [spd, clear, heat])
+                pg.evaluate('([c, h]) => { const R = window.__probe.road;'
+                            ' R.parkTraffic(9, 60000);'
+                            ' if(c) R.copsClear(); if(h) R.heat(h); }', [clear, heat])
                 pg.wait_for_timeout(250)
 
         # ---- IT IS NOT A CLOCK ------------------------------------------------------
@@ -196,15 +215,26 @@ def main():
         # check would be measuring the game undoing its own setup.
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"
                     " R.heat(5); R.earnSupers(false); }")
-        # SIXTEEN SECONDS, NOT NINE. An interceptor needs four unbroken seconds above
-        # 150mph before the first one is sent, and `spawnSuper` then puts the counter
-        # back to 2.2 so they arrive staggered rather than four at once - so nine
-        # seconds catches the first one only if the run starts fast, and this check read
-        # 0 supers on one run and 4 on the next for that reason alone. Measured with a
-        # probe holding 0.82: the first arrives at about eight seconds.
+        # SIXTEEN SECONDS, AND FOUR OF THEM HAVE TO BE UNBROKEN. An interceptor is
+        # sent after four seconds above the gate, and `spawnSuper` then puts the
+        # counter back to 2.2 so they arrive staggered rather than four at once.
+        # The length was never what was wrong here: the car was too slow, so the
+        # counter kept going back to zero and sixteen seconds bought no more than
+        # nine did. `hold` pins the speed now - see the note on it.
         hold(16000, 0.80, clear=False)
         no_ev = pg.evaluate('() => window.__probe.road.pursuit()')
-        print('      heat 5 at 160mph, no trap earned: %d supers' % no_ev['supers'])
+        print('      heat 5 at %dmph, no trap earned: %d supers  (%.1fs banked above the %dmph gate)'
+              % (no_ev['mph'], no_ev['supers'], no_ev['fastFor'], no_ev['superMph']))
+        # ---- AND THE ZERO HAS TO BE THE RULE'S, NOT THE HARNESS'S --------------
+        # A car doing 148 sends no interceptor either, so "0 supers" on its own
+        # cannot tell the two apart - and for months it did not: this check passed
+        # green while the car it was driving never once reached the speed the rule
+        # watches. The precondition is asserted first, so a green below means the
+        # gate was open and only `supersEarned` held the door.
+        ok(no_ev['fastFor'] > no_ev['superHold'],
+           'the car really is over the gate, so a zero below is the rule and not the driving',
+           'only %.2fs banked above %dmph, and %d needed'
+           % (no_ev['fastFor'], no_ev['superMph'], no_ev['superHold']))
         ok(no_ev['supers'] == 0, 'no super cruiser without the 170 past a trap', str(no_ev))
 
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"

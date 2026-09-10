@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.69';
+window.ROAD_BUILD = '0.13.70';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -442,6 +442,16 @@ const HEAT_COOL = 30;
    behind you. Well inside the 34,000 at which one is culled - see the cooling
    test, which is the only thing that reads it. */
 const LOST_AT = 12000;
+/* ---- WHAT A SUPER CRUISER NEEDS ON TOP OF THE WANTED LEVEL -------------
+   The speed, on the readout, and how many unbroken seconds of it. They were
+   written into `superWatch` as `150/200` and `4`, so a check for the rule had
+   to copy both numbers - and a copy of a tunable is a check measuring the
+   number it was written against rather than the rule. The cooling test learnt
+   that when HEAT_COOL moved from twelve to thirty and a working engine went
+   red. `API.pursuit` reports these, so a harness asks for them.
+   -------------------------------------------------------------------- */
+const SUPER_MPH  = 150;
+const SUPER_HOLD = 4;
 /* ---- ONE ENGAGEMENT, ONE TARGET, PERMANENTLY (RLG-173) -----------------
    Owner, 2026-09-08: "whenever a cop engages a target it continues to engage
    that target until that target either pulls over voluntarily, is forced to
@@ -670,6 +680,19 @@ let clock = CLOCK_START, nextCP = 0, cpGantries = [], lastBeep = -1, wreckWait =
    rather than sixty times a second.
    ------------------------------------------------------------------- */
 let countIn = 0, countPip = -1, countFrom = 0;
+/* ---- AND A SPEED A CHECK CAN HOLD (RLG-199) ----------------------------
+   `API.setSpd` writes the speed ONCE and the car starts slowing down again on
+   the very next frame, because nothing is on the throttle. A harness that pins
+   it from outside can only do so as often as it can round-trip - four times a
+   second in practice - so "drive at 160" was really "160 four times a second
+   and about 148 in between", and every rule with a speed threshold in it was
+   being measured on the wrong side of its own gate.
+
+   `spdHold` is the throttle a harness does not have: null is off, and any
+   other value is pinned every frame in the one place `countIn` is pinned. It
+   is a test affordance and nothing in the game sets it.
+   -------------------------------------------------------------------- */
+let spdHold = null;
 /* a run after the first can be started with a tap rather than sat through. It
    SHORTENS rather than cancels, because the start is still a start - and it is
    the second run onward, so the first one is always seen whole. */
@@ -9580,9 +9603,9 @@ function superWatch(dt){
      than laying more of the ordinary kind. The old rule asked only for heat one
      and four seconds above 150, which any fast car does by accident.
      ------------------------------------------------------------------- */
-  const fast = spd > MAX_SPD * (150/200);
+  const fast = spd > MAX_SPD * (SUPER_MPH/200);
   fastFor = fast ? fastFor + dt : 0;
-  if(!optEasy && heat >= 3 && supersEarned && fastFor > 4){
+  if(!optEasy && heat >= 3 && supersEarned && fastFor > SUPER_HOLD){
     const want = Math.min(4, Math.ceil(heat / 1.5));
     const have = cops.filter(k => k.superc && k.wreck <= 0).length;
     if(have < want){
@@ -15825,6 +15848,9 @@ function step(dt){
      is up, because it is what sets the revs for the launch.
      ------------------------------------------------------------------- */
   if(held) spd = startSpeed();
+  /* held wins: a car on the line is not going anywhere, whatever a harness
+     asked for, and a check that wants to drive can wait for the count */
+  else if(spdHold !== null) spd = spdHold;
   /* your own brake light, on the same hysteresis every other car uses */
   if((spdWas - spd) / Math.max(dt, 1/240) > 900) brakeLamp = 0.30;
   else if(brakeLamp > 0) brakeLamp -= dt;
@@ -27309,7 +27335,15 @@ requestAnimationFrame(frameLoop);
     return { heat:heat, pts:Math.round(heatPts), cool:+coolT.toFixed(2), earned:supersEarned,
              chasing:cops.filter(k => k.wreck<=0 && k.onPlayer !== false).length,
              supers:cops.filter(k => k.superc && k.wreck<=0).length,
-             coolNeeds:HEAT_COOL, easy:!!optEasy };
+             coolNeeds:HEAT_COOL, easy:!!optEasy,
+             /* THE SUPER CRUISER'S OWN HALF OF THE STATE. `fastFor` is the
+                seconds banked above the gate and it RESETS to zero the moment
+                the car drops under it, so a check reading zero supers can say
+                whether the car was ever going fast enough - which is the
+                difference between "the rule did not fire" and "the harness
+                never drove". */
+             mph:Math.round(spd / MAX_SPD * 200), fastFor:+fastFor.toFixed(2),
+             superMph:SUPER_MPH, superHold:SUPER_HOLD, held:spdHold !== null };
   };
   API.earnSupers = function(v){ supersEarned = !!v; return supersEarned; };
   /* take every cruiser off the road, so a check for what happens with NOBODY on you
@@ -27317,6 +27351,9 @@ requestAnimationFrame(frameLoop);
      waits for them to leave is waiting on the thing it is measuring. */
   API.copsClear = function(){ const n = cops.length; cops.length = 0; return n; };
   API.setSpd = function(v){ spd = v; };
+  /* keep the car at a speed instead of nudging it there once - see `spdHold`.
+     Pass null to give the road back to the physics. */
+  API.holdSpd = function(v){ spdHold = (v === null || v === undefined) ? null : v; return spdHold; };
   /* ---- A TEST CAN ASK THE CAR TO GO SOMEWHERE (RLG-119) ----------------
      `setLane` moves `targetX` and `playerX` together, which is right for
      placing a car and useless for measuring how fast it gets anywhere. This

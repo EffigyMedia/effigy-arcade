@@ -14,6 +14,30 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-70"></a>
+## [0.13.70] - 2026-09-09
+- Fixed: **the interceptor check did not have a speed, it had a range, and the rule it was testing
+  sat inside it.** `heat-test` set the speed once every 250ms and let go; between two pins the car is
+  left to the world with nothing on the throttle, so three runs of the same 160mph request read
+  144-157, 151-158 and 140-167mph. A super cruiser needs 150mph held for four unbroken seconds and
+  the counter resets on every crossing, so the four seconds were banked by chance - which is why the
+  check read 4 supers on one run and 0 on the next, and why taking the hold from nine seconds to
+  sixteen changed nothing. See [RLG-199](../fragments/RLG-199.md).
+- Added: **`API.holdSpd`, the throttle a harness does not have.** It pins the speed every frame in
+  the one place the count-in already pins it, so the number a check asks for is the number the car is
+  doing - a spread of zero against a range tens of mph wide. A count-in still wins over it. Nothing
+  in the game sets it.
+- Changed: `superWatch`'s two thresholds are named - `SUPER_MPH` and `SUPER_HOLD` - and
+  `API.pursuit` reports them with the current speed and the seconds banked. A check that copies a
+  tunable measures the number it was written against rather than the rule, which the cooling check
+  learnt when `HEAT_COOL` moved from twelve to thirty.
+- Changed: `heat-test` asserts that the car was over the gate BEFORE asserting that no interceptor
+  came. "No super cruiser without the 170 past a trap" had been green for months while the car it
+  drove never reliably reached the speed the rule watches.
+- Added: `tools/super-gate-proof.py`, which measures the speed both ways round and includes an arm
+  held BELOW the gate - so a green means the arrangement can still report zero when zero is true. It
+  caught two wrong assertions of its own before it settled; both red runs are kept as evidence.
+
 <a id="v0-13-69"></a>
 ## [0.13.69] - 2026-09-09
 - Changed: **LORRY is SEMI.** Owner, 2026-09-09: "I would like to rename the Lorry to Semi since I am
