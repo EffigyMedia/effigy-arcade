@@ -19,6 +19,27 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-74"></a>
+## [0.13.74] - 2026-09-10
+- Added: **the interceptor is a car you can win and drive.** A supercar gold taken under hot pursuit
+  has written `supercruiser:true` into the save since the ladder was built, the reward screen counted
+  it and the garage card named the gold that pays it - and `BODY.SUPERCRUISER` carried `npc:true`,
+  which `garageBodies` filters on before it asks anything else. So the hardest prize in the game
+  opened nothing. It is a garage car now, with its own unlock class: locked, it stands as a
+  silhouette with its condition written under it; won, it opens as a 190mph MATADOR with a cage in
+  it, in the force's white or black. A save that already holds the flag needs no migration - the key
+  it reads is the key the tournament has always written.
+  [RLG-181](../fragments/RLG-181.md)
+- Fixed: **a light bar is declared once now, and both painters trace it.** Listing the interceptor
+  put it under the rule that a car's two ends are one outline, which `carEnds` had never asked of it
+  because that check skips NPC bodies - and it failed at once, the face four pixels shorter than the
+  tail. The face computed the bar's top from its own roof line and the tail computed it from the
+  cabin span. The tail's expression survived, because it is derived from the metal the bar stands on.
+  The interceptor's silhouette error fell to the MATADOR's own figure, which is right rather than
+  lucky: it is a MATADOR underneath. The CRUISER never had the fault - it draws its bar through one
+  piece of code that serves both of its ends.
+  [RLG-184](../fragments/RLG-184.md)
+
 <a id="v0-13-73"></a>
 ## [0.13.73] - 2026-09-09
 - Fixed: **the nitrous check proved the button worked by reading its own setter.** It read `nosOn`

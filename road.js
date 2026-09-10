@@ -2748,6 +2748,26 @@ function carDomeGlassPath(g, w, h, S){
   return { sX: sX, sY: sY, sSpan: sSpan, sApex: sApex };
 }
 
+/* ---- WHERE A LIGHT BAR SITS, DECLARED ONCE (RLG-181) --------------------
+   A bar is the highest thing on a police car, so it is OUTLINE and not
+   furniture - and RLG-184's rule for outline is that it is declared once and
+   both painters trace it. This was declared TWICE: the face read `roofT -
+   h*0.030` and the tail worked from the cabin span, and the two answers were
+   four pixels apart. Nothing measured it while the SUPER CRUISER was an NPC,
+   because `carEnds` skips NPC bodies and no other force car reaches this
+   painter - the CRUISER draws its bar through `paintRig('cop')`, which is one
+   piece of code serving both of its ends and so cannot disagree with itself.
+
+   THE TAIL'S EXPRESSION IS THE ONE THAT SURVIVED, because it is derived from
+   the metal the bar stands on: the cabin BOX starts at `cabinTop` but the
+   drawn roof is a curve inset from it, and a third of the way down the cabin
+   span is where the roof actually is.
+   ------------------------------------------------------------------------- */
+function barTopY(h, S){
+  const cabH = h*(S.bodyTop - S.cabinTop);
+  return h*S.cabinTop + cabH*0.30 - h*0.040;
+}
+
 /* THE WING IS THE HIGHEST AND OFTEN THE WIDEST THING ON THE CAR, which makes
    it outline rather than furniture. Each shape wears a different one; the face
    used to draw its own at its own height, with a comment claiming they were
@@ -3232,9 +3252,22 @@ const BODY = {
      difference. It costs 4mph of top end and a tenth off the launch, which is
      exactly right: it can stay with a supercar, and it cannot beat one.
 
-     `npc:true` keeps it out of the garage — it is not yours.
+     ---- AND IT IS A CAR YOU CAN WIN, WHICH `npc:true` MADE IMPOSSIBLE ----
+     RLG-181. `tourScore` has written `supercruiser:true` into the save since
+     the supercar ladder was built, the reward screen counts it, and the garage
+     card names the gold that pays it — while `garageBodies` filtered NPC bodies
+     out before it asked anything else. So the hardest prize in the game opened
+     nothing at all. The owner chose on 2026-09-10 to make it drivable rather
+     than to stop awarding it.
+
+     THE FLAG WAS RIGHT WHEN IT WAS WRITTEN, and `cycleBody` still carries the
+     note saying why: listing this car once made the garage throw on a
+     non-finite gradient. At that time it was a sprite with NO BODY RECORD, so
+     the painter had nothing to build from. It has had its own record since
+     RLG-055 — the same record the sprite builder already assembles it from —
+     so the reason the flag existed is gone.
      ---------------------------------------------------------------------- */
-  'SUPERCRUISER': { hardy:0.85, kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ npc:true, force:true, bar:'police', barY:0.304,
+  'SUPERCRUISER': { hardy:0.85, kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ force:true, bar:'police', barY:0.304,
               bodyTop:0.52, cabinTop:0.24, cabW:0.52, cabOff:0, roofR:0.10,
               wide:0.030, arch:1.00, gears:6, redline:12000, pitch:1.02,
               horn:1.02, rear:'CRUISER', spoiler:'low',
@@ -5131,7 +5164,9 @@ function paintFront(o){
          which makes the swap a no-op - and that is correct rather than a
          special case, because there is nothing to mirror. */
       const SC = BAR_SCHEME[B.bar] || BAR_SCHEME.police;
-      const bY = roofT - h*0.030;
+      /* RLG-181: `roofT - h*0.030` was this painter's own answer to a question
+         the tail had already answered differently. One declaration now. */
+      const bY = barTopY(h, B);
       g.fillStyle = '#1b1e24';
       rr(g, w*0.24, bY, w*0.52, h*0.045, 2); g.fill();
       decl(g, lamps, 'bar.fl', (gg, on) => {
@@ -5548,8 +5583,7 @@ function paintCar(o){
       /* the cabin BOX starts at `cabinTop` but the drawn roof is a curve inset
          from it — the same trap the stripes fell into. A third of the way down
          the cabin span is where the metal actually is, so the bar SITS on it. */
-      const cabH = h*(o.bodyTop - o.cabinTop);
-      const bY = h*o.cabinTop + cabH*0.30 - h*0.040;
+      const bY = barTopY(h, o);
       /* the housing is bodywork; the two halves of the bar are lamps, declared
          under the same names the cruiser's rear sprite uses so that
          `drawCopLights` does not care which shape of force car it is looking
@@ -9822,7 +9856,16 @@ function reset(){
   /* if you are driving one, the force matches you; otherwise the night decides */
   barOn = false; wonTraffic = false; coasting = false;
   if(hornBtn) hornBtn.classList.remove('on');
-  copLivery = (optBody === 'CRUISER')
+  /* RLG-181: this named ONE body, so the interceptor could never be the car
+     the force matched itself to. `inForce` asks the BODY record, which is the
+     same question the light bar and the siren already ask.
+
+     AND NOTHING READS `copLivery` TODAY - it is assigned here and nowhere else
+     in the file, so the "one livery per run" rule above it is a statement of
+     intent rather than a behaviour, and the cop sprites are built at boot in
+     fixed colours. This edit does not change a pixel; it stops the dead state
+     from being WRONG for the day somebody wires it up. Tracked separately. */
+  copLivery = inForce()
     ? (optPaint === 'BLACK' ? 'BLACK' : 'WHITE')
     : (Math.random() < 0.5 ? 'BLACK' : 'WHITE');
   /* ---- THE SKY NO LONGER KEEPS ITS OWN TIME ----------------------------
@@ -25113,6 +25156,13 @@ function showGarage(){
 const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                'VECTOR':'formula', 'APEX':'formula', 'COMET':'formula',
                'CRUISER':'cruiser',
+               /* ---- AND THE INTERCEPTOR IS ITS OWN CLASS (RLG-181) -------
+                  It cannot share the cruiser's, because a class IS an unlock:
+                  the sports gold pays `cruiser` and the supercar gold pays
+                  `supercruiser`, and `openBy` and `UNLOCK_HOW` were both
+                  written for that name before the car could be driven.
+                  -------------------------------------------------------- */
+               'SUPERCRUISER':'supercruiser',
                /* ---- THE PICKUP IS PRODUCTION (RLG-114) ------------------
                   Owner, 2026-08-31: "we move pickup to production."
 
