@@ -14572,7 +14572,40 @@ let scattered = 0;                  /* cars that have actually moved over */
    the same event `scattered` counts.
    -------------------------------------------------------------------- */
 let scatterStat = { calls:0, cooled:0, seen:0, far:0, wide:0, deaf:0, obey:0, room:0, gap:0, moved:0 };
-function scatter(chance, fromZ, fromLane){
+/* ---- HOW FAR AHEAD A SIREN ASKS (RLG-205) -------------------------------
+   Owner, 2026-09-10, choosing between a bigger fixed number and a window made
+   of time: two seconds of road, speed-relative.
+
+   THE OLD NUMBER WAS A FLAT 4200 UNITS and it is why the tool did almost
+   nothing. Measured with an instrument on the loop's own gates: 96 per cent of
+   the cars examined were rejected by that window, while the 90 per cent odds
+   and the obedience fatigue that a reader would suspect first rejected almost
+   nobody. At speed, 4200 units is under half a second of road - the siren
+   cleared the car you were already behind, a moment before you reached it.
+
+   A TIME, NOT A DISTANCE, because the thing being asked for is the same
+   whoever is driving: clear the road I am about to be on. `pos += spd*dt`, so
+   two seconds of road is exactly `spd * 2` in world units - about 19,000 at
+   124mph and about 4,000 at 25mph, which is the old number arriving naturally
+   at the speed it was almost right for.
+
+   FLOORED, so a crawling or stopped vehicle still clears its own nose - a
+   cruiser boxed in at a standstill has a siren for a reason. CAPPED at the
+   drawn road, because a car you cannot see is not a car you can ask, and
+   at 200mph two seconds would reach past the horizon.
+
+   IT WIDENS THE HORN TOO, and that is intended rather than incidental - they
+   are one function. `traffic-test` records that over 40 horn presses only 6
+   were ever in range, which is the same fault seen from the other end.
+   ------------------------------------------------------------------------- */
+const SIREN_LOOK = 2.0;          /* seconds of road ahead */
+const SIREN_LOOK_MIN = 4200;     /* ...and never less than the old window */
+const SIREN_LOOK_MAX = DRAW * SEG;   /* ...and never past the drawn road */
+function sirenReach(v){
+  return clamp((v || 0) * SIREN_LOOK, SIREN_LOOK_MIN, SIREN_LOOK_MAX);
+}
+
+function scatter(chance, fromZ, fromLane, fromSpd){
   scatterStat.calls++;
   if(hornCool > 0){ scatterStat.cooled++; return; }
   hornCool = 0.55;
@@ -14597,6 +14630,9 @@ function scatter(chance, fromZ, fromLane){
      a stack trace to find — three passes of reading the wrong lines did not.
      ------------------------------------------------------------------ */
   const ol = (fromLane === undefined) ? playerX : fromLane;
+  /* the sounding vehicle's OWN speed decides its reach - the player's when the
+     player is sounding it, the cruiser's when a cruiser is */
+  const reach = sirenReach(fromSpd === undefined ? spd : fromSpd);
   const odds = (chance === undefined) ? 0.40 : chance;
   for(const c of traffic){
     scatterStat.seen++;
@@ -14604,7 +14640,7 @@ function scatter(chance, fromZ, fromLane){
     /* far enough to be worth asking, near enough to be about YOU. 1500 was
        measured from the camera and so covered barely a car length of real road
        in front of the bumper. */
-    if(ahead < 120 || ahead > 4200){ scatterStat.far++; continue; }
+    if(ahead < 120 || ahead > reach){ scatterStat.far++; continue; }
     /* ---- AND THIS LINE WAS HALF-FIXED, WHICH IS WHY NOTHING MOVED -------
        `ol` is a lateral position, corrected in the pass recorded above. `c.lane`
        is still a lane INDEX, 0 to 3. Comparing them asks whether a lane number
@@ -16086,7 +16122,7 @@ function step(dt){
   /* and every NPC cruiser does exactly the same from where IT is */
   for(const k of cops){
     if(k.wreck > 0) continue;
-    if(k.z > pos - 400) scatter(0.90, k.z, k.x);
+    if(k.z > pos - 400) scatter(0.90, k.z, k.x, k.spd);
   }
   /* ---- AND SO DOES AN AMBULANCE ON A CALL (owner, 2026-09-07) -----------
      "the siren works just like the police version as far as moving people out
@@ -16098,7 +16134,7 @@ function step(dt){
      ------------------------------------------------------------------- */
   for(const c of traffic){
     if(!c.emergency) continue;
-    if(c.z > pos - 400) scatter(0.90, c.z, c.x);
+    if(c.z > pos - 400) scatter(0.90, c.z, c.x, c.spd);
   }
 
   /* the planned crossing, put on the road once the car is near enough for it to
@@ -28497,6 +28533,9 @@ requestAnimationFrame(frameLoop);
   API.obeyOf = function(m){ return obeyOf({ mind: m }); };
   /* the gates of the scatter loop, counted where they are - call with true to
      zero them, so two arms of a check can be compared against each other */
+  /* how far the player's own siren reaches right now, in world units - a check
+     that recomputed it would agree with a copy of the formula (RLG-205) */
+  API.sirenReach = function(){ return Math.round(sirenReach(spd)); };
   API.scatterStat = function(reset){
     const out = Object.assign({}, scatterStat);
     if(reset) for(const k of Object.keys(scatterStat)) scatterStat[k] = 0;

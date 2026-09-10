@@ -139,6 +139,7 @@ def main():
                 traffic: window.__road.trafficCount(),
                 mph: Math.round(window.__road.spdNow() * 200 / window.__road.MAX_SPD),
                 bar: window.__road.barOn(),
+                reach: window.__road.sirenReach(),
                 cops: window.__road.cops().length })""")
             moved = after['sc'] - before['sc']
             print('    %-12s moved %-3d  traffic on road %d -> %d  %dmph  bar=%s  cops=%d'
@@ -192,11 +193,12 @@ def main():
         ok(on_moved >= off_moved,
            'the bar never moves FEWER cars than no bar at all',
            'on %d against off %d' % (on_moved, off_moved))
-        reach = on_stat['far'] / max(1, on_stat['seen'])
-        print('    .. %.0f%% of the cars looked at were outside the 4200-unit window '
-              '(%d of %d) - the reach of the siren is what limits it, not the odds'
-              % (reach * 100, on_stat['far'], on_stat['seen']))
-        print('    .. %d cars moved over in %ds. Measured 0, 4, 11 and 5 across four arms.'
+        far = on_stat['far'] / max(1, on_stat['seen'])
+        print('    .. %.0f%% of the cars looked at were beyond the siren, which reaches '
+              '%d units from here (RLG-205: two seconds of road)'
+              % (far * 100, on['reach']))
+        print('    .. %d cars moved over in %ds. Before RLG-205, with a flat 4200-unit '
+              'window: 0, 4, 11, 5 and 2 across five arms, with 96%% out of range.'
               % (on_moved, args.seconds))
 
         # ---- AND THE LATCH LETS GO ---------------------------------------

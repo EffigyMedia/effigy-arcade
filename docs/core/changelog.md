@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-78"></a>
+## [0.13.78] - 2026-09-10
+- Fixed: **a siren asks two seconds of road ahead of itself, instead of a flat 4200 units.** The old
+  window was under half a second at speed, and it was rejecting 96% of the cars the loop looked at -
+  the siren cleared the car you were already behind, a moment before you reached it. It is a TIME
+  now, so it shrinks when you crawl and stretches when you fly, floored at the old number so a
+  stopped cruiser still clears its own nose and capped at the drawn road, because a car you cannot
+  see is not a car you can ask. Measured on the same arm: 31 cars moved over against a previous
+  0, 4, 11, 5 and 2, with cars reaching the odds check going from about six to seventy. The sounding
+  vehicle's own speed decides its reach, so a cruiser and an ambulance each ask two seconds of their
+  road rather than of the player's. It widens the horn too, which is intended - they are one
+  function.
+  [RLG-205](../fragments/RLG-205.md)
+
 <a id="v0-13-77"></a>
 ## [0.13.77] - 2026-09-10
 - Added: **four personalities, and each one answers a siren differently.** COMMUTER, SPEEDER,
