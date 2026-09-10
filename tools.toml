@@ -1,0 +1,19 @@
+# The tools this project needs. RLG-196, and Process/Tool_Registry.md.
+#
+# Names come from Commands/tool_catalog.toml. A name nothing there answers to is refused, because
+# it would resolve to nothing when a machine went to find or install it.
+#
+# Declare a tool when this project first WANTS one, in the same unit of work. The declaration is
+# what authorizes going to get it, rather than a note written afterwards.
+#
+# When this project stops needing a tool, move it to `retired`. Never delete the line. The tool is
+# not uninstalled: another project on the same machine may still require it, and its own manifest
+# is the only thing that says so. A retired entry marks the tool as a candidate for removal and
+# stops there - a person decides. The reason lives in the unit that retired it.
+#
+# This file is its own rather than a table in config.toml, because config inherits root to set to
+# project and a dependency list inherits from nobody.
+
+required = []
+optional = []
+retired  = []
