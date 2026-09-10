@@ -8670,6 +8670,19 @@ let signalsStarted = 0;
    with the guarantee off it should go under.
    -------------------------------------------------------------------------- */
 let tightestAhead = 9;
+/* ---- AND WHERE IN THE ROAD IT WAS, which is what decides whether it matters
+   A corridor measured 24,000 units in front of the car is not a wall the player
+   is about to hit: at a real pace that is two seconds away, and the fixer opens
+   a corridor inside one. A corridor that tight 2,000 units out is a wall.
+   `tightestAhead` alone cannot tell those apart, so a check built on it was
+   asserting the same contract on both.
+
+   `tightestAt` is how far ahead of the car the narrowest window sat, and
+   `blockedNearest` is how far ahead the CLOSEST fully blocked window sat, or -1
+   when nothing was blocked. Both are the engine's own pass rather than a second
+   opinion computed by a harness.
+   -------------------------------------------------------------------------- */
+let tightestAt = 0, blockedNearest = -1;
 
 /* the widest gap between cars, in lane units, across the usable road */
 function widestGap(list){
@@ -8708,12 +8721,16 @@ function keepLaneOpen(dt, pz){
                                 && c.z > pz - 2000 && c.z < pz + 26000);
   blockedAhead = 0;
   tightestAhead = 9;
+  tightestAt = 0; blockedNearest = -1;
   for(let z = pz; z < pz + 26000; z += STEP){
     const group = ahead.filter(c => c.z >= z && c.z < z + WIN);
     if(group.length < 2) continue;
     const gap = widestGap(group);
-    if(gap < tightestAhead) tightestAhead = gap;
-    if(gap < NEED) blockedAhead++;                  /* the contract, for the record */
+    if(gap < tightestAhead){ tightestAhead = gap; tightestAt = z - pz; }
+    if(gap < NEED){
+      blockedAhead++;                               /* the contract, for the record */
+      if(blockedNearest < 0) blockedNearest = z - pz;   /* the sweep runs outward */
+    }
     if(gap >= WARN) continue;                       // plenty of room
     /* 0 at the warning line, 1 at the limit - how hard to open it */
     const urge = clamp((WARN - gap) / (WARN - NEED), 0, 1);
@@ -28165,6 +28182,11 @@ requestAnimationFrame(frameLoop);
   API.drawDistance = function(){ return DRAW * SEG; };
   API.setTow = function(v){ towOverride = (v === undefined || v < 0) ? -1 : v; };
   API.tightestAhead = function(){ return +tightestAhead.toFixed(3); };
+  /* how far ahead the narrowest window sat, and how far ahead the nearest
+     blocked one sat (-1 for none). See `tightestAt` for why the distance is
+     the half of this measurement that decides anything. */
+  API.tightestAt = function(){ return Math.round(tightestAt); };
+  API.blockedNearest = function(){ return Math.round(blockedNearest); };
   /* what the shared crest gate did, per kind of thing that asked it. RLG-073:
      the claim is that the lamps and the scenery use the CARS' system, and this
      is how a harness tells that apart from each of them merely working. */

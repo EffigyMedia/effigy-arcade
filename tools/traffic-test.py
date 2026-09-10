@@ -18,6 +18,31 @@ This drives at speed for a long stretch - long enough for waves to spawn, for
 cars to drift and for the field to bunch - and samples that number continuously.
 A single blocked window is a failure, because the guarantee is absolute: the
 player must never round a bend into a wall.
+
+---- A QUIET RUN IS NOT A PROOF, AND THIS CHECK USED TO IMPLY IT WAS ---------
+The corridor was measured over 24 runs of this length, twelve with the fixer
+running and twelve with its correction switched off in the server. It closes on
+about one run in three WITH the guarantee running, and the failures are not near
+misses: they sit at 0.175 to 0.26 lane units against a passing band of 0.34 to
+0.56. Two populations with a gap between them.
+
+So the threshold is not drawn too fine. The engine really does let the road
+close, and [[RLG-037]] carries that as an open defect. What that costs THIS
+harness is that a green tick here means "this road did not close", which is a
+weaker claim than "the guarantee holds" - and the old wording made the stronger
+one. Both lines below are worded to the run.
+
+AND THE SAME FACT WAS REPORTED TWICE. `blockedAhead > 0` and
+`tightestAhead < 0.34` are one measurement: the engine counts a window as
+blocked precisely when its corridor is under the limit. Two failing lines for
+one closure read as two defects. The contract is asserted once now, and the
+narrowest corridor is the size of the failure rather than a second one.
+
+WHERE IT CLOSED IS HALF THE MEASUREMENT. The sweep runs 26,000 units ahead,
+which at the pace driven here is two and a third seconds of road. A corridor
+that tight at the far end has time to open before the car arrives; the same
+number 3,200 units out is a wall. `tightestAt` and `blockedNearest` are the
+engine's own record of where, and a failure now says which of the two it was.
 """
 import sys, threading, http.server, socketserver, functools
 
@@ -41,6 +66,10 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f'http://127.0.0.1:{PORT}'
 
 SECONDS = 45
+# The pace held through the corridor phase, in world units a second. It is
+# quoted rather than read back because it is what the phase IMPOSES, and it
+# turns a distance up the road into the time the car has before it arrives.
+PACE = 11000
 
 
 COUNT_AMBER = r'''() => {
@@ -56,6 +85,18 @@ COUNT_AMBER = r'''() => {
   return n;
 }'''
 SET_BLINK = r'''(v) => { for (const c of window.__road.traffic) { c.blink = v; c.blinkDir = 1; } return window.__road.traffic.length; }'''
+
+
+def where(units):
+    """A distance up the road, and the time the car has before it gets there.
+
+    A bare figure in world units means nothing to a reader, and the whole point
+    of carrying the distance is to separate a wall from a transient - so it is
+    printed as both.
+    """
+    if units is None or units < 0:
+        return 'nowhere'
+    return f'{units:,} units ahead ({units / PACE:.2f}s at this pace)'
 
 
 def main():
@@ -95,32 +136,41 @@ def main():
            'the engine reports blocked windows')
 
         worst, blocked_samples, samples, tight = 0, 0, 0, 9.0
+        tight_at, nearest = -1, -1
         for _ in range(SECONDS * 4):
             # hold a real pace so waves keep arriving and the field keeps moving
-            page.evaluate("() => { window.__road.setSpd && window.__road.setSpd(11000); }")
+            page.evaluate(f"() => {{ window.__road.setSpd && window.__road.setSpd({PACE}); }}")
             page.wait_for_timeout(250)
             st = page.evaluate(
-                "() => ({b: window.__road.blockedAhead(), t: window.__road.tightestAhead()})")
+                "() => ({b: window.__road.blockedAhead(), t: window.__road.tightestAhead(),"
+                " at: window.__road.tightestAt(), bn: window.__road.blockedNearest()})")
             if st is None:
                 continue
             samples += 1
-            if st['t'] < 9:
-                tight = min(tight, st['t'])
+            if st['t'] < tight:
+                tight, tight_at = st['t'], st['at']
             if st['b'] > 0:
                 blocked_samples += 1
                 worst = max(worst, st['b'])
+                if nearest < 0 or st['bn'] < nearest:
+                    nearest = st['bn']
 
         ok(samples > 100, 'the run was long enough to matter', f'{samples} samples')
-        ok(blocked_samples == 0,
-           'no stretch of road ahead was ever fully blocked',
-           f'{blocked_samples}/{samples} samples blocked, worst {worst} windows')
-        # THE MEASUREMENT THAT DISCRIMINATES. The boolean above passes on a road
-        # that never crowds at all, which is how the first version of this test
-        # passed with the fixer switched off. The narrowest corridor actually
+        # THE MEASUREMENT THAT DISCRIMINATES. The contract line below passes on a
+        # road that never crowds at all, which is how the first version of this
+        # test passed with the fixer switched off. The narrowest corridor actually
         # seen says whether the road was ever under pressure.
         ok(tight < 9, 'the road was measured under real traffic',
-           f'narrowest corridor {tight:.3f} lane units (need 0.34)')
-        ok(tight >= 0.34, 'and it never went under a car width', f'{tight:.3f}')
+           f'narrowest corridor {tight:.3f} lane units {where(tight_at)}, need 0.34')
+        # THE CONTRACT, ASSERTED ONCE. See the header: the engine counts a window
+        # as blocked exactly when its corridor is under the limit, so a separate
+        # assertion on the corridor was the same closure reported twice.
+        detail = (f'{blocked_samples}/{samples} samples blocked, worst {worst} windows, '
+                  f'narrowest corridor {tight:.3f}')
+        if nearest >= 0:
+            detail += f', nearest closure {where(nearest)}'
+        ok(blocked_samples == 0,
+           'this road never closed to a car in front of the player', detail)
 
         # ---- IT SIGNALS BEFORE IT MOVES, AND SOMETHING DRAWS IT (RLG-052) ----
         # Two claims, and the second was false for months: `c.blink` has been set on every merge
@@ -226,7 +276,10 @@ def main():
         b.close()
 
     srv.shutdown()
-    print(f"\n  {'there is always a way through' if not bad else str(bad) + ' FAILURES'}")
+    # WORDED TO THE RUN, like the checks above it. "There is always a way
+    # through" is a claim about the ENGINE, and one road driven once cannot
+    # make it - measured, the road closes on about one run in three.
+    print(f"\n  {'this road stayed drivable' if not bad else str(bad) + ' FAILURES'}")
     return 1 if bad else 0
 
 

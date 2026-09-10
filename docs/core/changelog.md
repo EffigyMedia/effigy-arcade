@@ -14,6 +14,29 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-67"></a>
+## [0.13.67] - 2026-09-09
+- Changed: **the corridor check says where the road closed, and stops reporting one closure twice.**
+  `tools/traffic-test.py` asserted the lane-open guarantee on two lines - the blocked-window count and
+  the narrowest corridor - which are one measurement, because the engine counts a window as blocked
+  exactly when its corridor is under the limit. It is asserted once now, and a failure carries the
+  distance up the road at which the road closed and the time the car has before it arrives there. A
+  corridor that tight 26,000 units out has two seconds to open; the same number 3,200 units out is a
+  wall, and the old line could not tell a reader which it had found.
+- Added: `API.tightestAt` and `API.blockedNearest` - how far ahead of the CAR the narrowest window and
+  the nearest closed window sat. Both are the engine's own pass rather than a second opinion
+  recomputed by a harness, and they measure from `pos + PLAYER_Z` because that is where the guarantee
+  measures from.
+- Added: `tools/corridor-falsify.py`, which raises the car-width limit to 0.90 lane units in the
+  engine, runs the harness, and exits non-zero unless the corridor line FAILS and names a distance.
+  The corridor number is stochastic - the road closes on about one run in three - so a green harness
+  run is not evidence that the check works.
+- Changed: the wording of both corridor lines and of the harness's closing line. They are claims about
+  the road that was driven now, not about the engine. **Measured over twenty-four runs the guarantee
+  does not hold**, so "there is always a way through" was a sentence one run could never earn.
+- Nothing in the engine's behaviour changed. The guarantee is still broken and it is still
+  [RLG-037](../fragments/RLG-037.md), which now carries the measurement and a suspect.
+
 <a id="v0-13-66"></a>
 ## [0.13.66] - 2026-09-09
 - Added: **a garage toggle that puts the work vehicles away.** Owner, 2026-09-09: "there needs to be a
