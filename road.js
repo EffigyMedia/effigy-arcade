@@ -14500,8 +14500,22 @@ function setHorn(on){
    ITS way exactly as it gets out of yours.
    ------------------------------------------------------------------------- */
 let scattered = 0;                  /* cars that have actually moved over */
+/* ---- WHERE A SCATTER REQUEST DIES (RLG-203) ----------------------------
+   `scattered` counts the cars that moved and says nothing about the ones that
+   did not, so a siren that moves nobody is indistinguishable from a siren that
+   is never called. These count the gates of the real loop, in the real loop -
+   a harness that re-implemented the filter would be measuring its own copy.
+
+   `calls` is how often the request was made, `cooled` how often it was refused
+   by its own cooldown before looking at anything, and the rest are cars: seen
+   in the array, then dropped for being outside the window ahead, outside the
+   player's line, unwilling, boxed in with no lane to take, or refused by the
+   gap check. `moved` is the same event `scattered` counts.
+   -------------------------------------------------------------------- */
+let scatterStat = { calls:0, cooled:0, seen:0, far:0, wide:0, heed:0, room:0, gap:0, moved:0 };
 function scatter(chance, fromZ, fromLane){
-  if(hornCool > 0) return;
+  scatterStat.calls++;
+  if(hornCool > 0){ scatterStat.cooled++; return; }
   hornCool = 0.55;
   /* ---- THE ORIGIN IS THE CAR, NOT THE CAMERA ---------------------------
      This defaulted to `pos`, which is the camera. The player sits `PLAYER_Z`
@@ -14526,11 +14540,12 @@ function scatter(chance, fromZ, fromLane){
   const ol = (fromLane === undefined) ? playerX : fromLane;
   const odds = (chance === undefined) ? 0.40 : chance;
   for(const c of traffic){
+    scatterStat.seen++;
     const ahead = c.z - oz;
     /* far enough to be worth asking, near enough to be about YOU. 1500 was
        measured from the camera and so covered barely a car length of real road
        in front of the bumper. */
-    if(ahead < 120 || ahead > 4200) continue;
+    if(ahead < 120 || ahead > 4200){ scatterStat.far++; continue; }
     /* ---- AND THIS LINE WAS HALF-FIXED, WHICH IS WHY NOTHING MOVED -------
        `ol` is a lateral position, corrected in the pass recorded above. `c.lane`
        is still a lane INDEX, 0 to 3. Comparing them asks whether a lane number
@@ -14544,7 +14559,7 @@ function scatter(chance, fromZ, fromLane){
        same units as `ol`. 0.34 is a lane's width plus a little: in front of you
        or overlapping your line.
        ------------------------------------------------------------------- */
-    if(Math.abs(c.x - ol) > 0.34) continue;
+    if(Math.abs(c.x - ol) > 0.34){ scatterStat.wide++; continue; }
     /* ---- THEY GET FED UP ------------------------------------------------
        Each car carries its own `heed`, starting at 1. Every time it is asked
        and refuses, that drops — so leaning on the horn behind the same car
@@ -14558,6 +14573,7 @@ function scatter(chance, fromZ, fromLane){
     if(c.heed === undefined) c.heed = 1;
     if(Math.random() > odds * c.heed){
       c.heed = Math.max(0.12, c.heed * 0.62);
+      scatterStat.heed++;
       continue;
     }
     /* ---- AND IT HAS TO ACTUALLY MOVE -------------------------------------
@@ -14577,11 +14593,11 @@ function scatter(chance, fromZ, fromLane){
     const room = [];
     if(c.lane > 0) room.push(c.lane - 1);
     if(c.lane < LANES - 1) room.push(c.lane + 1);
-    if(!room.length) continue;
+    if(!room.length){ scatterStat.room++; continue; }
     const to   = room[(Math.random()*room.length)|0];
     const pick = LANE_X[to];
     /* asked to move, so it accepts a tighter gap than it would choose */
-    if(!laneClear(c, pick, 0.45) || wouldBlock(c, pick)) continue;
+    if(!laneClear(c, pick, 0.45) || wouldBlock(c, pick)){ scatterStat.gap++; continue; }
     /* the same committed move the traffic AI makes, and it keeps its own lane
        index until it ARRIVES - writing the new one here was how a car that
        never finished the move ended up claiming a lane it was not in */
@@ -14595,6 +14611,7 @@ function scatter(chance, fromZ, fromLane){
     c.blinkDir  = to > c.lane ? 1 : -1;
     c.swerve    = 1;
     scattered++;
+    scatterStat.moved++;
     /* it moved, so it is not the one being stubborn */
     c.heed = Math.max(0.12, c.heed * 0.86);
   }
@@ -27889,6 +27906,13 @@ requestAnimationFrame(frameLoop);
   API.inCruiser = function(){ return inCruiser(); };
   API.paintChoices = function(){ return paintChoices(); };
   API.setBar = function(v){ barOn = v; };
+  /* ---- AND WHETHER IT IS ON, WHICH IS THE HALF THAT WAS MISSING ---------
+     A check that presses the button and then calls `setBar` to find out what
+     happened is testing its own setter - the fault `nos-falsify` found in the
+     nitrous check. The latch is what the button does, so the latch is what has
+     to be readable.
+     -------------------------------------------------------------------- */
+  API.barOn = function(){ return !!barOn; };
   API.blockedAhead = function(){ return blockedAhead; };
   /* ---- SOMETHING THAT CAN SEE A ROADBLOCK --------------------------------
      The police audit of 2026-09-07 could not count roadblocks: nothing exposed
@@ -28392,6 +28416,13 @@ requestAnimationFrame(frameLoop);
   API.viewKinds = function(){ return { front:Object.keys(viewKinds.front).sort(),
                                        glass:Object.keys(viewKinds.glass).sort() }; };
   API.scattered = function(){ return scattered; };
+  /* the gates of the scatter loop, counted where they are - call with true to
+     zero them, so two arms of a check can be compared against each other */
+  API.scatterStat = function(reset){
+    const out = Object.assign({}, scatterStat);
+    if(reset) for(const k of Object.keys(scatterStat)) scatterStat[k] = 0;
+    return out;
+  };
   API.nearestSpawn = function(){ return Math.round(nearestSpawn); };
   API.drawDistance = function(){ return DRAW * SEG; };
   API.setTow = function(v){ towOverride = (v === undefined || v < 0) ? -1 : v; };

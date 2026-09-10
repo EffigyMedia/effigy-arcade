@@ -19,6 +19,28 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-76"></a>
+## [0.13.76] - 2026-09-10
+- Added: **the scatter loop counts its own gates, so a siren that moves nobody can be told from one
+  that is never called.** `scattered` counts the cars that moved and says nothing about the ones
+  that did not. `API.scatterStat` counts where every request died - the cooldown, the window ahead,
+  the player's line, the car's willingness, having no lane to take, or no gap to take it into -
+  counted in the real loop rather than in a harness that re-implements the filter.
+  [RLG-203](../fragments/RLG-203.md)
+- Added: **the light bar's latch is readable.** A check that pressed the button and then called
+  `setBar` to learn what happened would be testing its own setter, which is the fault the nitrous
+  check had. `API.barOn` answers the latch.
+  [RLG-203](../fragments/RLG-203.md)
+- Note: **the siren works, and its reach is what limits it.** `tools/bar-scatter-test.py` is new and
+  drives the same road twice, once with the bar off and once latched on: 0 cars moved with it off
+  and no scatter calls at all, against 0, 4, 11, 5 and 2 cars moved over five arms with it on. 96%
+  of the cars the loop looks at are rejected by the 4200-unit window - the 90% odds and the fatigue
+  a reader would suspect first reject almost nobody. At 124mph that window is three quarters of a
+  second of road, so the siren clears the car you are already behind rather than opening the road
+  ahead. The count of cars moved is reported and deliberately not asserted on, because one arm in
+  five moves nobody.
+  [RLG-205](../fragments/RLG-205.md)
+
 <a id="v0-13-75"></a>
 ## [0.13.75] - 2026-09-10
 - Fixed: **a police car now belongs to the league it was built from.** There are two class systems
