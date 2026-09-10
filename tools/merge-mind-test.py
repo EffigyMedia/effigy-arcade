@@ -17,10 +17,15 @@ WHAT THIS ASSERTS, AND WHY EACH ONE IS SEPARATE.
   the habit follows the personality, so a COMMUTER is likelier to carry one than an OUTLAW, and a
   RACER never does. Measured as a rate over the cars the road happens to deal;
 
-  announcements happen, and some of them are ABANDONED. `mergesAborted` counts a driver thinking
-  better of it, and it is counted apart from `signalledMerges` on purpose: an announcement that
-  never completes is also exactly what a defect looks like, so a check that could not tell them
-  apart would call a working change of mind a bug.
+  announcements happen and complete;
+
+  and an announcement is ABANDONED when the lane it asked for closes - which is STAGED rather than
+  waited for. An ordinary road produces about one announcement a minute, so waiting for a gap to
+  close inside one of them is waiting for two rare things to coincide. This watches for a real
+  announcement, reads the lane the ENGINE chose, and puts a car in it. `mergesAborted` counts these
+  apart from `signalledMerges` on purpose: an announcement that never completes is also exactly what
+  a defect looks like, so a check that could not tell them apart would call a working change of mind
+  a bug.
 
 IT NAVIGATES WITH `wait_until="commit"` RATHER THAN "load", and that is not a preference. On
 2026-09-10 this machine entered the wedge RLG-141's neighbour records: chromium stops firing `load`
@@ -94,14 +99,26 @@ def main():
             ctx.close(); b.close()
             return 1
 
-        # ---- drive an ordinary road, with plenty of traffic on it --------
+        # ---- drive an ordinary road, THROUGH THE REAL CONTROLS -----------
+        # Starting the run through the API leaves the cabinet on its veil, and a
+        # road that is not really being driven barely spawns: the first version of
+        # this file did that and met 16 cars in 45 seconds where a run started by
+        # pressing DRIVE meets forty. Nothing was under any pressure to merge, so
+        # it measured no announcements and read as an engine fault.
+        page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=20000)
+        page.click('[data-act="play"]')
+        page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=10000)
+        page.click('[data-act="drive"]')
+        page.wait_for_timeout(1500)
         page.evaluate("""() => {
             const R = window.__road;
-            R.setMode('endless');
-            R.restart();
             R.setTimed(false);      /* RLG-125 */
             R.setPool(1);
-            R.holdSpd(R.MAX_SPD * 0.55);
+            /* SLOW, and that is the whole scenario. Merging is a car being held
+               below the speed it wants by the car in front, so the pressure comes
+               from a full road and a modest pace rather than from driving fast
+               through it. */
+            R.holdSpd(R.MAX_SPD * 0.42);
         }""")
         page.wait_for_timeout(args.seconds * 1000)
 
@@ -147,14 +164,45 @@ def main():
             print('  ..    too few outlaws on the road to rate them (%d) - mind-test '
                   'measures the mix, this file measures the habit'
                   % (out['seen'] if out else 0))
-        # ---- ANNOUNCE, AND CHANGE YOUR MIND -----------------------------
+        # ---- ANNOUNCE, AND COMPLETE -------------------------------------
         ok(st['started'] > 0, 'moves are announced before they are made',
            '%d announcements' % st['started'])
-        ok(st['aborted'] > 0,
-           'and some announcements are abandoned - a driver changing their mind',
-           '%d abandoned against %d completed' % (st['aborted'], st['done']))
-        ok(st['done'] > 0, 'while others complete',
+        ok(st['done'] > 0, 'and they complete',
            '%d completed' % st['done'])
+
+        # ---- AND CHANGE YOUR MIND, STAGED ON PURPOSE --------------------
+        # An abandonment needs the target lane to close DURING the one-to-three
+        # seconds a car is announcing, and an ordinary road produces about one
+        # announcement a minute - so waiting for the two to coincide is waiting
+        # for a coincidence. This watches for an announcement and then closes
+        # the lane it asked for, which is the event itself rather than a
+        # simulation of it: the engine chose the lane, the engine notices.
+        print('  -- and now the lane is closed on purpose, mid-announcement')
+        before = page.evaluate('() => window.__road.mergesAborted()')
+        staged, aborted = 0, 0
+        for _ in range(160):
+            asking = page.evaluate('() => window.__road.signalling().asking')
+            if asking:
+                a = asking[0]
+                page.evaluate("""([dz, want]) => {
+                    const R = window.__road;
+                    /* a car dropped into the lane the announcing car asked for,
+                       level with it - `keep` so the announcing car survives */
+                    R.parkTraffic(R.laneX(want), dz, 'sedan', 0, true);
+                }""", [a['dz'], a['want']])
+                staged += 1
+                page.wait_for_timeout(500)
+                now = page.evaluate('() => window.__road.mergesAborted()')
+                if now > before:
+                    aborted = now - before
+                    break
+            page.wait_for_timeout(250)
+        ok(staged > 0,
+           'an announcement was caught in progress to close the lane on',
+           '%d caught' % staged)
+        ok(aborted > 0,
+           'and the driver cancelled: indicator off, stayed in lane',
+           '%d abandoned after the lane was closed' % aborted)
         ok(not errs, 'the run was clean', '; '.join(errs[:2]))
         ctx.close()
         b.close()

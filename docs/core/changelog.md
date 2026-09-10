@@ -19,6 +19,26 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-80"></a>
+## [0.13.80] - 2026-09-10
+- Added: **a lane change is decided the way a person decides one.** The indicator is a HABIT now,
+  assigned when the car is spawned and following the driver: a commuter almost always signals, a
+  speeder usually, an outlaw rarely, a racer never. It was rolled inside the merge branch before, so
+  a car that never merged never had one - while the comment beside it already claimed otherwise. The
+  announcement is a named one-to-three-second tunable, the car re-reads its surroundings every
+  quarter second while it announces, and it can CHANGE ITS MIND: if the lane it asked for closes,
+  the indicator goes off, the car stays put, and it starts the whole process again a few seconds
+  later - sooner if it is an outlaw, because that wait is the driver's like every other wait in the
+  loop. Abandonments are counted apart from completions, because an announcement that never
+  completes is also exactly what a defect looks like.
+  [RLG-207](../fragments/RLG-207.md)
+- Added: **the engine can say who is mid-announcement and which lane they asked for**, and a car can
+  be parked without clearing the road. Both exist because the cancel could not be waited for: an
+  announcement lasts one to three seconds and a road produces about one a minute, so a check that
+  waited for a gap to close inside one would pass or fail by luck. The harness catches a real
+  announcement, reads the lane the ENGINE chose, and closes it.
+  [RLG-207](../fragments/RLG-207.md)
+
 <a id="v0-13-79"></a>
 ## [0.13.79] - 2026-09-10
 - Fixed: **an unlit red lamp is a dark red lens instead of a black hole.** The semi's five roof

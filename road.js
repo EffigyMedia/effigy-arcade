@@ -28444,7 +28444,25 @@ requestAnimationFrame(frameLoop);
       b.seen++;
       if(c.signals) b.signals++;
     }
-    return { now:now, waiting:waiting, never:never, seen:seen, byMind:byMind };
+    /* ---- AND WHERE THE ANNOUNCING CARS ARE (RLG-207) -------------------
+       A count cannot be acted on. The cancel branch fires when the target lane
+       stops being clear DURING the announcement, and waiting for that to happen
+       by chance means waiting for two rare events to coincide - measured at
+       about one announcement a minute on an ordinary road. This reports the
+       cars that are mid-announcement and the lane each one is asking for, so a
+       check can close that lane on purpose and watch the driver think better of
+       it. Read-only: it reports what the engine decided, and a harness that set
+       these would be staging its own answer.
+       ---------------------------------------------------------------- */
+    const asking = [];
+    for(const c of traffic){
+      if(c.mergeWait > 0 && c.mergeWant !== undefined){
+        asking.push({ dz: Math.round(c.z - (pos + PLAYER_Z)), want: c.mergeWant,
+                      lane: c.lane, wait: +c.mergeWait.toFixed(2) });
+      }
+    }
+    return { now:now, waiting:waiting, never:never, seen:seen, byMind:byMind,
+             asking:asking };
   };
   API.trafficCount = function(){ return traffic.length; };
   /* ---- WHAT IS ARRIVING BEHIND YOU, AND HOW SOLID IT IS ------------------
@@ -28972,12 +28990,15 @@ requestAnimationFrame(frameLoop);
      claim about WHO is being asked, and the road hands out an OUTLAW about once
      in twenty cars. A check that waited for the odds would be measuring the
      random number generator rather than the tiers. */
-  API.parkTraffic = function(dx, dz, type, mind){
+  /* `keep` adds this car to the road instead of replacing everything on it -
+     RLG-207 needs a blocker placed BESIDE a car that is already announcing, and
+     clearing the array would remove the very car being measured. */
+  API.parkTraffic = function(dx, dz, type, mind, keep){
     const t = type || 'sedan';
     /* the invulnerability window has to go with the old car, or the next staged
        collision is refused for nine tenths of a second and reads as a miss */
     iframe = 0;
-    traffic.length = 0;
+    if(!keep) traffic.length = 0;
     traffic.push({
       z: pos + PLAYER_Z + (dz === undefined ? 0 : dz), lane: 1, x: dx || 0,
       spd: 0, cruise: 0, type: t,
@@ -28986,8 +29007,8 @@ requestAnimationFrame(frameLoop);
       w: typeW(t), len: typeLen(t),
       near:false, drift:0, fromBehind:false, paintN:0
     });
-    return { x: traffic[0].x, w: traffic[0].w, len: traffic[0].len,
-             mind: traffic[0].mind };
+    const put = traffic[traffic.length - 1];
+    return { x: put.x, w: put.w, len: put.len, mind: put.mind };
   };
   /* the half-width the hit test actually uses against that car, and the
      half-width the player is DRAWN at, in the same units - the two numbers this
