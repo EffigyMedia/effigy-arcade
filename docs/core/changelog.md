@@ -14,6 +14,27 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-68"></a>
+## [0.13.68] - 2026-09-09
+- Changed: **the indicator check counts pixels that BECOME amber, in a scene held still.** It counted
+  every amber pixel on the screen and asserted a margin of eight above a floor that read 0, 10, 17 and
+  196 across four runs of one build. Measured across four places and eight hours, the floor is sunlit
+  ground and foliage as much as it is sodium lamps - 183 in the forest at midday - and the SIGNAL
+  moved further still, from 6 pixels to 1,050, because it depended on which cars happened to be in
+  shot. The shot is now staged: one place, one hour, dry, the whole road stopped, four cars abreast
+  1,400 units ahead, and only pixels that were not amber in the dark frame are counted.
+- Added: a control that is a second dark frame. Any pixel that turns amber with every indicator off
+  turned amber for a reason that is not an indicator, and the shot is retaken rather than tolerated
+  when that happens. Five things had to be held that were not - the day clock, the weather, the
+  police, the same four cars, and `cruiseFloor`, which the traffic step winds `cruise` back up to
+  every frame.
+- Changed: the flash is sampled on the engine's own clock. The lamp is lit for a third of a second in
+  every two thirds, and a fixed number of waits in a browser running near eleven frames a second can
+  land entirely in the dark half - 17 newly lit pixels on one run and 95 on the next.
+- Added: `tools/amber-falsify.py`, which unwires the indicator painter and requires the amber line to
+  fail. It refuses to claim a proof unless the staging and the stillness both held, and it caught its
+  own vacuous run that way. See [RLG-052](../fragments/RLG-052.md).
+
 <a id="v0-13-67"></a>
 ## [0.13.67] - 2026-09-09
 - Changed: **the corridor check says where the road closed, and stops reporting one closure twice.**
