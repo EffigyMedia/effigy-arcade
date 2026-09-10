@@ -14,6 +14,30 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-69"></a>
+## [0.13.69] - 2026-09-09
+- Fixed: **the nitrous check proved the button worked by reading its own setter.** It read `nosOn`
+  back after `holdNos(true)` had already set it, so it could not fail - and the message written for
+  its failure case, "the nitrous button did not take, so nothing below is about the bottle", is a
+  detail line, which this harness prints on a pass as well. The run said the button had not taken, on
+  a line marked `ok`, while four assertions below it reported numbers anyway. The button is pressed
+  first now, with nothing holding the bottle open.
+- Added: **a third state for a check that could not be run.** BLOCKED is not a pass, it counts against
+  the run the same way a failure does, and it names the precondition that stopped it instead of
+  quoting a number about a car that was doing something else. The closing line says how many checks
+  could not be run, because a suite that quietly measured nothing looks exactly like one that measured
+  everything.
+- Fixed: **the top-end reading is taken only while the engine is on the limiter.** A gear's speed
+  ceiling is its rev limiter expressed as a speed, so a car below the limiter is not at its ceiling.
+  The old loop took the lowest reading over a fixed number of waits whatever the engine was doing,
+  which is why it failed at 113.4% on one run and passed on the next - and on the circuit, where the
+  road bends and the car scrubs speed, it read 58.8% of top end and called it settled. The fall is
+  measured on the engine's own clock and ends when the number stops moving; if there was never enough
+  straight road, the check says so rather than reporting a figure.
+- Added: `tools/nos-falsify.py`, with two arms. Unwire the button and only the button line fails; make
+  `holdNos` refuse and the button line still passes while the three measurements that need an open
+  bottle come out BLOCKED. See [RLG-127](../fragments/RLG-127.md).
+
 <a id="v0-13-68"></a>
 ## [0.13.68] - 2026-09-09
 - Changed: **the indicator check counts pixels that BECOME amber, in a scene held still.** It counted

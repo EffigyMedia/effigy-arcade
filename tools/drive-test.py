@@ -176,23 +176,42 @@ window.__probe.stop = function(){
 
 
 class Result:
+    """What this run found, in three states rather than two.
+
+    ---- A CHECK THAT COULD NOT RUN IS NOT A CHECK THAT PASSED ---------------
+    The nitrous block printed "the nitrous button did not take, so nothing below
+    is about the bottle" on a line marked `ok`, and four assertions under it then
+    reported numbers about a bottle nobody had opened. A `detail` written as a
+    failure message is printed on a PASS as well, so the line said one thing and
+    meant the other - and the checks below it went on asserting on whatever the
+    car happened to be doing.
+
+    BLOCKED is that third state. It is not a pass, it counts against the run the
+    same way a failure does, and it names the precondition that was not met
+    instead of quoting a number that means nothing.
+    """
+
     def __init__(self, game):
         self.game = game
-        self.checks = []      # (ok, label, detail)
+        self.checks = []      # (state, label, detail); 'ok', 'FAIL' or 'BLKD'
 
     def check(self, ok, label, detail=''):
-        self.checks.append((bool(ok), label, detail))
+        self.checks.append(('ok' if ok else 'FAIL', label, detail))
         return bool(ok)
+
+    def blocked(self, label, why):
+        """This check could not be run, and here is what stopped it."""
+        self.checks.append(('BLKD', label, why))
+        return False
 
     @property
     def failed(self):
-        return [c for c in self.checks if not c[0]]
+        return [c for c in self.checks if c[0] != 'ok']
 
     def report(self):
         print(f'\n  {self.game.upper()}')
-        for ok, label, detail in self.checks:
-            mark = 'ok  ' if ok else 'FAIL'
-            line = f'    {mark}  {label}'
+        for state, label, detail in self.checks:
+            line = f'    {state:<4}  {label}'
             if detail:
                 line += f'   {detail}'
             print(line)
@@ -439,20 +458,36 @@ def drive(page, res, seconds, is_circuit):
     # back DOWN onto it. And `nosOn` is READ rather than assumed - the bottle is topped up
     # a frame before the button is pressed, because `nitroBtn.disabled` is rewritten by the
     # HUD each frame from `nos` and pressing it in the same tick presses a disabled button.
-    TOP = ('() => window.__probe.road.spd / (window.__probe.road.MAX_SPD'
-           ' * window.__probe.road.BODY[window.__probe.road.bodyKey()].vmax)')
-    # `holdNos` keeps the bottle open for the measurement. The real BUTTON is still
-    # pressed below and checked, so the control path is covered - but a synthetic
-    # pointerdown stays held on one machine and not the other, and chasing that measures
-    # the event plumbing rather than the engine.
-    HOLD = ('() => { const R = window.__probe.road;'
-            ' R.setNos(100); R.holdNos(true); R.clearTraffic();'
-            ' R.setWet(0); R.setSnow(0); }')
-    page.evaluate(HOLD)
+    # ---- THE BUTTON IS TESTED BEFORE IT IS BYPASSED, AND IT WAS NOT --------
+    # `holdNos` keeps the bottle open for the measurement, because a synthetic
+    # pointerdown stays held on one machine and not the other and chasing that
+    # measures the event plumbing rather than the engine. The comment claimed the
+    # real BUTTON was still covered. It was not: `holdNos(true)` ran first and
+    # set `nosOn` itself, so the line that read `nosOn` back was reading its own
+    # setter. It could not have failed, and the failure message under it -
+    # "the nitrous button did not take" - was printed on the pass.
+    #
+    # So the button is pressed FIRST, with nothing holding the bottle open, and
+    # what `nosOn` says then is about the button. `holdNos` comes after.
+    page.evaluate('() => { const R = window.__probe.road;'
+                  ' R.holdNos(false); R.setNos(100); R.clearTraffic();'
+                  ' R.setWet(0); R.setSnow(0); }')
+    # a frame first: `nitroBtn.disabled` is rewritten by the HUD each frame from
+    # `nos`, so pressing in the same tick presses a disabled button.
     page.wait_for_timeout(140)
     page.dispatch_event('#gas', 'pointerdown')
     page.dispatch_event('#nitro', 'pointerdown')
     page.wait_for_timeout(120)
+    button_took = page.evaluate('() => !!window.__probe.road.nosState().nosOn')
+    res.check(button_took, 'the nitrous button opens the bottle',
+              'nosOn read back true after a press on #nitro' if button_took
+              else 'nosOn is still false after a press on #nitro, and nothing '
+                   'below could be measured')
+
+    HOLD = ('() => { const R = window.__probe.road;'
+            ' R.setNos(100); R.holdNos(true); R.clearTraffic();'
+            ' R.setWet(0); R.setSnow(0); }')
+    page.evaluate(HOLD)
     on_bottle = page.evaluate('() => !!window.__probe.road.nosState().nosOn')
     nos_over = 0.0
     for _ in range(8):
@@ -462,30 +497,79 @@ def drive(page, res, seconds, is_circuit):
         rr = revs_never_exceed_redline(page)
         if rr and rr.get('redline'):
             nos_over = max(nos_over, rr['revs'] / rr['redline'])
-    # now stop forcing and let it fall onto the ceiling, throttle down and bottle open
-    nos_top = 9.9
-    for _ in range(26):
+    # ---- AND IT IS LET FALL ONTO THE CEILING ON THE ENGINE'S OWN CLOCK -----
+    # This took twenty-six waits of 90ms and the lowest reading in them, which is
+    # the settled value only if the car has finished settling. It had not always:
+    # the check failed on one run at 113.4% and passed on the next with no code
+    # change, because 2.3 seconds of wall time in a browser running near eleven
+    # frames a second is a fraction of that in the world, and the car was still
+    # falling from 1.30x when the samples ran out. `simTime` is the engine's own
+    # clock (RLG-055) and the fall is measured against it, and against the
+    # reading itself: it stops when the number stops moving.
+    #
+    # AND A SAMPLE ONLY COUNTS WHILE THE ENGINE IS ON THE LIMITER. A gear's speed
+    # ceiling IS its rev limiter expressed as a speed, so a car that is not at the
+    # limiter is not at its ceiling and its speed says nothing about one. On the
+    # circuit it never is for long - the road bends and the car scrubs speed into
+    # the corner - and the ungated version read 58.8% of top end there and called
+    # it a settled ceiling. Interstate's straight is where this can be measured;
+    # Raceway reports that it could not be, which is the true answer.
+    nos_top, settled, still, on_limiter = 9.9, False, 0, 0
+    t0 = page.evaluate('() => window.__probe.road.simTime()')
+    for _ in range(140):
         page.evaluate(HOLD)
-        page.wait_for_timeout(90)
-        if page.evaluate('() => !!window.__probe.road.nosState().nosOn'):
-            nos_top = min(nos_top, page.evaluate(TOP))
+        page.wait_for_timeout(70)
+        st = page.evaluate(
+            '() => { const R = window.__probe.road; return { on: !!R.nosState().nosOn,'
+            ' top: R.spd / (R.MAX_SPD * R.BODY[R.bodyKey()].vmax) }; }')
+        if not st['on']:
+            continue
+        rr = revs_never_exceed_redline(page)
+        if not rr or not rr.get('redline') or rr['revs'] / rr['redline'] < 0.98:
+            continue
+        on_limiter += 1
+        v = st['top']
+        if v < nos_top - 0.002:
+            nos_top, still = v, 0
+        else:
+            still += 1
+        secs = page.evaluate('() => window.__probe.road.simTime()') - t0
+        if still >= 5 and secs > 1.5:
+            settled = True
+            break
+        if secs > 12:
+            break
+    fall_secs = page.evaluate('() => window.__probe.road.simTime()') - t0
     page.dispatch_event('#nitro', 'pointerup')
     page.dispatch_event('#gas', 'pointerup')
     page.evaluate('() => window.__probe.road.holdNos(false)')
-    res.check(on_bottle, 'the bottle can be held open for the check',
-              'the nitrous button did not take, so nothing below is about the bottle')
-    res.check(nos_over > 1.05,
-              'and the bottle is the one thing that lifts it',
-              f'peak {nos_over*100:.1f}% of redline with the bottle open, which is no lift')
-    res.check(nos_over <= 1.11,
-              'and it lifts it by a tenth and no more',
-              f'peak {nos_over*100:.1f}% of redline')
-    res.check(nos_top < 9,
-              'and a reading was taken with the bottle actually open',
-              'no sample had the bottle open, so the number below means nothing')
-    res.check(1.04 < nos_top < 1.13,
-              'so the car settles a tenth above its own top end while the bottle is open',
-              f'it settled at {nos_top*100:.1f}% of its declared top end')
+
+    # ---- WHAT COULD NOT BE MEASURED IS SAID, NOT SCORED --------------------
+    # Every line below depends on the bottle having been open. When it was not,
+    # they used to report numbers about a car that was doing something else.
+    if not on_bottle:
+        why = 'the bottle would not stay open, so this was never measured'
+        res.blocked('and the bottle is the one thing that lifts the limiter', why)
+        res.blocked('and it lifts it by a tenth and no more', why)
+        res.blocked('so the car settles a tenth above its own top end', why)
+    else:
+        res.check(nos_over > 1.05,
+                  'and the bottle is the one thing that lifts the limiter',
+                  f'peak {nos_over*100:.1f}% of redline with the bottle open')
+        res.check(nos_over <= 1.11,
+                  'and it lifts it by a tenth and no more',
+                  f'peak {nos_over*100:.1f}% of redline')
+        if not settled:
+            res.blocked('so the car settles a tenth above its own top end',
+                        f'{on_limiter} sample(s) had the engine on the limiter over '
+                        f'{fall_secs:.1f}s on the engine clock, which is not enough '
+                        f'road to measure a ceiling on')
+        else:
+            res.check(1.04 < nos_top < 1.13,
+                      'so the car settles a tenth above its own top end',
+                      f'it settled at {nos_top*100:.1f}% of its declared top end '
+                      f'after {fall_secs:.1f}s on the engine clock')
+
 
     # AND IT COMES BACK DOWN. The lift is a thing you HOLD, not a thing you reach and keep -
     # `overRun` is gated on the bottle being shut precisely so that is true.
@@ -644,6 +728,13 @@ def main():
     bad = sum(len(r.failed) for r in results)
     total = sum(len(r.checks) for r in results)
     print(f'\n  {total - bad}/{total} checks passed')
+    # BLOCKED IS SAID OUT LOUD. A run that could not test something has not
+    # tested it, and that count is the difference between a red run and a run
+    # which quietly measured nothing.
+    stuck = sum(1 for r in results for c in r.checks if c[0] == 'BLKD')
+    if stuck:
+        print(f'  {stuck} check(s) COULD NOT BE RUN - see BLKD above. '
+              f'Nothing was proved about those.')
     return 1 if bad else 0
 
 
