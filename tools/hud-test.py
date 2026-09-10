@@ -284,8 +284,8 @@ def main():
         res.check(withnos.get('dials') is not None,
                   'and the dials are on screen', str(withnos.get('dials')))
 
-        # LORRY and CAB are the two the fragment names as having a button they could never use
-        nonos = cluster('LORRY')
+        # SEMI and CAB are the two the fragment names as having a button they could never use
+        nonos = cluster('SEMI')
         print('      with a bottle:  nitro %s  dials at %s'
               % (withnos.get('nitro'), (withnos.get('dials') or {}).get('bottom')))
         print('      without one:    nitro %s  dials at %s'
@@ -317,7 +317,7 @@ def main():
             page.evaluate('() => window.__probe.road.setBody("ROADSTER")')
             page.wait_for_timeout(250)
             page.screenshot(path=str(out / 'hud-with-nos.png'))
-            page.evaluate('() => window.__probe.road.setBody("LORRY")')
+            page.evaluate('() => window.__probe.road.setBody("SEMI")')
             page.wait_for_timeout(250)
             page.screenshot(path=str(out / 'hud-no-nos.png'))
             print('      wrote %s' % out)

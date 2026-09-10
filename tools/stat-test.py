@@ -403,7 +403,7 @@ TRAFFIC = r"""
 
 # what a traffic object of each type would be if it read BODY. `sedan2` is the second
 # saloon sprite and shares SALOON's record.
-TYPE_TO_BODY = {'truck': 'LORRY', 'van': 'VAN', 'pickup': 'PICKUP', 'coupe': 'COUPE',
+TYPE_TO_BODY = {'truck': 'SEMI', 'van': 'VAN', 'pickup': 'PICKUP', 'coupe': 'COUPE',
                 'tuner': 'TUNER', 'muscle': 'MUSCLE', 'taxi': 'CAB',
                 'sedan': 'SALOON', 'sedan2': 'SALOON'}
 

@@ -44,7 +44,7 @@ GAMES = {
 # landed, which is the check doing its job.
 EXPECTED_CARS = ['ROADSTER', 'TUNER', 'MUSCLE']
 # and the ones that must NOT be there until they are earned
-LOCKED_CARS = ['STALLION', 'MATADOR', 'CREST', 'VECTOR', 'APEX', 'COMET', 'CAB', 'VAN', 'LORRY']
+LOCKED_CARS = ['STALLION', 'MATADOR', 'CREST', 'VECTOR', 'APEX', 'COMET', 'CAB', 'VAN', 'SEMI']
 
 
 # --- capture the engine before it runs ---------------------------------------

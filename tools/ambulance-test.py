@@ -110,7 +110,7 @@ def main():
                'never met both bodies, so nothing was compared')
         # ================= AND THE ONE THAT IS ON A CALL =========================
         # Owner, 2026-09-07: "there's a chance for it to spawn behind you in emergency
-        # mode. It's given the racer personality so it wants to go as fast as possible and
+        # mode. It's given the OUTLAW personality so it wants to go as fast as possible and
         # the siren works just like the police version as far as moving people out of the
         # way." Plus, later: "the police will not try to engage an ambulance."
         print('  ..    calling one out')

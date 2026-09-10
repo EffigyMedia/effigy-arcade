@@ -14,8 +14,13 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
-<a id="v0-13-69"></a>
-## [0.13.69] - 2026-09-09
+> **The three entries below were written as 0.13.67 to 0.13.69 on a working branch and are
+> filed here as 0.13.71 to 0.13.73.** Both branches allocated the same three numbers at the
+> same time; the ones that shipped from `main` keep them. The commit messages still name the
+> numbers they were written under, which is what those commits did.
+
+<a id="v0-13-73"></a>
+## [0.13.73] - 2026-09-09
 - Fixed: **the nitrous check proved the button worked by reading its own setter.** It read `nosOn`
   back after `holdNos(true)` had already set it, so it could not fail - and the message written for
   its failure case, "the nitrous button did not take, so nothing below is about the bottle", is a
@@ -38,8 +43,8 @@ barely started, and 0.9.x would have claimed otherwise.
   `holdNos` refuse and the button line still passes while the three measurements that need an open
   bottle come out BLOCKED. See [RLG-127](../fragments/RLG-127.md).
 
-<a id="v0-13-68"></a>
-## [0.13.68] - 2026-09-09
+<a id="v0-13-72"></a>
+## [0.13.72] - 2026-09-09
 - Changed: **the indicator check counts pixels that BECOME amber, in a scene held still.** It counted
   every amber pixel on the screen and asserted a margin of eight above a floor that read 0, 10, 17 and
   196 across four runs of one build. Measured across four places and eight hours, the floor is sunlit
@@ -59,8 +64,8 @@ barely started, and 0.9.x would have claimed otherwise.
   fail. It refuses to claim a proof unless the staging and the stillness both held, and it caught its
   own vacuous run that way. See [RLG-052](../fragments/RLG-052.md).
 
-<a id="v0-13-67"></a>
-## [0.13.67] - 2026-09-09
+<a id="v0-13-71"></a>
+## [0.13.71] - 2026-09-09
 - Changed: **the corridor check says where the road closed, and stops reporting one closure twice.**
   `tools/traffic-test.py` asserted the lane-open guarantee on two lines - the blocked-window count and
   the narrowest corridor - which are one measurement, because the engine counts a window as blocked
@@ -81,6 +86,63 @@ barely started, and 0.9.x would have claimed otherwise.
   does not hold**, so "there is always a way through" was a sentence one run could never earn.
 - Nothing in the engine's behaviour changed. The guarantee is still broken and it is still
   [RLG-037](../fragments/RLG-037.md), which now carries the measurement and a suspect.
+
+<a id="v0-13-70"></a>
+## [0.13.70] - 2026-09-09
+- Fixed: **the interceptor check did not have a speed, it had a range, and the rule it was testing
+  sat inside it.** `heat-test` set the speed once every 250ms and let go; between two pins the car is
+  left to the world with nothing on the throttle, so three runs of the same 160mph request read
+  144-157, 151-158 and 140-167mph. A super cruiser needs 150mph held for four unbroken seconds and
+  the counter resets on every crossing, so the four seconds were banked by chance - which is why the
+  check read 4 supers on one run and 0 on the next, and why taking the hold from nine seconds to
+  sixteen changed nothing. See [RLG-199](../fragments/RLG-199.md).
+- Added: **`API.holdSpd`, the throttle a harness does not have.** It pins the speed every frame in
+  the one place the count-in already pins it, so the number a check asks for is the number the car is
+  doing - a spread of zero against a range tens of mph wide. A count-in still wins over it. Nothing
+  in the game sets it.
+- Changed: `superWatch`'s two thresholds are named - `SUPER_MPH` and `SUPER_HOLD` - and
+  `API.pursuit` reports them with the current speed and the seconds banked. A check that copies a
+  tunable measures the number it was written against rather than the rule, which the cooling check
+  learnt when `HEAT_COOL` moved from twelve to thirty.
+- Changed: `heat-test` asserts that the car was over the gate BEFORE asserting that no interceptor
+  came. "No super cruiser without the 170 past a trap" had been green for months while the car it
+  drove never reliably reached the speed the rule watches.
+- Added: `tools/super-gate-proof.py`, which measures the speed both ways round and includes an arm
+  held BELOW the gate - so a green means the arrangement can still report zero when zero is true. It
+  caught two wrong assertions of its own before it settled; both red runs are kept as evidence.
+
+<a id="v0-13-69"></a>
+## [0.13.69] - 2026-09-09
+- Changed: **LORRY is SEMI.** Owner, 2026-09-09: "I would like to rename the Lorry to Semi since I am
+  an American." The vehicle drawn is a tractor unit pulling a box trailer, which is exactly what a
+  semi is, so the rename loses nothing.
+- Added: **a migration for saves that hold the old key.** The chosen car is persisted by key, so a
+  rename would have silently put anybody driving a lorry into a ROADSTER. `FORMULA` to `APEX` is the
+  same migration for the same reason and both now live in one table.
+- Added: `tools/rename-test.py`, which writes an old key into a save and asks the engine which car it
+  opened. With the migration removed it reports *opened ROADSTER*. See
+  [RLG-197](../fragments/RLG-197.md).
+
+<a id="v0-13-68"></a>
+## [0.13.68] - 2026-09-09
+- Changed: **a supercar's rear wing is shaded on the front view, where it is the far end of the car.**
+  Owner, 2026-09-09: "the same thing with the rear spoilers from the front view as we did with the pick
+  up truck since they are further away." A wing is at the back, so from behind you are standing at it
+  and from the front it is the furthest thing away - and both ends drew it in the same three colours.
+  The white lift along its top edge dims separately, because a highlight shaded with the body values
+  would read as a brighter object rather than a more distant one. See
+  [RLG-196](../fragments/RLG-196.md).
+- This is the third part to take the near/far rule, after the formula wings and the pickup's cab, and
+  RLG-196 states it once so it need not be rediscovered a fourth time.
+
+<a id="v0-13-67"></a>
+## [0.13.67] - 2026-09-09
+- Changed: **the aggressive traffic personality is an OUTLAW, and a race opponent is a RACER.** Owner,
+  2026-09-09: "we need to rename the racer personality to outlaw and the rival personality to racer."
+  The game called the lawbreaker a racer and the competitor a rival, which is the wrong way round in a
+  product that has both on the same road. Nothing about behaviour changed - same target speed, same
+  merge urge, same spawn odds. `mind-test.py` moved with it because it reads the personality counts by
+  key. See [RLG-195](../fragments/RLG-195.md).
 
 <a id="v0-13-66"></a>
 ## [0.13.66] - 2026-09-09

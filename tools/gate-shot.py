@@ -77,7 +77,7 @@ def serve(root):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=None)
-    ap.add_argument('--cars', default='LORRY,MUSCLE,ROADSTER,TUNER,SUPERCRUISER')
+    ap.add_argument('--cars', default='SEMI,MUSCLE,ROADSTER,TUNER,SUPERCRUISER')
     args = ap.parse_args()
     console_utf8()
     out = Path(args.out) if args.out else ROOT / '_gate'

@@ -41,7 +41,7 @@ from harness import console_utf8, launch_chromium
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
-WORK = {'COUPE', 'SALOON', 'CAB', 'PICKUP', 'VAN', 'LORRY', 'AMBULANCE'}
+WORK = {'COUPE', 'SALOON', 'CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE'}
 
 
 def main():

@@ -69,6 +69,13 @@ SECONDS = 45
 # The pace held through the corridor phase, in world units a second. It is
 # quoted rather than read back because it is what the phase IMPOSES, and it
 # turns a distance up the road into the time the car has before it arrives.
+#
+# HELD EVERY FRAME, NOT FOUR TIMES A SECOND. `setSpd` pins the speed once and
+# lets go, and between two pins the car is left to the world with nothing on the
+# throttle - it sags on the flat and a slope can put it back over, which read as
+# a 27mph range from a single request when RLG-199 measured it. The corridor
+# phase is exactly that shape, and the distances it now reports are turned into
+# SECONDS using this number, so a pace that drifts is a time that lies.
 PACE = 11000
 
 
@@ -302,9 +309,9 @@ def main():
 
         worst, blocked_samples, samples, tight = 0, 0, 0, 9.0
         tight_at, nearest = -1, -1
+        # a real pace, so waves keep arriving and the field keeps moving
+        page.evaluate(f"() => window.__road.holdSpd({PACE})")
         for _ in range(SECONDS * 4):
-            # hold a real pace so waves keep arriving and the field keeps moving
-            page.evaluate(f"() => {{ window.__road.setSpd && window.__road.setSpd({PACE}); }}")
             page.wait_for_timeout(250)
             st = page.evaluate(
                 "() => ({b: window.__road.blockedAhead(), t: window.__road.tightestAhead(),"
@@ -320,7 +327,14 @@ def main():
                 if nearest < 0 or st['bn'] < nearest:
                     nearest = st['bn']
 
+        held = page.evaluate("() => window.__road.spd")
+        page.evaluate("() => window.__road.holdSpd(null)")
         ok(samples > 100, 'the run was long enough to matter', f'{samples} samples')
+        # THE PACE IS CHECKED, because every distance below is reported as a time
+        # at it. A drifting pace makes those times wrong without making anything
+        # look wrong.
+        ok(abs(held - PACE) < PACE * 0.02, 'and it was driven at the pace it says',
+           f'{held:,.0f} units a second against {PACE:,} asked for')
         # THE MEASUREMENT THAT DISCRIMINATES. The contract line below passes on a
         # road that never crowds at all, which is how the first version of this
         # test passed with the fixer switched off. The narrowest corridor actually

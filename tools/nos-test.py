@@ -102,7 +102,7 @@ with sync_playwright() as p:
         classes = {r['body']: r['hasNos'] for r in first}
         yes = pg.evaluate("() => ['ROADSTER','MATADOR','APEX'].map(k =>"
                           "   [k, window.__road.hasNosFor(k)])")
-        no = pg.evaluate("() => ['VAN','LORRY','CAB','AMBULANCE'].map(k =>"
+        no = pg.evaluate("() => ['VAN','SEMI','CAB','AMBULANCE'].map(k =>"
                          "   [k, window.__road.hasNosFor(k)])")
         check(all(v for _, v in yes) and not any(v for _, v in no),
               'the right cars carry a bottle, and only those',
