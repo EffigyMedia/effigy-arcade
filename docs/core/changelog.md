@@ -19,6 +19,32 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-75"></a>
+## [0.13.75] - 2026-09-10
+- Fixed: **a police car now belongs to the league it was built from.** There are two class systems
+  here and they did not agree: `BODY_CLASS` is the unlock class and knows `cruiser` and
+  `supercruiser`, while `classOf` is the RACE class and fell through to `super` for anything not in
+  its sports list - so a patrol car was put on a grid of STALLIONs, MATADORs and CRESTs. The car's
+  own note said the opposite in as many words, and so did the tournament's police prize. Both
+  comments were right and the function was wrong; nothing could see it, because until this morning
+  neither car could be selected. The league is declared on the BODY record, so a third force car
+  needs no edit here - and it decides which race INTERCEPT will send each car to break up.
+  [RLG-202](../fragments/RLG-202.md)
+- Fixed: **the trophy screen stops announcing a car you already own.** The police-car prize is
+  written into the save at the finish and nothing resets it before the trophy, so that screen could
+  never ask whether the car was new - the answer is always yes by the time it is drawn. Three states
+  now: won it just now, already had it, or ran the gold with pursuit off and missed it. Only the
+  last is told how, and nobody is taught how to win a car they are sitting in. This was already
+  reachable by winning the same gold twice.
+  [RLG-202](../fragments/RLG-202.md)
+- Added: **two readings the engine could not answer.** `API.raceClass` gives the league where
+  `API.bodyClass` gives the unlock class, and `API.gridBodies` reports the field that was actually
+  built rather than the plan - a check reading the plan would agree with the plan.
+  `tools/league-test.py` is new: fourteen checks, two ordinary cars as controls, and a falsification
+  that takes the declaration off the live record and requires the CRUISER to fall back into the
+  supercar field.
+  [RLG-202](../fragments/RLG-202.md)
+
 <a id="v0-13-74"></a>
 ## [0.13.74] - 2026-09-10
 - Added: **the interceptor is a car you can win and drive.** A supercar gold taken under hot pursuit

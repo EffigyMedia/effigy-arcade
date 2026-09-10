@@ -632,6 +632,10 @@ function clockRuns(){ return (mode === 'race') || timedRun; }
 const TOUR_MILES = [10, 12, 16, 24];
 const TOUR_PTS   = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1, 0, 0];   /* by place */
 let tourOn = false, tourRound = 0, tourPts = 0, tourField = [];
+/* what the last finish paid in police cars, read by the trophy screen only.
+   `New` is a car won just now; `Had` is the same gold taken again in a car
+   you already owned, which says nothing rather than announcing it twice. */
+let tourCopNew = false, tourCopHad = false;
 
 function tourReset(){
   tourRound = 0; tourPts = 0;
@@ -3267,7 +3271,7 @@ const BODY = {
      RLG-055 — the same record the sprite builder already assembles it from —
      so the reason the flag existed is gone.
      ---------------------------------------------------------------------- */
-  'SUPERCRUISER': { hardy:0.85, kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ force:true, bar:'police', barY:0.304,
+  'SUPERCRUISER': { hardy:0.85, kin:'MATADOR', /* a MATADOR the force took - the code has said so all along */ force:true, bar:'police', barY:0.304, raceClass:'super',
               bodyTop:0.52, cabinTop:0.24, cabW:0.52, cabOff:0, roofR:0.10,
               wide:0.030, arch:1.00, gears:6, redline:12000, pitch:1.02,
               horn:1.02, rear:'CRUISER', spoiler:'low',
@@ -3283,7 +3287,7 @@ const BODY = {
                  car of the class it polices and the best-braked. */
               note:'INTERCEPTOR \u00B7 A MATADOR WITH A CAGE IN IT' },
 
-  'CRUISER': { hardy:1.15, kin:'SALOON', /* a patrol car is a saloon in force colours */ force:true, bar:'police', barY:0.122, rig:'cop', gears:5, wide:0.045, arch:1.00,
+  'CRUISER': { hardy:1.15, kin:'SALOON', /* a patrol car is a saloon in force colours */ force:true, bar:'police', barY:0.122, rig:'cop', raceClass:'sports', gears:5, wide:0.045, arch:1.00,
               horn:0.80, redline:11000, pitch:0.72, rear:'CRUISER',
               mass:1810, hp:370, grip:0.96, launch:1.16, mech:1.15, vmax:0.71, note:'INTERCEPTOR \u00B7 HEAVY, AND FAST' },
   /* ---- THE TRAFFIC, DRIVEABLE ---------------------------------------------
@@ -6187,8 +6191,35 @@ function isFormulaBody(B){
   for(const k of FORMULA_BODIES) if(BODY[k] === B) return true;
   return false;
 }
+/* ---- A RECORD MAY DECLARE ITS OWN LEAGUE (RLG-202) ----------------------
+   Owner, 2026-09-10: "the cruiser and supercruiser are eligible for their class
+   of race. You can use a cruiser to do sports races and tournaments, and you
+   can use a supercruiser to do super races and tournaments."
+
+   THERE ARE TWO CLASS SYSTEMS IN THIS FILE AND THEY DID NOT AGREE. `BODY_CLASS`
+   is the UNLOCK class - it decides what a gold pays and what a silhouette says,
+   and it has entries for `cruiser` and `supercruiser`. `classOf` is the RACE
+   class, it has three answers, and it read two LISTS and fell through to
+   `super` for everything else. So a patrol car was put on a grid of STALLIONs,
+   MATADORs and CRESTs and ran the supercar ladder.
+
+   AND THE CODE ALREADY SAID SO IN TWO PLACES. The SUPERCRUISER's own note reads
+   "It is the floor of the supercar class, exactly as the CRUISER is the floor of
+   the sports class", and the tournament's police prize is commented "the same
+   class rule the cars themselves are held to, that a cruiser is comparable to
+   the sports class and a super cruiser to the supers". Both comments were right
+   and the function was wrong. Nobody could see it, because until [[RLG-181]]
+   neither car could be selected.
+
+   THE RECORD DECLARES IT rather than this function naming two bodies. `force`,
+   `bar`, `npc` and `span` all work that way, and naming a body here is the exact
+   shape that left `hasBar` and `copLivery` wrong when a second police car
+   arrived. A third force car declares `raceClass` and needs no edit here.
+   ------------------------------------------------------------------------- */
 function classOf(k){
   if(isFormula(k)) return 'formula';
+  const B = BODY[k];
+  if(B && B.raceClass) return B.raceClass;
   return SPORTS_BODIES.indexOf(k) >= 0 ? 'sports' : 'super';
 }
 function racerBodies(){
@@ -14354,10 +14385,26 @@ function stepRacers(dt){
              is an EXTRA condition on the same gold rather than a change to what
              gold already pays: turning pursuit off still wins you the formula
              car or the paint, it just does not win you a police car. */
-          if(st === 1 && !optEasy && classOf(optBody) === 'sports')
-            AR.save.merge((GAME_ID + '-opts'), { cruiser:true });
-          if(st === 1 && !optEasy && classOf(optBody) === 'super')
-            AR.save.merge((GAME_ID + '-opts'), { supercruiser:true });
+          /* ---- AND WHETHER IT WAS NEW HAS TO BE ASKED HERE (RLG-202) ----
+             The trophy screen announces this prize and it CANNOT ask
+             `unlocked()` for itself: these merges run at the finish and nothing
+             resets them before the trophy, so by the time that screen is drawn
+             the answer is always yes - for a first win and for a hundredth.
+
+             It never mattered while a police car could not be driven. Now that
+             it can, the sports ladder run IN a CRUISER pays the CRUISER, and a
+             screen announcing the car under the player is the reward-that-is-
+             already-yours this file removed silver and bronze for.
+
+             Three states, not two: WON it just now, ALREADY had it, or ran the
+             gold with pursuit off and missed it. Only the last wants the tip
+             that says how. */
+          const copKey = (st === 1 && !optEasy && classOf(optBody) === 'sports') ? 'cruiser'
+                       : (st === 1 && !optEasy && classOf(optBody) === 'super')  ? 'supercruiser'
+                       : null;
+          tourCopHad = !!(copKey && unlocked(copKey));
+          tourCopNew = !!(copKey && !tourCopHad);
+          if(copKey) AR.save.merge((GAME_ID + '-opts'), { [copKey]: true });
           /* ---- SILVER AND BRONZE PAY NOTHING, FOR NOW --------------------
              They paid the TUNER and the MUSCLE car. Both are in the starting
              class since the ladder was built, so the merges were writing flags
@@ -26134,8 +26181,9 @@ function showTrophy(st){
   const sports = cls === 'sports';
   /* the first car of the class this gold just opened */
   const goldCar = sports ? 'MATADOR' : cls === 'super' ? 'APEX' : null;
-  const copCar  = (st === 1 && !optEasy && cls !== 'formula')
-                ? (sports ? 'CRUISER' : 'SUPERCRUISER') : null;
+  /* RLG-202: decided at the finish, because only the finish can still see
+     whether this car was already yours. */
+  const copCar  = tourCopNew ? (sports ? 'CRUISER' : 'SUPERCRUISER') : null;
   /* the headline prize of the ladder you ran, in the words the player will
      recognise from the garage */
   const goldNote = sports ? 'SUPERCAR CLASS UNLOCKED \u00B7 ALL THREE'
@@ -26158,7 +26206,13 @@ function showTrophy(st){
         (copCar
           ? '<div class="gnote">' + copCar + ' UNLOCKED \u00b7 WON UNDER PURSUIT</div>'
           /* say what was missed, so the condition is discoverable from the one
-             screen where the player is looking at the result of meeting it */
+             screen where the player is looking at the result of meeting it -
+             but only to somebody who has not already met it. RLG-202: a player
+             who owns the car has missed nothing, and telling them how to win a
+             car they are sitting in is the same wrong screen from the other
+             end. */
+          : tourCopHad
+          ? ''
           : '<div class="tip">A GOLD WITH HOT PURSUIT ON ALSO WINS THE POLICE CAR</div>')
       : '<div class="tip">A GOLD UNLOCKS THE FOURTH CAR</div>') +
     '<div class="gstack">' +
@@ -27310,6 +27364,14 @@ requestAnimationFrame(frameLoop);
   API.body      = function(){ return optBody; };
   API.bodyClass = function(k){ return bodyClass(k || optBody); };
   API.raceLegal = function(k){ return raceLegal(k || optBody); };
+  /* ---- THE RACE CLASS, WHICH IS NOT THE UNLOCK CLASS (RLG-202) ----------
+     `bodyClass` above answers `BODY_CLASS` - what a gold pays and what a
+     silhouette says. This answers `classOf` - which LEAGUE the car runs in, and
+     therefore which field is built around it. They are different questions with
+     different answers for the same car, and nothing outside the engine could
+     ask the second one until the two disagreed about a patrol car.
+     -------------------------------------------------------------------- */
+  API.raceClass = function(k){ return classOf(k || optBody); };
   API.garageBodies = function(){ return garageBodies().slice(); };
   /* the round and the points are kept when a mode is dropped - this is how a
      check proves the tournament was switched OFF rather than erased */
@@ -28004,6 +28066,17 @@ requestAnimationFrame(frameLoop);
     return racers.map(r => ({ dz: Math.round(r.z - (pos + PLAYER_Z)),
                               spd: Math.round(r.spd || 0) }));
   };
+  /* ---- WHAT THE FIELD IS MADE OF (RLG-202) ------------------------------
+     `rivalState` says where the rivals are and how fast they are going, and
+     nothing said WHAT they are - so the class a race is actually run in could
+     not be read from outside, which is how a patrol car came to be racing
+     supercars with no check anywhere noticing.
+
+     IT READS THE BUILT FIELD, not the plan. `racerBodies` returns what SHOULD
+     be on the grid; this returns what `buildField` put there. A check that read
+     the plan would agree with the plan.
+     -------------------------------------------------------------------- */
+  API.gridBodies = function(){ return racers.map(r => r.body || null); };
   API.placePatrol = function(dz){
     const z = pos + PLAYER_Z + (dz === undefined ? 4000 : dz);
     traffic.push({
