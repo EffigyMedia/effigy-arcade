@@ -8800,6 +8800,11 @@ let signalledMerges = 0;
    three orders of magnitude apart rather than a factor of three.
    ---------------------------------------------------------------------- */
 let signalsStarted = 0;
+/* RLG-207: announcements the driver thought better of. Counted apart from
+   `signalledMerges` because an announcement that never completes is also what a
+   defect looks like, and a check that could not tell them apart would call a
+   working change of mind a bug. */
+let mergesAborted = 0;
 /* ---- THE TIGHTEST THE ROAD GOT, not just whether it closed -----------------
    A boolean "was it ever blocked" cannot tell a working guarantee from a road
    that never crowds in the first place - and the first version of the traffic
@@ -9015,7 +9020,7 @@ function spawnBehind(){
     spd: 0, cruise: behindCruise,
     /* and the driver is read OFF that speed rather than rolled, so nothing ever
        carries a personality that contradicts what it is doing */
-    mind: mindFor(behindCruise),
+    mind: mindFor(behindCruise), signals: signalsFor(mindFor(behindCruise)),
     type: t,
     w: typeW(t), len: typeLen(t),
     near:false, drift: rnd(-1,1)*0.0002, fromBehind:true, paintN: (Math.random()*10)|0,
@@ -9078,7 +9083,7 @@ function spawnEmergency(){
     /* everything it has. `cruiseFor` takes the smaller of what the driver wants
        and what the vehicle can do, and an OUTLAW wants more than this van has. */
     spd: 0, cruise: cruiseFor('ambulance', OUTLAW),
-    mind: OUTLAW, type: 'ambulance',
+    mind: OUTLAW, signals: signalsFor(OUTLAW), type: 'ambulance',
     w: typeW('ambulance'), len: typeLen('ambulance'),
     /* the one field that separates it from the ambulance going home */
     emergency: true, barPhase: Math.random() * 6.2832,
@@ -9150,6 +9155,8 @@ function spawnWave(z){
     if(t === 'cop') patrolsMade++;
     const mind = rollMind(t);
     traffic.push({
+      /* RLG-207: the habit is the DRIVER's and is decided here, once */
+      signals: signalsFor(mind),
       z: z + rnd(-600,600), lane,
       x: LANE_X[lane] + rnd(-TRAF_JITTER, TRAF_JITTER) * LANE_W,
       /* ---- TRAFFIC IS TRAFFIC, NOT A FIELD -----------------------------
@@ -9276,6 +9283,40 @@ const OBEY = { 0: 1.00, 1: 0.60, 2: 0.25, 3: 0 };
    so a stubborn OUTLAW ends up stubborn rather than ending up where a stubborn
    COMMUTER would */
 const OBEY_FLOOR = 0.12;
+/* ---- THE INDICATOR IS A HABIT, AND IT FOLLOWS THE DRIVER (RLG-207) ------
+   Owner, 2026-09-10: "when a vehicle is spawned into the world, their chance to
+   indicate is decided and assigned to them" - and, asked whether the habit
+   should follow the personality or be independent of it, the personality.
+
+   A COMMUTER almost always signals, a SPEEDER usually, an OUTLAW rarely, a
+   RACER never. It is the same shape as `OBEY` above and for the same reason:
+   these are two faces of how much notice a driver takes of anybody else.
+
+   ASSIGNED AT SPAWN, NOT AT THE FIRST MERGE. The old line sat inside the merge
+   branch - `if(c.signals === undefined) c.signals = ...` - so the habit was
+   rolled the first time a car ever wanted to change lane, and a car that never
+   merged never had one. The comment beside it already claimed it was "decided
+   once when the car is built"; now it is.
+   ------------------------------------------------------------------------- */
+const SIGNAL_ODDS = { 0: 0.95, 1: 0.75, 2: 0.25, 3: 0 };
+function signalsFor(mind){
+  const p = SIGNAL_ODDS[mind];
+  return Math.random() < (p === undefined ? 0.78 : p);
+}
+/* ---- HOW LONG AN ANNOUNCED MOVE IS ANNOUNCED FOR (RLG-207) --------------
+   Owner: "start their indicator and then wait 1 to 3 seconds before merging".
+   It was `rnd(1.1, 1.8)` written inline. A tunable with a committed default,
+   because how long a road feels patient for is a judgement on a device.
+   ------------------------------------------------------------------------- */
+const MERGE_ANNOUNCE = [1.0, 3.0];
+/* how often a car re-reads its surroundings while it is announcing. Every frame
+   would sweep three lists per announcing car per frame for no gain; a quarter
+   of a second is four looks inside the shortest possible announcement. */
+const MERGE_RELOOK = 0.25;
+/* and how long it sits still after thinking better of a move, before it starts
+   the whole process again - the owner's "wait a few seconds" */
+const MERGE_RETHINK = [2.0, 4.0];
+
 function obeyOf(c){
   const base = OBEY[c && c.mind];
   return base === undefined ? 1 : base;
@@ -9920,7 +9961,7 @@ function reset(){
   /* You start PARKED, in first, with the engine idling. A run that begins at
      60mph gives away the launch, and now that first gear pulls properly off
      the line the launch is worth having. */
-  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; patrolsWoken=0; radioSent=0; patrolsMade=0; copOrigins=[];
+  pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; mergesAborted=0; patrolsWoken=0; radioSent=0; patrolsMade=0; copOrigins=[];
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
@@ -17049,9 +17090,13 @@ function step(dt){
            of this engine follows: the car is capable, the DRIVER decides.
            ------------------------------------------------------------- */
         c.blinkDir = best > here ? 1 : -1;
-        if(c.signals === undefined) c.signals = Math.random() > 0.22;
+        /* RLG-207: assigned at spawn now. The fallback is for a car staged by a
+           harness that predates the field, and it is not a second roll of the
+           habit - it is the habit being missing. */
+        if(c.signals === undefined) c.signals = signalsFor(c.mind);
         c.mergeWant = best;
-        c.mergeWait = c.signals ? rnd(1.1, 1.8) : 0;
+        c.mergeWait = c.signals ? rnd(MERGE_ANNOUNCE[0], MERGE_ANNOUNCE[1]) : 0;
+        c.mergeLook = MERGE_RELOOK;
         if(c.mergeWait > 0) signalsStarted++;
         c.blink = c.signals ? c.mergeWait + 1.1 : 0;
         if(!c.mergeWait){
@@ -17069,9 +17114,56 @@ function step(dt){
        again shortly, with its indicator still running down - which is also
        what a real one does.
        --------------------------------------------------------------- */
+    /* ---- AND IT KEEPS LOOKING WHILE IT WAITS (RLG-207) ------------------
+       Owner, 2026-09-10: "during this wait time of 1 to 3 seconds they will
+       continue to evaluate their surroundings and if the circumstances change
+       enough that they should not merge they will cancel their indicator and
+       remain in their lane. After waiting a few seconds if they still want to
+       merge, they will start this process over again."
+
+       THAT IS A DIFFERENT EVENT FROM THE ONE BELOW, and the difference is the
+       whole of why this exists. Below is a gap that closed at the last instant,
+       found by a car already committed to moving. This is a driver watching the
+       road for a second and a half and CHANGING THEIR MIND - which a person can
+       see happen, because the indicator goes off and the car stays where it is.
+
+       THE INDICATOR IS CANCELLED HERE and it is NOT cancelled below. A move
+       that was abandoned because somebody took the gap leaves the lamp running
+       down, which is what a real one does. A driver who thought better of it
+       switches it off. `mergesAborted` counts these separately, because an
+       announcement that never completes is also what a BUG looks like and the
+       two must not be confused for one another.
+       --------------------------------------------------------------- */
     if(c.mergeWait > 0){
-      c.mergeWait -= dt;
-      if(c.mergeWait <= 0){
+      /* NOT `continue`, which is what this was first written as. Everything
+         below in this loop is the rest of the car's frame - its speed, its
+         brake lights, its blink - and a car that changes its mind about a lane
+         must not also stop accelerating for a frame. */
+      let rethought = false;
+      /* `mergeLook` is set beside `mergeWait` and nothing else writes either, so
+         this cannot be missing today. It is guarded anyway because the failure
+         would be SILENT rather than loud: `undefined - dt` is NaN, `NaN <= 0` is
+         false, and the car would simply never look again - an announcement that
+         quietly stopped re-evaluating, which is the exact behaviour this ruling
+         was written to add. */
+      if(c.mergeLook === undefined) c.mergeLook = MERGE_RELOOK;
+      c.mergeLook -= dt;
+      if(c.mergeLook <= 0){
+        c.mergeLook = MERGE_RELOOK;
+        const tw = (c.mergeWant === undefined) ? undefined : LANE_X[c.mergeWant];
+        if(tw === undefined || !laneClear(c, tw, 0.45) || wouldBlock(c, tw)){
+          c.mergeWait = 0; c.mergeWant = undefined;
+          c.blink = 0;                              /* the lamp goes off */
+          /* `lookAgain` rather than a flat roll, so the wait before starting over
+             is the DRIVER's like every other wait in this loop - an OUTLAW is
+             impatient by declaration and comes back to the idea almost at once. */
+          c.mergeCool = lookAgain(c, MERGE_RETHINK[0], MERGE_RETHINK[1]);
+          mergesAborted++;
+          rethought = true;
+        }
+      }
+      if(!rethought) c.mergeWait -= dt;
+      if(!rethought && c.mergeWait <= 0){
         const want = c.mergeWant;
         /* ---- A LANE INDEX IS NOT A ROAD POSITION -------------------------
            `laneClear` and `wouldBlock` both take a lateral POSITION - they
@@ -28126,6 +28218,10 @@ requestAnimationFrame(frameLoop);
   API.signalledMerges = function(){ return signalledMerges; };
   /* and how many indicators were STARTED to get them - see `signalsStarted` */
   API.signalsStarted = function(){ return signalsStarted; };
+  /* RLG-207: announcements the driver thought better of, counted apart from the
+     ones that completed. A check that saw only "announced" and "completed" would
+     read a working change of mind as an announcement that went nowhere. */
+  API.mergesAborted = function(){ return mergesAborted; };
   /* ---- WHAT THE PATROLS ARE DOING ----------------------------------------
      `patrolling` is how many police are still driving as traffic; `woken` is how
      many have engaged this run. A check needs both: a run where nothing engaged
@@ -28239,6 +28335,7 @@ requestAnimationFrame(frameLoop);
     traffic.push({
       z, lane:1, x: LANE_X[1],
       spd: MAX_SPD * 0.34, cruise: MAX_SPD * 0.34, mind: COMMUTER,
+      signals: signalsFor(COMMUTER),
       type:'cop', patrol:true,
       w: typeW('cop'), len: typeLen('cop'),
       near:false, drift:0, paintN:0
@@ -28331,13 +28428,23 @@ requestAnimationFrame(frameLoop);
   API.spdNow = function(){ return spd; };
   API.signalling = function(){
     let now = 0, waiting = 0, never = 0, seen = 0;
+    /* ---- AND WHO WAS GIVEN THE HABIT, BY PERSONALITY (RLG-207) ---------
+       `never` counts cars that will not signal and cannot say WHY, and the
+       habit follows the driver now - so a check that only had the total could
+       not tell "a fifth of drivers do not bother" from "every outlaw on the
+       road refuses". Counted per mind, which is the claim.
+       ---------------------------------------------------------------- */
+    const byMind = {};
     for(const c of traffic){
       seen++;
       if(c.blink > 0) now++;
       if(c.mergeWait > 0) waiting++;
       if(c.signals === false) never++;
+      const b = byMind[c.mind] || (byMind[c.mind] = { seen:0, signals:0 });
+      b.seen++;
+      if(c.signals) b.signals++;
     }
-    return { now:now, waiting:waiting, never:never, seen:seen };
+    return { now:now, waiting:waiting, never:never, seen:seen, byMind:byMind };
   };
   API.trafficCount = function(){ return traffic.length; };
   /* ---- WHAT IS ARRIVING BEHIND YOU, AND HOW SOLID IT IS ------------------
@@ -28875,6 +28982,7 @@ requestAnimationFrame(frameLoop);
       z: pos + PLAYER_Z + (dz === undefined ? 0 : dz), lane: 1, x: dx || 0,
       spd: 0, cruise: 0, type: t,
       mind: mind === undefined ? COMMUTER : mind,
+      signals: signalsFor(mind === undefined ? COMMUTER : mind),
       w: typeW(t), len: typeLen(t),
       near:false, drift:0, fromBehind:false, paintN:0
     });
