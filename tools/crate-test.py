@@ -10,7 +10,7 @@ should be omitted if they don't have NOS."
 THE AWARD WAS WRONG BEFORE THE TEXT WAS, and that is why this checks the car and not just the label.
 `nos` was raised in four places without one of them asking whether the car has a bottle - the repair
 crate, threading a roadblock gap, putting a cruiser out, and the trickle that refills it over a run.
-So a LORRY carried a charge it could never spend, and the crate announced it. Hiding the label would
+So a SEMI carried a charge it could never spend, and the crate announced it. Hiding the label would
 have left the charge there, so what is asserted is that the CAR did not gain it.
 
 AND THE THIRD CASE, WHICH IS THE OWNER'S DECISION OF 2026-08-31. A car with no bottle at full health
@@ -45,7 +45,7 @@ GAME = 'games/sw/interstate.html'
 # A car with a bottle and two without. The garage locks the utility cars behind distance, but
 # `setBody` is the same seam every other fleet measurement uses and goes straight to the body.
 WITH_BOTTLE = 'ROADSTER'
-WITHOUT = ['LORRY', 'VAN']
+WITHOUT = ['SEMI', 'VAN']
 
 INIT = r"""
 window.__probe = { errors: [], road: null };

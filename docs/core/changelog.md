@@ -14,6 +14,18 @@ barely started, and 0.9.x would have claimed otherwise.
 
 ---
 
+<a id="v0-13-69"></a>
+## [0.13.69] - 2026-09-09
+- Changed: **LORRY is SEMI.** Owner, 2026-09-09: "I would like to rename the Lorry to Semi since I am
+  an American." The vehicle drawn is a tractor unit pulling a box trailer, which is exactly what a
+  semi is, so the rename loses nothing.
+- Added: **a migration for saves that hold the old key.** The chosen car is persisted by key, so a
+  rename would have silently put anybody driving a lorry into a ROADSTER. `FORMULA` to `APEX` is the
+  same migration for the same reason and both now live in one table.
+- Added: `tools/rename-test.py`, which writes an old key into a save and asks the engine which car it
+  opened. With the migration removed it reports *opened ROADSTER*. See
+  [RLG-197](../fragments/RLG-197.md).
+
 <a id="v0-13-68"></a>
 ## [0.13.68] - 2026-09-09
 - Changed: **a supercar's rear wing is shaded on the front view, where it is the far end of the car.**

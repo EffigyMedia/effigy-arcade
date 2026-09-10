@@ -108,7 +108,7 @@ class Results:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--headed', action='store_true')
-    ap.add_argument('--cars', default='LORRY,VAN,MUSCLE,ROADSTER,TUNER,CRUISER,SUPERCRUISER')
+    ap.add_argument('--cars', default='SEMI,VAN,MUSCLE,ROADSTER,TUNER,CRUISER,SUPERCRUISER')
     args = ap.parse_args()
     console_utf8()
     res = Results()
@@ -243,7 +243,7 @@ def main():
 
         # the working cars carry a black knob and the rest do not
         knobs = {}
-        for key in ['SALOON', 'CAB', 'LORRY', 'VAN', 'PICKUP', 'COUPE',
+        for key in ['SALOON', 'CAB', 'SEMI', 'VAN', 'PICKUP', 'COUPE',
                     'ROADSTER', 'MUSCLE', 'SUPERCRUISER']:
             page.evaluate('(k) => window.__probe.road.setBody(k)', key)
             page.wait_for_timeout(90)
@@ -252,7 +252,7 @@ def main():
                 ' text: getComputedStyle(document.querySelector("#knob b")).color })')
         black = [k for k, v in knobs.items() if v['black']]
         print('      black knob: %s' % ', '.join(sorted(black)))
-        res.check(sorted(black) == ['CAB', 'COUPE', 'LORRY', 'PICKUP', 'SALOON', 'VAN'],
+        res.check(sorted(black) == ['CAB', 'COUPE', 'SEMI', 'PICKUP', 'SALOON', 'VAN'],
                   'the production and utility cars have the black knob, and only they',
                   str(sorted(black)))
         whites = {k: v['text'] for k, v in knobs.items() if v['black']}

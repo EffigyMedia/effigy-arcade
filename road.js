@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.68';
+window.ROAD_BUILD = '0.13.69';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3286,9 +3286,9 @@ const BODY = {
      car and the cruiser get more. And a lorry's ceiling is 80mph, not 104:
      `vmax` is a fraction of 200, so 0.40.
      -------------------------------------------------------------------- */
-  'LORRY': { hardy:1.30, rig:'truck', big:true, gears:4, wide:0.120, arch:1.10, horn:0.52,
+  'SEMI': { hardy:1.30, rig:'truck', big:true, gears:4, wide:0.120, arch:1.10, horn:0.52,
                redline:5000, pitch:0.42, rear:'GENERIC', mass:14000, hp:420, grip:0.42, launch:1.11, mech:0.95, vmax:0.4,
-               note:'LORRY \u00B7 NOTHING GETS OUT OF ITS WAY TWICE' },
+               note:'SEMI \u00B7 NOTHING GETS OUT OF ITS WAY TWICE' },
   'CREST': { hardy:0.85, bodyTop:0.40, cabinTop:0.10, cabW:0.48, cabOff:0, roofR:0.30,
               hip:0.085, wing:'ducktail', nose:0.24, spoiler:true, rear:'CREST', wide:0.010, arch:1.15, dome:true, horn:0.94,
               mass:1450, hp:640, grip:1.42, launch:1.04, mech:0.93, vmax:1, note:'BALANCED' }
@@ -14865,12 +14865,12 @@ function drawWheel(){
      The patrol cars are not in this list. They are pursuit vehicles, and the
      owner named production and utility.
      ------------------------------------------------------------------- */
-  const PLAIN_WHEEL = { SALOON:1, COUPE:1, CAB:1, PICKUP:1, VAN:1, LORRY:1,
+  const PLAIN_WHEEL = { SALOON:1, COUPE:1, CAB:1, PICKUP:1, VAN:1, SEMI:1,
                         sedan:1, sedan2:1, coupe:1, taxi:1, pickup:1, van:1, truck:1 };
   const plain = !!PLAIN_WHEEL[optBody];
   /* a lorry's wheel is big and THIN - it is turned with the whole arm rather
      than gripped, and a fat sports rim on one reads as the wrong vehicle */
-  const thin = optBody === 'LORRY' || optBody === 'truck';
+  const thin = optBody === 'SEMI' || optBody === 'truck';
   /* ONE rim for all three. Three shapes was a distinction nobody asked for and
      it made the wheel unfamiliar every time you changed car — the badge is
      what should tell you which one you are in. */
@@ -15190,7 +15190,7 @@ function gateSlots(){ return SLOTS.filter(s => s.g <= gearCount()); }
    their own siren and their own place in the ladder. If the owner wants them
    black too it is one entry.
    ---------------------------------------------------------------------- */
-const WORK_BODIES = ['COUPE','SALOON','CAB','PICKUP','VAN','LORRY'];
+const WORK_BODIES = ['COUPE','SALOON','CAB','PICKUP','VAN','SEMI'];
 function isWorkCar(k){ return WORK_BODIES.indexOf(k) >= 0; }
 /* where the knob physically sits — a position in the gate, not a gear */
 let knobRail = 0, knobY = TOP_Y;
@@ -25088,7 +25088,7 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                   -------------------------------------------------------- */
                'COUPE':'production','SALOON':'production','CAB':'production',
                'PICKUP':'production',
-               'VAN':'utility','LORRY':'utility','AMBULANCE':'utility' };
+               'VAN':'utility','SEMI':'utility','AMBULANCE':'utility' };
 
 /* ---- THE CARS THE EVENTS ARE FOR (RLG-115) --------------------------------
    Owner, 2026-08-31: "if you have a production or utility vehicle selected, the
@@ -26156,8 +26156,20 @@ if (AR && AR.options) AR.options.define([
     /* the one formula car became three, and APEX is the one it became. A save
        holding the retired key would otherwise fail the BODY test in silence and
        drop the player back into a MATADOR. */
-    if(g0.body === 'FORMULA') optBody = 'APEX';
-    else if(g0.body && BODY[g0.body]) optBody = g0.body;
+    /* ---- A SAVE MAY HOLD A KEY THIS BUILD NO LONGER HAS (RLG-197) -----
+       The chosen car is persisted BY KEY, so renaming a body silently takes
+       the car away from anybody driving it: `BODY[g0.body]` misses and the
+       fallback puts them in a ROADSTER. That is not a cosmetic loss - it is
+       somebody's car, chosen in a garage, replaced without a word.
+
+       `FORMULA` to `APEX` is the same migration for the same reason, written
+       when the one formula car became three, and it is the precedent this
+       follows. Both are one line and both stay: a migration is not a thing to
+       remove later, because the save it repairs may not be opened for a year.
+       ---------------------------------------------------------------- */
+    const RENAMED = { FORMULA:'APEX', LORRY:'SEMI' };
+    const was0 = RENAMED[g0.body] || g0.body;
+    if(was0 && BODY[was0]) optBody = was0;
     /* ---- AN OLD SAVE KEEPS ITS SUPERCARS -------------------------------
        The supercars were free until the ladder was built, so a player who has
        been driving one for a week must not open the garage and find it gone.
@@ -28058,7 +28070,7 @@ requestAnimationFrame(frameLoop);
                      to be preventing - written while introducing it.
                      -------------------------------------------------------- */
                   PICKUP:'production', pickup:'production',
-                  VAN:'utility', LORRY:'utility',
+                  VAN:'utility', SEMI:'utility',
                   /* an AMBULANCE is a utility vehicle, and this copy of the class
                      map has to say so too. RLG-114's lesson: the sheet keeps its
                      own copy and a class that moves in one and not the other makes
@@ -28650,7 +28662,7 @@ requestAnimationFrame(frameLoop);
   API.fleetSheet = function(){
     /* one render of every vehicle: rear, front and wheel */
     const CARS=["FORMULA","STALLION","CREST","MATADOR","CRUISER","SUPERCRUISER","MUSCLE",
-                "TUNER","ROADSTER","COUPE","SALOON","PICKUP","CAB","VAN","LORRY"];
+                "TUNER","ROADSTER","COUPE","SALOON","PICKUP","CAB","VAN","SEMI"];
     const CW=152, PER=7, rows=Math.ceil(CARS.length/PER);
     const REAR=190, FRONT=190, WH=176;
     const c=document.createElement("canvas");
@@ -28668,7 +28680,7 @@ requestAnimationFrame(frameLoop);
     hd("REAR",y-6);
     CARS.forEach(function(bt,i){
       const rw=Math.floor(i/PER), cl=i%PER, B=BODY[bt];
-      const base = bt==="CAB"?CABP : bt==="LORRY"?TRL : PAINT.WHITE;
+      const base = bt==="CAB"?CABP : bt==="SEMI"?TRL : PAINT.WHITE;
       const pa=Object.assign({lamp:"#d61b3c",lamp2:"#ff7a86",player:true,marque:B.rear},base);
       let im;
       if(B.rig){const sz=sizeFor(B.rig); im=sprite(sz[0],sz[1],paintRig(B.rig,pa));}
