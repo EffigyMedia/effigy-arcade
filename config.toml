@@ -1,0 +1,8 @@
+
+[tools]
+# What this project needs, by the names in Commands/tool_catalog.toml.
+# Seeded once from what this project holds. From here the declaration is the authority:
+# add a tool in the same unit of work that starts using one, and remove it in the unit
+# that stops. Removing the declaration never means uninstalling the tool.
+required = []
+optional = []
