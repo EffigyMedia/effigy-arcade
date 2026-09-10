@@ -19,6 +19,31 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-77"></a>
+## [0.13.77] - 2026-09-10
+- Added: **four personalities, and each one answers a siren differently.** COMMUTER, SPEEDER,
+  OUTLAW, RACER - high, moderate, low and no obedience to horns and sirens. `heed` is `obedience`
+  now and it starts at the personality's own value rather than at 1 for everybody, so a commuter
+  answers a siren nine times in ten and an outlaw about twice in nine. Measured at 40 trials: 88%,
+  52%, 28% and 0%. A racer is never asked at all, is never worn down and never recovers, because
+  zero is not a small number - the old fatigue floor was a flat 0.12, which would have LIFTED a
+  racer to 0.12 the first time one was asked, and the old recovery climbed back toward 1, which
+  would have turned every worn-down outlaw into a commuter a few seconds after you passed it.
+  Global, not a rule for one mode.
+  [RLG-206](../fragments/RLG-206.md)
+- Fixed: **the deer was inside the run of driving personalities.** `CROSSING` was 3, and a deer is
+  pushed into the traffic array like everything else, so `mind >= SPEEDER` - the test the police use
+  to decide who is worth looking at - was already true of one. It never showed, because the next
+  line asks how fast the thing is going and a deer has no speed at all. It was one number away from
+  mattering, and adding a fourth personality is what would have moved that number.
+  [RLG-206](../fragments/RLG-206.md)
+- Renamed: **CIVILIAN is COMMUTER.** The owner: "They are all technically drivers. So that's why I
+  want the Name change." A name that describes all four cannot label one of them - the same fault
+  RLG-195 fixed at the other end, where "racer" named the lawbreaker and left the competitor without
+  a word. `API.minds` and `API.sampleMinds` moved with it, and so did `mind-test.py`. Nothing
+  persists the key.
+  [RLG-206](../fragments/RLG-206.md)
+
 <a id="v0-13-76"></a>
 ## [0.13.76] - 2026-09-10
 - Added: **the scatter loop counts its own gates, so a siren that moves nobody can be told from one

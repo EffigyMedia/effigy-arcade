@@ -184,11 +184,11 @@ def main():
            'with it on, the request is made and it reaches cars',
            '%d calls, %d refused by the cooldown, %d cars looked at'
            % (on_stat['calls'], on_stat['cooled'], on_stat['seen']))
-        asked = on_stat['moved'] + on_stat['gap'] + on_stat['heed']
+        asked = on_stat['moved'] + on_stat['gap'] + on_stat['obey']
         ok(asked > 0,
            'and cars get through the window and the line to be asked',
            '%d asked: %d moved, %d had no gap, %d refused'
-           % (asked, on_stat['moved'], on_stat['gap'], on_stat['heed']))
+           % (asked, on_stat['moved'], on_stat['gap'], on_stat['obey']))
         ok(on_moved >= off_moved,
            'the bar never moves FEWER cars than no bar at all',
            'on %d against off %d' % (on_moved, off_moved))

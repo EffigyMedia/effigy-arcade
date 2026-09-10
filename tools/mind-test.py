@@ -65,7 +65,7 @@ SAMPLE = 4000
 # RLG-045's split, with a sports car raising the odds. Wide bands: the point is the ORDERING and the
 # order of magnitude, not a rate to three places - a check that pinned the exact odds would have to be
 # edited by anyone who tuned them, which is how a guard stops meaning anything.
-CIVILIAN_MIN, CIVILIAN_MAX = 0.60, 0.94
+COMMUTER_MIN, COMMUTER_MAX = 0.60, 0.94
 RACER_MAX = 0.09          # "rarely", and "very very rare" for the supercars to come
 # a sports body must raise the Speeder odds by at least this much, or RLG-045's rule is not in effect
 SPORTY_LIFT = 2.0
@@ -136,20 +136,20 @@ def main():
         mix = {}
         for t in ORDINARY + SPORTY:
             m = page.evaluate('([t, n]) => window.__probe.road.sampleMinds(t, n)', [t, SAMPLE])
-            tot = m['civilian'] + m['speeder'] + m['outlaw']
-            mix[t] = {'civ': m['civilian'] / tot, 'spd': m['speeder'] / tot,
+            tot = m['commuter'] + m['speeder'] + m['outlaw']
+            mix[t] = {'com': m['commuter'] / tot, 'spd': m['speeder'] / tot,
                       'rac': m['outlaw'] / tot, 'cruise': m['cruise'],
                       'vmax': page.evaluate('(t) => window.__probe.road.typeVmax(t)', t)}
-            print('      %-7s civilian %4.0f%%   speeder %4.0f%%   outlaw %4.1f%%   can do %3.0f mph'
-                  % (t, mix[t]['civ'] * 100, mix[t]['spd'] * 100, mix[t]['rac'] * 100,
+            print('      %-7s commuter %4.0f%%   speeder %4.0f%%   outlaw %4.1f%%   can do %3.0f mph'
+                  % (t, mix[t]['com'] * 100, mix[t]['spd'] * 100, mix[t]['rac'] * 100,
                      mix[t]['vmax'] * 200))
 
-        worst_civ = min(mix[t]['civ'] for t in ORDINARY)
-        best_civ = max(mix[t]['civ'] for t in ORDINARY)
-        res.check(CIVILIAN_MIN <= worst_civ and best_civ <= CIVILIAN_MAX,
+        worst_com = min(mix[t]['com'] for t in ORDINARY)
+        best_com = max(mix[t]['com'] for t in ORDINARY)
+        res.check(COMMUTER_MIN <= worst_com and best_com <= COMMUTER_MAX,
                   'most ordinary drivers keep the limit',
-                  'civilians run %.0f%% to %.0f%% across ordinary bodies'
-                  % (worst_civ * 100, best_civ * 100))
+                  'commuters run %.0f%% to %.0f%% across ordinary bodies'
+                  % (worst_com * 100, best_com * 100))
 
         worst_rac = max(mix[t]['rac'] for t in ORDINARY + SPORTY)
         res.check(worst_rac <= RACER_MAX,
@@ -202,32 +202,32 @@ def main():
         print('  and on the road itself')
         # SAMPLED OVER TIME, NOT ONCE. The road holds about thirty cars, so one in ten being a
         # Speeder means a single snapshot has a real chance of containing none - the first version
-        # of this check read 14 cars, all civilian, and would have passed on an engine that
+        # of this check read 14 cars, all commuter, and would have passed on an engine that
         # assigned every driver the same mind. Traffic turns over as you drive, so the run watches
         # and keeps the most it ever saw of each.
         page.keyboard.down('ArrowUp')
-        best = {'seen': 0, 'civilian': 0, 'speeder': 0, 'outlaw': 0, 'overLimit': 0}
+        best = {'seen': 0, 'commuter': 0, 'speeder': 0, 'outlaw': 0, 'overLimit': 0}
         mismatched = 0
         for _ in range(24):
             page.wait_for_timeout(900)
             m = page.evaluate("() => window.__probe.road.minds()")
-            if m['civilian'] + m['speeder'] + m['outlaw'] != m['seen']:
+            if m['commuter'] + m['speeder'] + m['outlaw'] != m['seen']:
                 mismatched += 1
             for k in best:
                 if m[k] > best[k]:
                     best[k] = m[k]
         page.keyboard.up('ArrowUp')
-        print('      at their most, over 24 looks: %d cars, %d civilian, %d speeder, %d outlaw, '
+        print('      at their most, over 24 looks: %d cars, %d commuter, %d speeder, %d outlaw, '
               '%d actually over the limit'
-              % (best['seen'], best['civilian'], best['speeder'], best['outlaw'],
+              % (best['seen'], best['commuter'], best['speeder'], best['outlaw'],
                  best['overLimit']))
         res.check(best['seen'] > 10, 'there was traffic to look at', '%d cars' % best['seen'])
         res.check(mismatched == 0,
                   'every car on the road has a driver with a mind',
                   'the parts failed to sum to the whole on %d of 24 looks' % mismatched)
-        res.check(best['civilian'] > 0,
+        res.check(best['commuter'] > 0,
                   'and most of them are ordinary drivers',
-                  'not one civilian in the whole run')
+                  'not one commuter in the whole run')
         # THE WIRING, WHICH THE SAMPLER ABOVE CANNOT PROVE. A picker that rolled a perfect mix and
         # assigned nothing would satisfy every check before this one.
         res.check(best['speeder'] > 0,

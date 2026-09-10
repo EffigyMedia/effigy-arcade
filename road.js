@@ -9204,7 +9204,7 @@ const SPEED_LIMIT = 80 / 200;          /* as a fraction of MAX_SPD */
    personality to racer."
 
    THE OLD NAMES DESCRIBED TWO DIFFERENT THINGS WITH ONE WORD. This constant is
-   a personality a CIVILIAN DRIVER can have on a public road - somebody who
+   a personality an ordinary driver can have on a public road - somebody who
    drives their own car as fast as it will go, in traffic, among people who are
    not racing. The cars you race against on a circuit or in a tournament were
    `rival`. So "racer" named the lawbreaker and not the competitor, which is
@@ -9214,7 +9214,48 @@ const SPEED_LIMIT = 80 / 200;          /* as a fraction of MAX_SPD */
    everyone assumes it means. Nothing about behaviour changed with the name:
    the same target speed, the same merge urge, the same spawn odds.
    ------------------------------------------------------------------- */
-const CIVILIAN = 0, SPEEDER = 1, OUTLAW = 2;
+/* ---- FOUR PERSONALITIES, AND THE ORDER OF THEM IS THE POINT (RLG-206) ---
+   Owner, 2026-09-10: "I want the 4 personalities to be called: Driver, Speeder,
+   Outlaw, Racer" - and then, the same afternoon: "Lets Change driver to
+   commuter." When it was asked whether any of this belonged to the new mode:
+   "These aren't just intercept behaviors, but global."
+
+     COMMUTER obeys the traffic laws. High obedience to horns and sirens.
+     SPEEDER  as fast as reasonable, and WILL pull over when police engage.
+              Moderate obedience.
+     OUTLAW   as fast as possible, recklessly, and will NOT pull over. Low.
+     RACER    an outlaw who is also in a race, and answers nothing at all.
+
+   IT IS AN ORDINAL SCALE OF LAWLESSNESS, and two police tests already read it
+   that way - `mind >= SPEEDER` is how the force decides who might be worth
+   looking at. So the numbers have to run in that order, and a RACER has to sit
+   above an OUTLAW rather than beside it.
+   ------------------------------------------------------------------- */
+const COMMUTER = 0, SPEEDER = 1, OUTLAW = 2, RACER = 3;
+/* ---- HOW MUCH NOTICE EACH ONE TAKES OF A HORN OR A SIREN (RLG-206) ------
+   The owner's words, in the same order: high, moderate, low, none. It is a
+   MULTIPLIER on the odds the request already carries - a siren asks at 0.90 and
+   a horn at 0.40 - so a COMMUTER answers a siren nine times in ten and an OUTLAW
+   about twice in nine.
+
+   A RACER IS ZERO AND THAT IS A HARD ZERO, not a small number. It is never
+   asked, never worn down, and never recovers, because there is nothing to
+   recover from. Anything that multiplies a car's obedience has to leave a zero
+   at zero - the fatigue below had a floor of 0.12, which would have LIFTED a
+   racer's obedience the first time it was asked.
+
+   TUNABLE, WITH THESE AS THE COMMITTED DEFAULTS. What "moderate" and "low"
+   should be is a judgement on a device, and the road is where it is read.
+   ------------------------------------------------------------------- */
+const OBEY = { 0: 1.00, 1: 0.60, 2: 0.25, 3: 0 };
+/* the floor a worn-down driver settles at, as a share of what it started with -
+   so a stubborn OUTLAW ends up stubborn rather than ending up where a stubborn
+   COMMUTER would */
+const OBEY_FLOOR = 0.12;
+function obeyOf(c){
+  const base = OBEY[c && c.mind];
+  return base === undefined ? 1 : base;
+}
 /* ---- AND A FOURTH MIND THAT IS NOT DRIVING AT ALL (RLG-152) ----------
    Owner, 2026-09-01: "in the forest biome I'd like a very very small chance
    for deer to sprint across the road from one tree line to the other."
@@ -9230,7 +9271,18 @@ const CIVILIAN = 0, SPEEDER = 1, OUTLAW = 2;
    it moves sideways at a fixed rate until it is off the far side, and then it
    is gone. It is the first thing in this game that moves ACROSS the road.
    -------------------------------------------------------------------- */
-const CROSSING = 3;
+/* ---- AND THE ANIMAL IS NOT ON THAT SCALE (RLG-206) ---------------------
+   This was 3, which is INSIDE the run of driving personalities, and a deer is
+   in the `traffic` array like everything else - so `mind >= SPEEDER`, the test
+   the police use to decide who might be speeding, was true of a deer. It never
+   showed, because the line after it asks how fast the thing is going and a deer
+   has no `spd` or `cruise` at all. It was one number away from mattering, and
+   adding a fourth personality is what would have moved that number.
+
+   Nine, because a crossing animal is not more lawless than an outlaw - it is
+   not on the scale. Only `isCrossing` reads it, and it reads it by equality.
+   ------------------------------------------------------------------- */
+const CROSSING = 9;
 function isCrossing(o){ return o && o.mind === CROSSING; }
 /* ---- HOW RARE, HOW FAST, AND WHAT A HIT COSTS -------------------------
    The ruling put three questions to the owner and the queue said to run
@@ -9436,17 +9488,17 @@ function typeLen(t){
        : SUPER_W[t] ? 360 : 380;
 }
 function rollMind(t){
-  /* ---- A PATROL DRIVER IS NOT GOING ANYWHERE ---------------------------
+  /* ---- A PATROL CAR IS NOT GOING ANYWHERE -----------------------------
      Always a Civilian, which in this engine means "cruises at the limit". A
      Speeder or a Racer in a police car is a police car breaking the law it is
      parked on the road to enforce, and the speed trap two functions down would
      then have to decide whether to pull it over. It is not a coin toss.
      ------------------------------------------------------------------ */
-  if(t === 'cop') return CIVILIAN;
+  if(t === 'cop') return COMMUTER;
   const fast = !!SPORTY[t];
   if(Math.random() < (fast ? 0.05 : 0.01)) return OUTLAW;
   if(Math.random() < (fast ? 0.30 : 0.10)) return SPEEDER;
-  return CIVILIAN;
+  return COMMUTER;
 }
 /* the speed a driver of this mind WANTS. Civilians keep the limit, which
    RLG-045 puts at 60-80 with the limit itself at 80. */
@@ -9463,7 +9515,7 @@ function mindCruise(mind){
    -------------------------------------------------------------------- */
 function mindFor(v){
   return v >= 0.55 * MAX_SPD ? OUTLAW
-       : v >  SPEED_LIMIT * MAX_SPD ? SPEEDER : CIVILIAN;
+       : v >  SPEED_LIMIT * MAX_SPD ? SPEEDER : COMMUTER;
 }
 /* ---- AN OUTLAW DOES NOT QUEUE (owner, 2026-09-07) -----------------------
    "As a racer personality, it shouldn't queue up behind anybody, it should
@@ -13808,6 +13860,12 @@ function buildField(){
     r.body  = deck[i];
     /* the bottle is the CAR's (by class) and the nerve is the DRIVER's */
     r.dmg   = 0; r.iframe = 0;
+    /* RLG-206: the fourth personality, on the cars it was named for. Nothing in
+       the field reads it today - `scatter` only ever walks `traffic`, so a rival
+       could not be asked to move over even before this - but the rule is "a
+       RACER answers nothing", and a rule that is only true because of where an
+       array happens to live is one refactor away from being false. */
+    r.mind  = RACER;
     r.nos   = hasNosFor(r.body) ? 40 : 0;
     r.nosOn = false;
     /* 0.6 to 1.4: a cautious driver holds a bigger reserve, a bold one spends
@@ -14509,10 +14567,11 @@ let scattered = 0;                  /* cars that have actually moved over */
    `calls` is how often the request was made, `cooled` how often it was refused
    by its own cooldown before looking at anything, and the rest are cars: seen
    in the array, then dropped for being outside the window ahead, outside the
-   player's line, unwilling, boxed in with no lane to take, or refused by the
-   gap check. `moved` is the same event `scattered` counts.
+   player's line, DEAF to the request at all (a RACER, RLG-206), unwilling this
+   time, boxed in with no lane to take, or refused by the gap check. `moved` is
+   the same event `scattered` counts.
    -------------------------------------------------------------------- */
-let scatterStat = { calls:0, cooled:0, seen:0, far:0, wide:0, heed:0, room:0, gap:0, moved:0 };
+let scatterStat = { calls:0, cooled:0, seen:0, far:0, wide:0, deaf:0, obey:0, room:0, gap:0, moved:0 };
 function scatter(chance, fromZ, fromLane){
   scatterStat.calls++;
   if(hornCool > 0){ scatterStat.cooled++; return; }
@@ -14560,20 +14619,29 @@ function scatter(chance, fromZ, fromLane){
        or overlapping your line.
        ------------------------------------------------------------------- */
     if(Math.abs(c.x - ol) > 0.34){ scatterStat.wide++; continue; }
-    /* ---- THEY GET FED UP ------------------------------------------------
-       Each car carries its own `heed`, starting at 1. Every time it is asked
-       and refuses, that drops — so leaning on the horn behind the same car
-       stops working, which is what actually happens. Asking a DIFFERENT car
-       is unaffected, because the multiplier lives on the vehicle rather than
-       on you.
+    /* ---- WHO YOU ARE ASKING, AND HOW FED UP THEY ARE (RLG-206) ---------
+       Each car carries its own `obedience`, and it STARTS AT ITS PERSONALITY'S
+       rather than at 1: a COMMUTER answers a siren nine times in ten, a SPEEDER
+       about half the time, an OUTLAW about twice in nine, and a RACER not at
+       all. That is the owner's rule, and it is global rather than a rule for
+       one mode.
 
-       It recovers slowly once you are past, so a long run does not end with a
-       road full of cars that will never move again.
+       Every time a car is asked and refuses, its obedience drops - so leaning
+       on the horn behind the same car stops working, which is what actually
+       happens. Asking a DIFFERENT car is unaffected, because the number lives
+       on the vehicle rather than on you.
+
+       THE FLOOR IS A SHARE OF WHAT IT STARTED WITH, not a fixed 0.12. A flat
+       floor would have made a worn-down OUTLAW exactly as obedient as a
+       worn-down COMMUTER, which is the distinction this ruling exists to draw -
+       and it would have LIFTED a RACER's zero the first time one was asked.
        -------------------------------------------------------------------- */
-    if(c.heed === undefined) c.heed = 1;
-    if(Math.random() > odds * c.heed){
-      c.heed = Math.max(0.12, c.heed * 0.62);
-      scatterStat.heed++;
+    if(c.obedience === undefined) c.obedience = obeyOf(c);
+    /* a RACER answers nothing: never asked, never worn down, never recovers */
+    if(c.obedience <= 0){ scatterStat.deaf++; continue; }
+    if(Math.random() > odds * c.obedience){
+      c.obedience = Math.max(obeyOf(c) * OBEY_FLOOR, c.obedience * 0.62);
+      scatterStat.obey++;
       continue;
     }
     /* ---- AND IT HAS TO ACTUALLY MOVE -------------------------------------
@@ -14613,7 +14681,7 @@ function scatter(chance, fromZ, fromLane){
     scattered++;
     scatterStat.moved++;
     /* it moved, so it is not the one being stubborn */
-    c.heed = Math.max(0.12, c.heed * 0.86);
+    c.obedience = Math.max(obeyOf(c) * OBEY_FLOOR, c.obedience * 0.86);
   }
 }
 
@@ -16154,7 +16222,12 @@ function step(dt){
 
   /* patience comes back, slowly */
   for(const c of traffic)
-    if(c.heed !== undefined && c.heed < 1) c.heed = Math.min(1, c.heed + dt*0.14);
+    /* RLG-206: it recovers toward ITS OWN obedience, not toward 1. Recovering
+       to 1 would have quietly turned every worn-down OUTLAW into a COMMUTER a few
+       seconds after you passed it - and a RACER, whose ceiling is zero, never
+       recovers because it never dropped. */
+    if(c.obedience !== undefined && c.obedience < obeyOf(c))
+      c.obedience = Math.min(obeyOf(c), c.obedience + dt*0.14);
 
   /* ---- THE CRUISER IS EARNED BY SURVIVING --------------------------------
      Twenty miles on TEST DRIVE with the clock running AND the cops on. Not a
@@ -17450,7 +17523,7 @@ function step(dt){
        full chase speed. Steering is half of navigating traffic and this is the
        other half.
 
-       IT FOLLOWS CLOSER THAN A CIVILIAN DOES, deliberately. A police car in a
+       IT FOLLOWS CLOSER THAN A COMMUTER DOES, deliberately. A police car in a
        pursuit tailgates, and a cruiser that kept a civilian's margin would drop
        out of the chase every time it met a slow car. The distances here are
        about two thirds of the ones in the traffic follower.
@@ -28105,7 +28178,7 @@ requestAnimationFrame(frameLoop);
     const z = pos + PLAYER_Z + (dz === undefined ? 4000 : dz);
     traffic.push({
       z, lane:1, x: LANE_X[1],
-      spd: MAX_SPD * 0.34, cruise: MAX_SPD * 0.34, mind: CIVILIAN,
+      spd: MAX_SPD * 0.34, cruise: MAX_SPD * 0.34, mind: COMMUTER,
       type:'cop', patrol:true,
       w: typeW('cop'), len: typeLen('cop'),
       near:false, drift:0, paintN:0
@@ -28123,10 +28196,12 @@ requestAnimationFrame(frameLoop);
      assigns them from one that also acts on them.
      -------------------------------------------------------------------- */
   API.minds = function(){
-    const out = { civilian:0, speeder:0, outlaw:0, seen:0, overLimit:0, byType:{} };
+    /* RLG-206 renamed `civilian` to `commuter` with the personality itself. The
+       key is read by `mind-test`, which moved with it - nothing persists it. */
+    const out = { commuter:0, speeder:0, outlaw:0, seen:0, overLimit:0, byType:{} };
     for(const c of traffic){
       out.seen++;
-      out[c.mind === OUTLAW ? 'outlaw' : c.mind === SPEEDER ? 'speeder' : 'civilian']++;
+      out[c.mind === OUTLAW ? 'outlaw' : c.mind === SPEEDER ? 'speeder' : 'commuter']++;
       if((c.spd || c.cruise || 0) > MAX_SPD * SPEED_LIMIT) out.overLimit++;
       const b = out.byType[c.type] || (out.byType[c.type] = { seen:0, outlaw:0, speeder:0 });
       b.seen++;
@@ -28178,10 +28253,10 @@ requestAnimationFrame(frameLoop);
              sat: +(mx ? (mx-mn)/mx : 0).toFixed(4) };
   };
   API.sampleMinds = function(t, n){
-    const out = { civilian:0, speeder:0, outlaw:0, cruise:[] };
+    const out = { commuter:0, speeder:0, outlaw:0, cruise:[] };
     for(let i = 0; i < (n || 2000); i++){
       const m = rollMind(t);
-      out[m === OUTLAW ? 'outlaw' : m === SPEEDER ? 'speeder' : 'civilian']++;
+      out[m === OUTLAW ? 'outlaw' : m === SPEEDER ? 'speeder' : 'commuter']++;
       if(out.cruise.length < 400) out.cruise.push(+(cruiseFor(t, m) / MAX_SPD).toFixed(4));
     }
     return out;
@@ -28416,6 +28491,10 @@ requestAnimationFrame(frameLoop);
   API.viewKinds = function(){ return { front:Object.keys(viewKinds.front).sort(),
                                        glass:Object.keys(viewKinds.glass).sort() }; };
   API.scattered = function(){ return scattered; };
+  /* the personality constants, so a check names them the way the engine does
+     rather than carrying a copy of four numbers that could drift (RLG-206) */
+  API.MINDS = function(){ return { COMMUTER, SPEEDER, OUTLAW, RACER, CROSSING }; };
+  API.obeyOf = function(m){ return obeyOf({ mind: m }); };
   /* the gates of the scatter loop, counted where they are - call with true to
      zero them, so two arms of a check can be compared against each other */
   API.scatterStat = function(reset){
@@ -28719,7 +28798,11 @@ requestAnimationFrame(frameLoop);
      and the real hit test then runs on it exactly as it does on any other. A
      harness that reimplemented the overlap would prove only its own arithmetic.
      ------------------------------------------------------------------- */
-  API.parkTraffic = function(dx, dz, type){
+  /* `mind` is optional and is RLG-206's affordance: the obedience tiers are a
+     claim about WHO is being asked, and the road hands out an OUTLAW about once
+     in twenty cars. A check that waited for the odds would be measuring the
+     random number generator rather than the tiers. */
+  API.parkTraffic = function(dx, dz, type, mind){
     const t = type || 'sedan';
     /* the invulnerability window has to go with the old car, or the next staged
        collision is refused for nine tenths of a second and reads as a miss */
@@ -28728,10 +28811,12 @@ requestAnimationFrame(frameLoop);
     traffic.push({
       z: pos + PLAYER_Z + (dz === undefined ? 0 : dz), lane: 1, x: dx || 0,
       spd: 0, cruise: 0, type: t,
+      mind: mind === undefined ? COMMUTER : mind,
       w: typeW(t), len: typeLen(t),
       near:false, drift:0, fromBehind:false, paintN:0
     });
-    return { x: traffic[0].x, w: traffic[0].w, len: traffic[0].len };
+    return { x: traffic[0].x, w: traffic[0].w, len: traffic[0].len,
+             mind: traffic[0].mind };
   };
   /* the half-width the hit test actually uses against that car, and the
      half-width the player is DRAWN at, in the same units - the two numbers this

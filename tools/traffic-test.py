@@ -487,7 +487,7 @@ def main():
         moved_over = page.evaluate("() => window.__road.scattered()") - before_sc
         # REPORTED, NOT ASSERTED, AND ON PURPOSE. Whether a car is in front of
         # you at all is the bottleneck - measured over 40 presses, only 6 were
-        # ever in range - and of those, 40% odds and a `heed` that falls with
+        # ever in range - and of those, 40% odds and an `obedience` that falls with
         # every refusal mean a legitimate run can move nobody. Observed across
         # three runs: 2, 4 and 0.
         #
