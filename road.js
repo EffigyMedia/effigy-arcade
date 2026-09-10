@@ -2496,9 +2496,29 @@ const AMBER_ON  = '#ffb02e', AMBER_ON_HI  = '#ffe4a8';
    almost nothing in it. An unlit red lamp in daylight is nearly black - what you
    see of one is the shape of the glass, not the colour of it. */
 /* Owner again, a moment later: the dim state should be a little brighter -
-   "split the difference between off and bright". Which is exactly what it is
-   now: #931a17 is the midpoint of #280a0d and #ff2a22, channel by channel. */
-const RED_OFF = '#280a0d', RED_DIM = '#931a17', RED_ON = '#ff2a22';
+   "split the difference between off and bright". */
+/* ---- AND THE UNLIT END CAME BACK UP AGAIN (RLG-198) --------------------
+   Owner, 2026-09-10, after reading the utility sheet and finding the semi's
+   roof markers invisible: the unlit red takes the same treatment as the unlit
+   amber. `#7a1410` is `#ff2a22` scaled to the amber's own unlit value - the
+   `#7a` of `#7a4f12` - so the two colours are now unlit by one rule instead of
+   two.
+
+   THE RULING ABOVE IS NOT WRONG, IT WAS INCOMPLETE. "Nearly black" is what an
+   unlit red lens looks like from across a street. It is not what four pixels of
+   one looks like on a phone, which is what a marker lamp actually is: `h*0.016`
+   tall, on a dark cell, reading as nothing at all until it lights.
+
+   AND THE MIDDLE RUNG HAD TO MOVE WITH IT, which is the owner's own rule doing
+   the work rather than a second decision. Red has THREE states where amber has
+   two, and `RED_DIM` is defined as the midpoint of the other two. Lifting only
+   the bottom rung would have left unlit and RUNNING almost the same colour and
+   quietly destroyed the distinction between a tail light that is on and one
+   that is not. So `#bc1f19` is the midpoint of the NEW pair, exactly as
+   `#931a17` was the midpoint of the old one. Owner-decided 2026-09-10, told
+   plainly that it changes the road at night in two ways rather than one.
+   ------------------------------------------------------------------- */
+const RED_OFF = '#7a1410', RED_DIM = '#bc1f19', RED_ON = '#ff2a22';
 /* ---- THE HIGHLIGHT IS RED TOO -----------------------------------------
    Owner, 2026-08-29, twice: "you are still making the illuminated brake lights
    white... off is a dark red, dim is slightly brighter, and bright is a bright
@@ -2511,7 +2531,11 @@ const RED_OFF = '#280a0d', RED_DIM = '#931a17', RED_ON = '#ff2a22';
    distance between the two is small: it is a curve of glass catching light,
    not a bulb of a different colour.
    -------------------------------------------------------------------- */
-const RED_OFF_HI = '#361012', RED_DIM_HI = '#b8322c', RED_ON_HI = '#ff5348';
+/* RLG-198 lifted these with the lenses they sit on. `#a52016` keeps the same
+   per-channel relationship to its lens that `#361012` had to `#280a0d`, and
+   `#d23a2f` is the midpoint of the new unlit highlight and the bright one - the
+   same rule, applied to the same ladder, one layer up. */
+const RED_OFF_HI = '#a52016', RED_DIM_HI = '#d23a2f', RED_ON_HI = '#ff5348';
 function redOf(l){ return l >= 2 ? RED_ON : l >= 1 ? RED_DIM : RED_OFF; }
 function redHiOf(l){ return l >= 2 ? RED_ON_HI : l >= 1 ? RED_DIM_HI : RED_OFF_HI; }
 

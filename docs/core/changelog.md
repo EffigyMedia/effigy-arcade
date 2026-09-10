@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-79"></a>
+## [0.13.79] - 2026-09-10
+- Fixed: **an unlit red lamp is a dark red lens instead of a black hole.** The semi's five roof
+  markers were invisible until they lit, because `RED_OFF` was `#280a0d` and a marker is four pixels
+  tall on a dark cell. The unlit red now takes the same treatment the unlit amber already had, by
+  the same rule. AND THE MIDDLE RUNG MOVED WITH IT: red has three states where amber has two, and
+  lifting only the bottom one would have left "tail light off" and "tail light on" as nearly the
+  same colour, killing that distinction in a change made to improve legibility. `RED_DIM` is
+  re-derived as the midpoint of the new pair, which is the owner's own rule from 2026-08-29 doing
+  the work. The 2026-08-29 ruling that an unlit lamp is nearly black is not overturned - it is true
+  of a lens seen across a street and not of four pixels of one on a phone.
+  [RLG-198](../fragments/RLG-198.md)
+
 <a id="v0-13-78"></a>
 ## [0.13.78] - 2026-09-10
 - Fixed: **a siren asks two seconds of road ahead of itself, instead of a flat 4200 units.** The old
