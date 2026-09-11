@@ -161,8 +161,19 @@ def main():
         cls = page.evaluate('() => window.__road.bodyClass(%r)' % CAR)
         ok(cls == 'supercruiser', "it is its own class, not the cruiser's",
            'reads %r' % cls)
-        ok(page.evaluate('() => window.__road.raceLegal(%r)' % CAR),
-           'and it may enter a race, as the floor of its class should')
+        # ---- AND IT MAY NOT ENTER A RACE ANY MORE (RLG-203) --------------
+        # This asserted the opposite until 2026-09-10, under RLG-202: the
+        # SUPERCRUISER is the floor of the supercar class, so it could run that
+        # ladder. The owner replaced that: "I feel like the smarter design is to
+        # replace their race modes with Intercept." The class is unchanged and
+        # still load-bearing - it is what picks the FIELD the mode puts you
+        # against - but the entry it used to buy is now one mode no other car
+        # can reach. Both halves are asserted, because a car barred from racing
+        # and offered nothing instead is a prize that unlocks less than it did.
+        ok(not page.evaluate('() => window.__road.raceLegal(%r)' % CAR),
+           'it may no longer enter a race - INTERCEPT replaced the race modes')
+        ok(page.evaluate('() => window.__road.dutyLegal(%r)' % CAR),
+           'and what it got instead is a mode no other car can enter')
         ok(page.evaluate('() => window.__road.inCruiser()'),
            'sitting in it, the light bar is yours')
 

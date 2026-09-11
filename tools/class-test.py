@@ -119,6 +119,14 @@ with sync_playwright() as p:
               f"{start_car} reads '{armed['label'] if armed else 'no control'}'")
 
         # ---- walk the arrows until a car that cannot race turns up ----------------
+        # AND A POLICE CAR IS NOT THE CAR THIS FILE IS ABOUT (RLG-203). `raceLegal`
+        # is false for a van and false for a patrol car, and the two are opposite
+        # shapes: a van's MODE control is SHUT with the reason given, a patrol
+        # car's is open and offers INTERCEPT instead. When the police cars joined
+        # RACE_BANNED this walk landed on a SUPERCRUISER and asserted a van's rule
+        # against it - three failures, all of them this harness being out of date
+        # rather than the rule being broken. RLG-115 is about the cars that have
+        # NO event to enter, so the walk asks for exactly those.
         found, seen, shut_at = None, [], None
         for _ in range(40):
             pg.click('[data-act="next"]')
@@ -127,8 +135,10 @@ with sync_playwright() as p:
             if k in seen:
                 break
             seen.append(k)
-            st = pg.evaluate("() => window.__road.raceLegal ? window.__road.raceLegal() : true")
-            if not st:
+            st = pg.evaluate("""() => ({
+                race: window.__road.raceLegal ? window.__road.raceLegal() : true,
+                duty: window.__road.dutyLegal ? window.__road.dutyLegal() : false })""")
+            if not st['race'] and not st['duty']:
                 found, shut_at = k, mode_state(pg)
                 break
 

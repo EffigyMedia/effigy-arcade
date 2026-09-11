@@ -324,6 +324,19 @@ let heatPts = 0;
 /* one way in, so the cap, the star count and the cooling clock cannot disagree */
 function addHeat(n, why){
   if(optEasy) return;
+  /* ---- ON SHIFT, NOBODY IS WANTED FOR ANYTHING (RLG-203) ----------------
+     Owner, 2026-09-10: INTERCEPT is a race with pursuit on, "identical except
+     for the fact that there's no single racer accruing heat." The player is the
+     force, so the wanted level has nothing to point at.
+
+     IT IS GUARDED HERE BECAUSE THIS IS THE ONE WAY IN. The cap, the star count
+     and the cooling clock all live in this function for exactly that reason,
+     and guarding the five call sites instead would have been five chances to
+     miss one. What replaces the dial - the field's own lawlessness deciding how
+     many police are out - is not built yet, and until it is, INTERCEPT runs at
+     heat zero.
+     ------------------------------------------------------------------ */
+  if(playerIsPolice()) return;
   heatPts = clamp(heatPts + n, 0, HEAT_MAX);
   heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
   coolT = 0;                       /* seen again: the cooling clock restarts */
@@ -9675,6 +9688,12 @@ function patrolWatch(){
     c.behind = behind;
     if(!passed) continue;
     if(optEasy) continue;                         /* hot pursuit is off */
+    /* ---- A PATROL DOES NOT WAKE FOR ONE OF ITS OWN (RLG-203) ---------
+       On shift you are the one going past at speed on purpose, and a patrol
+       that engaged you would be the mode arresting its own player. It still
+       watches everything else on the road: the loop below this one is what
+       pulls a speeding NPC over, and that is the half of it INTERCEPT wants. */
+    if(playerIsPolice()) continue;
     if(spd <= MAX_SPD * SPEED_LIMIT) continue;    /* you went by legally */
     /* out of the traffic and into the chase, at its own place and speed */
     traffic.splice(i, 1);
@@ -9713,7 +9732,9 @@ function trapWatch(dt){
     const dz = Math.abs(k.z - (pos + PLAYER_Z));
     /* a wider window: at 200mph the car covers 2,600 units in a tenth of a
        second and the check simply missed it */
-    if(dz < 7000 && spd > MAX_SPD * SPEED_LIMIT){
+    /* and it does not catch one of its own either - see the patrol above. The
+       loop under this one still watches every other car that goes past. */
+    if(!playerIsPolice() && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT){
       k.armed = false; k.trap = false; k.grace = 0.35;
       k.spd = spd * 0.55;
       snd.warnCop();
@@ -13849,6 +13870,40 @@ const RACE_MILES = 12;
 const MILE = 1 / 0.00000777;
 const FIELD = 11;                    /* eleven rivals plus you = twelve */
 let mode = 'endless';                /* or 'race' */
+/* ---- INTERCEPT IS A RACE YOU ARE POLICING (RLG-203) ----------------------
+   Owner, 2026-09-10: "it should play like a standard race with hot pursuit
+   enabled, its just you arent a racer - you are a cop." And, sharpening it
+   later: "identical except for the fact that there's no single racer accruing
+   heat."
+
+   SO IT IS NOT A THIRD VALUE OF `mode`, AND THAT IS THE WHOLE DESIGN. Seventeen
+   places branch on `mode === 'race'` - the field, the finish line, the
+   checkpoints, the clock, the mirror's finish banner, the place readout - and
+   every one of them is TRUE of this mode, because this mode is a race. A third
+   value would have had to answer all seventeen and would have got one wrong. A
+   race with a flag on it answers none of them and only the differences branch.
+
+   WHAT THE FLAG MEANS IS WHO THE PLAYER IS: the police rather than a rival. It
+   is read in four places in this unit and nowhere else, and each one is a place
+   where the world would otherwise come after the player.
+   ------------------------------------------------------------------------- */
+let duty = false;
+/* ---- THE FLAG IS A CHOICE; THE CAR DECIDES WHETHER IT IS IN EFFECT -------
+   `duty` is what the player picked. `playerIsPolice()` is whether it MEANS
+   anything right now, and only a car the force owns can make it mean something.
+
+   THE TWO ARE SEPARATE BECAUSE THE GARAGE IS A WALK. Reaching the second police
+   car means clicking past racing cars to get there, and clearing the choice on
+   the way through cost the player their mode for passing through a car they did
+   not stop at - which `duty-test` caught, walking CRUISER to SUPERCRUISER and
+   arriving back on TEST DRIVE. Keeping the choice and asking the car instead
+   costs no state and cannot strand the player: a racing car simply is not on
+   shift, whatever the flag says, and its own mode control is untouched.
+
+   EVERY READER USES THE FUNCTION. The bare flag is read only by the garage's
+   own label and cycle, where `dutyLegal` has already been asked.
+   ------------------------------------------------------------------------- */
+function playerIsPolice(){ return duty && dutyLegal(optBody); }
 let racers = [], place = 12, finished = false, finishZ = 0;
 
 function buildField(){
@@ -17440,7 +17495,16 @@ function step(dt){
          dispatch, so a car sent by the radio still finds you the ordinary way -
          and one already on YOU keeps you, which is what makes the bust reachable.
          ---------------------------------------------------------------- */
-      const worth = heat > 0 || spd > MAX_SPD * SPEED_LIMIT || k.onPlayer === true;
+      /* ---- AND A CRUISER DOES NOT PULL OVER A CRUISER (RLG-203) --------
+         `worth` is the whole of whether the player is a candidate for this
+         search, which is why the guard goes here rather than on the branches
+         below it: on shift the player is never worth taking, so a friendly car
+         falls through to the ordinary search and finds a racer instead. It also
+         reaches `k.onPlayer === true`, so a cruiser that had already adopted
+         the player before the flag was set lets go rather than keeping them
+         for the rest of the run. */
+      const worth = !playerIsPolice()
+                    && (heat > 0 || spd > MAX_SPD * SPEED_LIMIT || k.onPlayer === true);
       /* ---- A CAR SENT FOR YOU IS SENT FOR YOU (RLG-173) ----------------
          THE ONE PLACE WHERE PERMANENT ENGAGEMENT NEEDED SOMETHING ADDED
          rather than taken away, and it is a judgement rather than a quoted
@@ -18186,7 +18250,16 @@ function step(dt){
        three seconds against a bust that lands at three */
     const crawling = spd < MAX_SPD * 0.10;
     let boxed = false;
-    if(crawling && !optEasy && !held){
+    /* ---- AND YOU CANNOT BE ARRESTED ON SHIFT (RLG-203) ------------------
+       This is the fourth and last place the world comes after the player, and
+       it is the one that does not read `heat` or `worth` at all: it counts any
+       cruiser that is not a trap standing near a stopped car. `onPlayer` is
+       undefined on a fresh dispatch and `undefined !== false`, so a wingman
+       pulling up beside a stopped player would have started the three-second
+       count - which is the same defect the owner reported in an ordinary
+       pursuit, arriving from the opposite direction.
+       ---------------------------------------------------------------- */
+    if(crawling && !optEasy && !held && !playerIsPolice()){
       for(const k of cops){
         if(k.wreck > 0) continue;
         /* ---- A BUST IS THE END OF A PURSUIT (owner, 2026-09-08) ---------
@@ -25344,15 +25417,22 @@ function showGarage(){
          this car is for. `disabled` is what stops the press, so the rule holds
          even if the note is ever restyled away.
          ---------------------------------------------------------------- */
-      '<button class="go ghost' + (raceLegal(optBody) ? '' : ' shut') + '"' +
-        (raceLegal(optBody) ? '' : ' disabled') + ' data-act="mode">MODE \u00B7 <b>' +
-        (raceLegal(optBody)
-          ? (mode === 'race' ? (tourOn ? 'TOURNAMENT' : 'SINGLE RACE') : 'TEST DRIVE')
-          : 'TEST DRIVE') +
+      '<button class="go ghost' + (modesOffered(optBody) ? '' : ' shut') + '"' +
+        (modesOffered(optBody) ? '' : ' disabled') + ' data-act="mode">MODE \u00B7 <b>' +
+        modeLabel() +
         '</b></button>' +
-      (raceLegal(optBody) ? '' :
+      (modesOffered(optBody) ? '' :
         '<div class="gnote">' + bodyClass(optBody).toUpperCase() +
         ' \u00B7 TEST DRIVE ONLY</div>') +
+      /* ---- AND A POLICE CAR SAYS WHAT ITS OTHER MODE IS FOR (RLG-203) ----
+         The same statement RLG-115 makes for a van, made the other way up. A
+         van's note explains why a control is shut; this one explains why the
+         two race modes a player has used all game are suddenly missing, and
+         that they were replaced rather than lost. Without it the prize reads
+         as a car with less to do.
+         ---------------------------------------------------------------- */
+      (dutyLegal(optBody) ?
+        '<div class="gnote">POLICE \u00B7 NO RACE ENTRY \u00B7 INTERCEPT INSTEAD</div>' : '') +
       /* what time you set off. The cycle still runs from there - this picks the
          start, not a fixed light (RLG-051). */
       '<button class="go ghost" data-act="time">TIME \u00B7 <b>' +
@@ -25366,8 +25446,12 @@ function showGarage(){
       (mode === 'race' ? '' :
         '<button class="go ghost" data-act="timed">TIMED \u00B7 <b>' +
           (timedRun ? 'ON' : 'OFF') + '</b></button>') +
-      '<button class="go ghost" data-act="chase">HOT PURSUIT \u00B7 <b>' +
+      /* shut on shift, and shut the way RLG-115 shuts a mode: the reason is
+         given rather than the control vanishing (RLG-203) */
+      '<button class="go ghost' + (playerIsPolice() ? ' shut' : '') + '"' +
+        (playerIsPolice() ? ' disabled' : '') + ' data-act="chase">HOT PURSUIT \u00B7 <b>' +
         (optEasy ? 'OFF' : 'ON') + '</b></button>' +
+      (playerIsPolice() ? '<div class="gnote">INTERCEPT IS A PURSUIT</div>' : '') +
       /* a fork can put its own buttons here — Motorsport adds QUALIFY */
       (CFG.garageButtons ? CFG.garageButtons() : '') +
       /* THE SAME SHAPE RLG-115 SET for a mode a car cannot enter: greyed with
@@ -25407,10 +25491,26 @@ function showGarage(){
         /* the button is `disabled` as well, so this is the second lock rather
            than the only one - a hardware back-press or a stale veil must not be
            able to walk a bus into a tournament */
-        if(!raceLegal(optBody)) return;
-        if(mode !== 'race'){ mode = 'race'; tourOn = false; }
-        else if(!tourOn){ tourOn = true; tourReset(); }
-        else { mode = 'endless'; tourOn = false; }
+        if(!modesOffered(optBody)) return;
+        /* ---- A POLICE CAR HAS TWO MODES, NOT THREE (RLG-203) ------------
+           TEST DRIVE and INTERCEPT, and the cycle is between those two alone.
+           It writes the SHIFT and never the racing car's setting, which is the
+           whole of why the two are separate variables.
+           -------------------------------------------------------------- */
+        if(dutyLegal(optBody)){
+          duty = !duty;
+          enforceModeRules();
+          showGarage();
+          return;
+        }
+        /* and the racing cycle writes only its own. `duty` is left alone: it is
+           the player's choice about a car they are not standing in, and taking
+           it away here is what cost them INTERCEPT on the walk between the two
+           police cars. */
+        if(raceMode !== 'race'){ raceMode = 'race'; raceTour = false; }
+        else if(!raceTour){ raceTour = true; tourReset(); }
+        else { raceMode = 'endless'; raceTour = false; }
+        enforceModeRules();
         showGarage();
       },
       time:  () => { optTime = (optTime + 1) % TIMES.length;
@@ -25419,7 +25519,9 @@ function showGarage(){
       timed: () => { timedRun = !timedRun;
                      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { timed:timedRun });
                      showGarage(); },
-      chase: () => { optEasy = !optEasy;
+      /* the second lock, for the same reason every other control here has one */
+      chase: () => { if(playerIsPolice()) return;
+                     optEasy = !optEasy;
                      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
                      showGarage(); },
       /* THE SECOND LOCK. The button is `disabled` as well; this is here for the
@@ -25485,9 +25587,97 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
    not break them: the question is what the car IS, which is the one thing a
    class is allowed to answer.
    ------------------------------------------------------------------------- */
-const RACE_BANNED = { production:1, utility:1 };
+/* ---- AND A POLICE CAR DOES NOT RACE EITHER (RLG-203) ---------------------
+   Owner, 2026-09-10: "I feel like the smarter design is to replace their race
+   modes with Intercept." So the two force cars join this table - they are
+   barred from SINGLE RACE and TOURNAMENT exactly as a van is - and they alone
+   gain a mode no other car can reach.
+
+   THE TAKING-AWAY MUST NOT SHIP WITHOUT THE GIVING. A police car offering TEST
+   DRIVE and nothing else is a tournament prize that unlocks LESS than the car
+   you already had. These two rows and `dutyLegal` below land in the same
+   release, and there is no order in which only one of them is true.
+   ------------------------------------------------------------------------- */
+const RACE_BANNED = { production:1, utility:1, cruiser:1, supercruiser:1 };
 function bodyClass(k){ return BODY_CLASS[k] || 'sport'; }
 function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
+/* ---- WHICH CARS CAN GO ON SHIFT ------------------------------------------
+   THE RECORD DECLARES IT, and this is the same rule RLG-202 wrote for
+   `raceClass`: naming two bodies here is the exact shape that left `hasBar` and
+   `copLivery` wrong when a second police car arrived. `force` already means
+   "this car belongs to the force" - it is what puts the light bar, the siren
+   and the scatter on the player's own car (RLG-181) - so a third force car
+   needs no edit here.
+   ------------------------------------------------------------------------- */
+function dutyLegal(k){ const B = BODY[k]; return !!(B && B.force); }
+/* whether the MODE control has anything to offer at all. A production car has
+   one mode and the button says so; these two have two. */
+function modesOffered(k){ return raceLegal(k) || dutyLegal(k); }
+/* ---- WHAT THE MODE BUTTON READS ------------------------------------------
+   One answer, because the label and the cycle that changes it must not be able
+   to disagree - and they nearly did: the old label was an expression inside the
+   markup with `raceLegal` asked twice in it, which is where a fourth state
+   would have been added by hand.
+   ------------------------------------------------------------------------- */
+function modeLabel(){
+  if(dutyLegal(optBody)) return duty ? 'INTERCEPT' : 'TEST DRIVE';
+  if(!raceLegal(optBody)) return 'TEST DRIVE';
+  /* the racing car's OWN setting, read at the source rather than through
+     `mode` - which is the shift's while a police car is selected */
+  return raceMode === 'race' ? (raceTour ? 'TOURNAMENT' : 'SINGLE RACE') : 'TEST DRIVE';
+}
+/* ---- AND THE MODE MUST SURVIVE CHANGING CARS (RLG-203) -------------------
+   Walk out of a CRUISER on INTERCEPT and into a STALLION and the flag would
+   still be set: the player would be on a sports grid with the world refusing to
+   chase them and no way to reach the label that turns it off, because a racing
+   car's control never shows INTERCEPT. Walking the other way is the same fault
+   with a tournament.
+
+   IT IS CALLED FROM `enforceCarRules`, which is already the one place that
+   holds "the car you are standing in cannot break the garage's own rules".
+   ------------------------------------------------------------------------- */
+/* ---- THE RACING CAR'S OWN MODE, KEPT WHILE YOU ARE IN A POLICE CAR -------
+   INTERCEPT needs `mode === 'race'` - seventeen places read it and every one of
+   them is right for this mode - so walking into a police car has to set it, and
+   walking out again would otherwise leave a racing car holding the shift's
+   setting. `duty-test` caught it: a player who had set TOURNAMENT, went to look
+   at the CRUISER and came back found SINGLE RACE.
+
+   TWO SETTINGS, KEPT APART, rather than one setting two controls fight over.
+   A police car has TEST DRIVE and INTERCEPT; a racing car has the three it
+   always had; and neither writes the other's.
+   ------------------------------------------------------------------------- */
+let raceMode = 'endless', raceTour = false;
+function enforceModeRules(){
+  if(playerIsPolice()){
+    /* on shift: the race machinery on, the tournament off, and the racing car's
+       own choice left exactly where it was */
+    mode = 'race';
+    tourOn = false;
+    /* ---- AND HOT PURSUIT IS NOT OPTIONAL ON SHIFT (RLG-203) ------------
+       The mode IS a pursuit - "it should play like a standard race with hot
+       pursuit enabled" - and `optEasy` is that switch being off. Left on, every
+       patrol is scenery, no cruiser ever engages anything, and the wingmen the
+       owner asked for could not exist: the mode would be a race you drive in a
+       police car. So the flag forces it rather than trusting a toggle the
+       player set three cars ago, and the control says so rather than silently
+       moving.
+
+       IT SITS INSIDE THIS BRANCH, and the first version of it did not - it was
+       written after an early `return` and never ran at all. `duty-test` read
+       HOT PURSUIT · OFF on a shut control, which is the exact shape of a rule
+       that is stated in the interface and not enforced underneath it.
+       ---------------------------------------------------------------- */
+    if(optEasy){
+      optEasy = false;
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
+    }
+    return;
+  }
+  mode = raceMode;
+  tourOn = raceTour;
+  if(!raceLegal(optBody)){ mode = 'endless'; tourOn = false; }
+}
 
 /* ---- WHICH CARS THE GARAGE LISTS -----------------------------------------
    One answer, asked by the arrows and by the rule below that has to know
@@ -25681,7 +25871,10 @@ function enforceCarRules(){
     syncBoxClass();
     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { body:optBody });
   }
-  if(!raceLegal(optBody) && mode !== 'endless'){ mode = 'endless'; tourOn = false; }
+  /* RLG-203 widened this: a police car is race-banned as well, and it is the
+     one race-banned car that may still be on `race` - so the single line that
+     used to hold the rule is now four, and they are stated together above. */
+  enforceModeRules();
 }
 
 function cycleBody(d){
@@ -27606,6 +27799,13 @@ requestAnimationFrame(frameLoop);
   API.body      = function(){ return optBody; };
   API.bodyClass = function(k){ return bodyClass(k || optBody); };
   API.raceLegal = function(k){ return raceLegal(k || optBody); };
+  /* ---- AND THERE ARE TWO KINDS OF RACE-BAN NOW (RLG-203) ----------------
+     `raceLegal` is false for a van AND for a patrol car, and they are opposite
+     cases: a van's MODE control is SHUT with the reason given, a patrol car's
+     is open and offers INTERCEPT. A harness looking for the first kind has to
+     be able to exclude the second, and class-test could not - its walk landed
+     on a SUPERCRUISER and asserted a van's rule against it. */
+  API.dutyLegal = function(k){ return dutyLegal(k || optBody); };
   /* ---- THE RACE CLASS, WHICH IS NOT THE UNLOCK CLASS (RLG-202) ----------
      `bodyClass` above answers `BODY_CLASS` - what a gold pays and what a
      silhouette says. This answers `classOf` - which LEAGUE the car runs in, and
@@ -27705,6 +27905,15 @@ requestAnimationFrame(frameLoop);
   API.pursuit = function(){
     return { heat:heat, pts:Math.round(heatPts), cool:+coolT.toFixed(2), earned:supersEarned,
              chasing:cops.filter(k => k.wreck<=0 && k.onPlayer !== false).length,
+             /* ---- AND THE STRICT COUNT BESIDE IT (RLG-203) --------------
+                `chasing` is `onPlayer !== false`, which is TRUE of `undefined`
+                - a cruiser that has never chosen anybody is counted as being
+                on you. That is the right reading for "is anything hostile near
+                me", and it is the wrong one for "has a cruiser ADOPTED me",
+                which is what INTERCEPT's guard has to answer: on shift the
+                player must never be adopted, and a check that could not tell
+                undefined from true would pass on a fresh dispatch. */
+             onYou:cops.filter(k => k.wreck<=0 && k.onPlayer === true).length,
              supers:cops.filter(k => k.superc && k.wreck<=0).length,
              coolNeeds:HEAT_COOL, easy:!!optEasy,
              /* THE SUPER CRUISER'S OWN HALF OF THE STATE. `fastFor` is the
@@ -27787,6 +27996,25 @@ requestAnimationFrame(frameLoop);
      the question at all. It sits with `setWet`, `setSpd` and `setBody`.
      ------------------------------------------------------------------- */
   API.setTimed = function(v){ timedRun = !!v; return timedRun; };
+  /* ---- WHAT SHIFT THE PLAYER IS ON (RLG-203) ---------------------------
+     INTERCEPT is reached by putting a police car in the garage and pressing
+     MODE, which is three taps a harness would have to find on a screen. This
+     reports the state and lets a check SET it, the way `setTimed` does for the
+     clock - and it reports every part of the decision rather than the flag
+     alone, because "the mode did not engage" and "this car cannot go on shift"
+     are different failures and a bare boolean cannot tell them apart.
+     ------------------------------------------------------------------- */
+  API.duty = function(){
+    return { on: playerIsPolice(), chosen: duty, legal: dutyLegal(optBody), body: optBody,
+             mode: mode, tour: tourOn, pursuit: !optEasy,
+             label: modeLabel(), raceLegal: raceLegal(optBody),
+             cls: classOf(optBody) };
+  };
+  API.setDuty = function(v){
+    duty = !!v;
+    enforceModeRules();          /* it is what decides `mode`, in one place */
+    return API.duty();
+  };
   /* crates still on the road that nobody has taken. A crate that paid nothing
      must still be COLLECTED (owner, 2026-08-31) - you pass a thing once on an
      endless road - and a count is the only way to tell "taken" from "left". */

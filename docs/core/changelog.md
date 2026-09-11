@@ -19,6 +19,53 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-82"></a>
+## [0.13.82] - 2026-09-10
+- Added: **INTERCEPT, the mode where you are the police and the racers are the target.** Owner,
+  2026-09-10: "one of the game mode choices would be a mode where you play as a cop taking out
+  racers before they finish a race", and on what it plays like: "it should play like a standard
+  race with hot pursuit enabled, its just you arent a racer - you are a cop." It sits on the
+  garage's MODE control beside TEST DRIVE and it is the only mode there, because the owner replaced
+  the race modes rather than adding to them: a CRUISER and a SUPERCRUISER now cycle TEST DRIVE and
+  INTERCEPT and nothing else. The two of them join `RACE_BANNED`, in the same release as the mode
+  they gained, because a police car with TEST DRIVE and nothing else would be a tournament prize
+  that unlocks less than the car you already had.
+- Added: the field is symmetrical and cost nothing to make so. Owner: "the cruiser intercepts
+  against a sports class race and the supercruiser intercepts against a super class race." That is
+  [RLG-202](../fragments/RLG-202.md)'s `raceClass` already doing its job - a CRUISER reads `sports`
+  and draws a sports grid, an INTERCEPTOR reads `super` and draws supercars, with no branch here.
+- Changed: **it is a race with a flag on it, not a third value of `mode`.** Seventeen places branch
+  on `mode === 'race'` - the field, the finish line, the checkpoints, the clock, the mirror's finish
+  banner - and every one of them is true of this mode, because this mode is a race. A third mode
+  value would have had to answer all seventeen and would have got one wrong.
+- Added: the four places the world comes after the player, all shut on shift. No heat accrues
+  (guarded in `addHeat`, which is the one way in); no cruiser's target search adopts the player;
+  no patrol wakes and no speed trap fires for one of its own; and a stopped police car is not
+  arrested for parking beside a colleague. That last one is the same defect the owner reported in an
+  ordinary pursuit, arriving from the opposite direction: the bust counts any cruiser near a stopped
+  car, and `onPlayer` is undefined on a fresh dispatch.
+- Added: HOT PURSUIT is forced on and its control is shut with the reason given, the way
+  [RLG-115](../fragments/RLG-115.md) shuts a mode. The mode IS a pursuit; left off, every patrol is
+  scenery and no cruiser engages anything.
+- Fixed: **the two mode settings are kept apart, and one shared `mode` was losing the player's
+  tournament.** Walking from a racing car to a police car and back reset it, and walking between the
+  two police cars dropped INTERCEPT because the route passes racing cars. The shift is now a choice
+  the car decides the effect of, and a racing car's own setting is untouched by visiting the garage's
+  police end. Both were found by `duty-test.py`, not by reading.
+- Added: `tools/duty-test.py`. It drives the real buttons, as `class-test.py` does, and runs every
+  road check TWICE - once on shift and once in the SAME CAR off shift - because a guard that is
+  never exercised is not a guard. Three of its control arms were rebuilt after they failed honestly:
+  a patrol is counted by the engine's own tally rather than by looking for the cruiser it made,
+  because a cruiser tops out at 0.71 of the player's speed and is culled before the read.
+- Changed: `class-test.py` now walks past the police cars. There are two kinds of race-ban now and
+  they are opposite shapes - a van's MODE control is shut with the reason given, a police car's is
+  open and offers INTERCEPT - and the old walk landed on a SUPERCRUISER and asserted a van's rule
+  against it. `interceptor-test.py` asserted the race entry this ruling takes away, and now asserts
+  both halves of the trade.
+- **The mode is not playable yet and nothing here claims otherwise.** There is no scoring, no win
+  and no loss: stopping a racer does nothing, and the race finishing does not end the shift. This is
+  [RLG-203](../fragments/RLG-203.md)'s first unit.
+
 <a id="v0-13-81"></a>
 ## [0.13.81] - 2026-09-10
 - Fixed: **the test suite waited for the document, when every harness in it needs the ENGINE.**
