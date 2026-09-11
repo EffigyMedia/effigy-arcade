@@ -155,8 +155,16 @@ def until(page, expression, timeout=10_000, arg=None, required=True, poll=100):
         try:
             if page.evaluate(expression, arg) if arg is not None else page.evaluate(expression):
                 return True
-        except Exception:
-            pass                    # the context can go away mid-navigation; that is not an answer
+        except Exception as e:
+            # ▶ A DEAD PAGE IS AN ANSWER, AND SWALLOWING IT COST TEN MINUTES.
+            # The context going away MID-NAVIGATION is not a failure - the
+            # document is being replaced under us and the next read will
+            # succeed. A page that has CRASHED or been CLOSED will never answer,
+            # and waiting the full timeout out turns a browser crash into a
+            # hang: shift-stop-test sat for ten minutes on a tab that died
+            # during boot, and reported a timeout rather than the crash.
+            if page.is_closed() or 'TargetClosed' in type(e).__name__                or 'crash' in str(e).lower():
+                raise
         if waited >= timeout:
             break
         page.wait_for_timeout(poll)

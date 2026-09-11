@@ -448,6 +448,14 @@ const STOP_WIDE = 0.55;   /* and roughly in front, not two lanes over */
    in this mode." A floor rather than a cap, and "try" is the owner's own hedge.
    -------------------------------------------------------------------- */
 const WINGMEN = 2;
+/* ---- AND HOW FAST THE FIELD'S LEVEL MOVES (RLG-203) --------------------
+   Seconds for the wanted level to cross its whole range, so the same number
+   governs the climb and the fall. Twenty is a first answer: about four seconds
+   a star, which is slow enough that a rival braking for traffic does not
+   announce a level change and quick enough that stopping the last two cars is
+   felt on the road rather than read about afterwards.
+   -------------------------------------------------------------------- */
+const FIELD_SWING = 20;
 /* ---- AND A DETECTOR SEES THEM COMING (owner, 2026-09-07, RLG-164) ------
    "We could add a radar detector element for upcoming speed traps and
    traffic cops, just like it was done in the original Need for Speed games."
@@ -10049,6 +10057,7 @@ function reset(){
   /* the shift's tally is per-run like the rest of these. Left out of this list
      it would be module state that survives every restart (RLG-203). */
   stopped = 0;
+  fieldHold = null;
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
   dist=0; score=0; combo=0; comboTime=0; heat=0; heatPts=0; heatWhy=''; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
@@ -14319,6 +14328,53 @@ function running(){
   for(const r of racers) if(!r.out) n++;
   return n;
 }
+/* ---- HOW LAWLESS THE FIELD IS BEING, RIGHT NOW (RLG-203) ----------------
+   Owner, 2026-09-10, choosing what replaces the wanted level on shift: the
+   field's own lawlessness decides how many police are out.
+
+   IT IS THE CARS THAT ARE STILL RUNNING AND STILL SPEEDING, over the whole
+   field. One number, and the same question the road already asks of every other
+   car on it: `SPEED_LIMIT` is what a patrol and a speed trap measure a driver
+   against, so the field is judged by the rule the world already uses rather
+   than by one invented for this mode.
+
+   IT FALLS AS YOU WORK, WHICH IS THE SHAPE OF THE MODE. A full field speeding
+   is the whole ladder and a busy road; stop them one at a time and the level
+   comes down with them, until the last rival is a duel with two wingmen. That
+   is the denominator being FIELD rather than `running()` - measured against
+   what is left, eleven cars and one car would both read as five stars and the
+   road would never thin out.
+
+   A STOPPED CAR IS NOT LAWLESS. It is parked on the verge, which is the most
+   law-abiding thing on the road.
+   ------------------------------------------------------------------------- */
+function fieldLawless(){
+  let n = 0;
+  for(const r of racers){
+    if(r.out || r.wreck > 0) continue;
+    if((r.spd || 0) > MAX_SPD * SPEED_LIMIT) n++;
+  }
+  return n;
+}
+/* ---- AND THE LEVEL FOLLOWS IT RATHER THAN JUMPING TO IT -----------------
+   The same points the player's own ladder is made of, so everything that reads
+   `heat` - how thickly traps are laid, when a roadblock may go up, when an
+   interceptor is dispatched, how well a cruiser drives - goes on reading the
+   same number meaning the same thing. Only its SOURCE moved, which is exactly
+   what RLG-169 did when the stars became points.
+
+   IT RISES AND FALLS AT THE SAME RATE, and that rate is a tunable. A level that
+   snapped to its target would flicker a star every time a rival braked for
+   traffic, and `flashWarn` would announce each one.
+   ------------------------------------------------------------------------- */
+function fieldHeat(dt){
+  const target = FIELD ? HEAT_MAX * (fieldLawless() / FIELD) : 0;
+  const step = (HEAT_MAX / FIELD_SWING) * dt;
+  const was = heat;
+  heatPts = clamp(heatPts + clamp(target - heatPts, -step, step), 0, HEAT_MAX);
+  heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
+  if(heat !== was) flashWarn(heat > 0 ? 'HEAT ' + heat : 'ROAD CLEAR');
+}
 /* ---- THE END OF A SHIFT (RLG-203) ---------------------------------------
    IT GOES THROUGH THE FINISH PATH, NOT THE CRASH PATH, and that is the same
    distinction the ordinary finish already had to make: `wreck()` returns early
@@ -14433,6 +14489,21 @@ function stepRacers(dt){
       if(gap > -120 && gap < 3600 && Math.abs(playerX - r.x) <= 0.30)
         want = Math.min(want, spd * 0.98);
     }
+    /* ---- A HARNESS CAN PIN THE FIELD'S PACE, THE WAY IT CAN PIN YOURS ----
+       `holdSpd` exists because nudging the player to a speed once is not the
+       same as holding them there; the field needed the same affordance for the
+       same reason. Staging eleven rivals at a speed and letting go put them
+       behind the traffic within seconds - measured at ONE car of eleven still
+       over the limit - so a check about a field running flat out was measuring
+       a field queueing behind a lorry.
+
+       THE PIN ITSELF IS FURTHER DOWN, on `spd` rather than on `want`. This
+       line keeps the TARGET honest so nothing above it - the traffic, the
+       other rivals, the player - reads as the reason the car is at that speed.
+
+       It is `null` in every run nobody has set it in, and it is reset with the
+       run like every other per-run value. */
+    if(fieldHold !== null) want = fieldHold;
 
     /* --- DECIDE, THEN COMMIT ------------------------------------------------
        Only when standing in a lane, and only every LANE_THINK seconds - a car
@@ -14547,6 +14618,14 @@ function stepRacers(dt){
       if(drive > 0) drive = Math.min(want - r.spd, drive * (r.launchQ || 1));
     }
     r.spd += drive;
+    /* ---- AND A HELD FIELD IS HELD, NOT AIMED AT --------------------------
+       The first version of this pinned `want` and let the physics chase it,
+       which is not a hold: a rival still had to accelerate there, and one that
+       hit traffic or another rival lost the speed again. Measured at FOUR cars
+       of eleven still over the limit on a field that was supposed to be flat
+       out, and the check it fed swung between 4, 8 and 11 run to run. The
+       player's own `spdHold` assigns `spd` outright for exactly this reason. */
+    if(fieldHold !== null) r.spd = fieldHold;
     const rDec = (rWas - r.spd) / Math.max(dt, 1/240);
     if(rDec > 900) r.brakeT = 0.35; else if(r.brakeT > 0) r.brakeT -= dt;
     r.braking = (r.brakeT || 0) > 0;
@@ -16869,6 +16948,19 @@ function step(dt){
        level after that. Whether that FEELS like shaking off the police is the
        owner's call on a real device.
        ------------------------------------------------------------------ */
+    /* ---- ON SHIFT THE FIELD CARRIES THE WANTED LEVEL, NOT THE PLAYER ----
+       Owner, 2026-09-10, on the one difference between INTERCEPT and a race
+       with pursuit on: "there's no single racer accruing heat." And, asked what
+       should decide how much force is out instead, the owner chose THE FIELD'S
+       OWN LAWLESSNESS. This is that accrual.
+
+       EVERYTHING BELOW THIS BRANCH IS ABOUT ONE CAR - the miles YOU covered
+       while chased, the cruisers that have eyes on YOU, the clean run that
+       cools YOUR level. None of it has a subject on shift, which is why the
+       branch replaces the block rather than adding to it.
+       ---------------------------------------------------------------- */
+    if(playerIsPolice()){ fieldHeat(dt); }
+    else {
     const chased = cops.some(k => k.wreck <= 0 && k.onPlayer !== false && !k.trap
                                   && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
     /* ---- A CHASE YOU STAY IN GETS WORSE ON ITS OWN --------------------
@@ -16905,6 +16997,7 @@ function step(dt){
       heatPts = Math.max(0, heatPts - (PTS_PER_STAR / HEAT_COOL) * dt);
       heat = Math.min(5, Math.floor(heatPts / PTS_PER_STAR));
       if(heat !== was) flashWarn(heat > 0 ? 'HEAT ' + heat : 'CLEAN');
+    }
     }
   }
   /* ---- THE DETECTOR (RLG-164) ------------------------------------------
@@ -17073,8 +17166,17 @@ function step(dt){
          spend most of a minute a car short - the tick is twelve to twenty-two
          seconds - and a wingman that falls behind and is culled left the player
          alone for as long again. "Always try to have at least two" is a floor
-         that is kept, not one that is approached. */
-      for(let have = live.length; have < WINGMEN; have++){
+         that is kept, not one that is approached.
+
+         ---- AND THE FIELD'S LAWLESSNESS IS WHAT SITS ON TOP OF IT (RLG-203)
+         `dispatchCap` is the ladder, and on shift it reads a wanted level that
+         the FIELD is carrying rather than the player. So a full field running
+         flat out puts the floor plus the whole ladder on the road, and a shift
+         down to its last rival thins back to the two wingmen. The ceiling of
+         four still holds: the box stations cars in threes and a fifth has
+         nowhere to stand. */
+      const want = Math.min(4, WINGMEN + dispatchCap());
+      for(let have = live.length; have < want; have++){
         spawnCop();
         radioSent++;
       }
@@ -25856,6 +25958,8 @@ function modeLabel(){
    always had; and neither writes the other's.
    ------------------------------------------------------------------------- */
 let raceMode = 'endless', raceTour = false;
+/* a harness's grip on the field's pace - see the note in `stepRacers` */
+let fieldHold = null;
 function enforceModeRules(){
   if(playerIsPolice()){
     /* on shift: the race machinery on, the tournament off, and the racing car's
@@ -28773,7 +28877,16 @@ requestAnimationFrame(frameLoop);
     return { on: playerIsPolice(), running: running(), stopped: stopped,
              field: FIELD, finished: finished, outcome: lastWreck,
              wingmen: WINGMEN, cap: dispatchCap(),
-             hold: STOP_HOLD, under: STOP_SPD, near: STOP_NEAR };
+             hold: STOP_HOLD, under: STOP_SPD, near: STOP_NEAR,
+             /* ---- THE FIELD'S OWN LAWLESSNESS, AND WHAT IT BUYS (RLG-203)
+                `lawless` is the count of rivals still running AND still over
+                the limit, `pts` and `stars` are the level it is driving, and
+                `want` is the complement it asks the road for. All four are
+                reported because "the level did not move" and "the level moved
+                and bought nothing" are different failures. */
+             lawless: fieldLawless(), pts: Math.round(heatPts), stars: heat,
+             want: Math.min(4, WINGMEN + dispatchCap()),
+             swing: FIELD_SWING, limit: SPEED_LIMIT };
   };
   /* ---- PUT A RACER WHERE THE STOP CAN BE TESTED -------------------------
      THE MANOEUVRE ITSELF CANNOT BE FLOWN BY A HARNESS. Getting in front of a
@@ -28811,6 +28924,39 @@ requestAnimationFrame(frameLoop);
      car ahead of the player and then speeding up to test something else meant
      the player overtook it, and the rule - correctly - stopped it: the tally
      moved during a check that was about a different car entirely. */
+  /* ---- THE WHOLE FIELD RUNNING AT A CHOSEN PACE (RLG-203) ---------------
+     `stageStop` is for ONE rival and it puts that rival in the PLAYER'S line,
+     which is exactly wrong for a measurement of the field: eleven cars dropped
+     into one lane behind the player queue up, lift for each other and for the
+     car in front, and drop under the speed limit and back over it every few
+     seconds. `lawless` read 11, then 0, then 11 again, and the level it drives
+     never got past a star.
+
+     So this puts them AHEAD of the player and SPREAD ACROSS THE LANES, which
+     is what a field looks like, and holds their pace. Nothing about the rule
+     under test is staged - only the road it is asked about.
+     -------------------------------------------------------------------- */
+  API.stageField = function(v, dz){
+    const base = dz === undefined ? 14000 : dz;
+    let n = 0;
+    racers.forEach((r, i) => {
+      if(r.out) return;
+      r.z = pos + PLAYER_Z + base + i * 1500;
+      r.lane = i % LANES;
+      r.x = LANE_X[r.lane];
+      r.spd = v;
+      r.base = v;
+      n++;
+    });
+    return n;
+  };
+  /* keep the field at a pace instead of nudging it there once. Pass null to
+     give the road back to the rivals. See `holdSpd`, which is the same tool for
+     the player and exists for the same reason. */
+  API.holdField = function(v){
+    fieldHold = (v === null || v === undefined) ? null : v;
+    return fieldHold;
+  };
   API.parkRivals = function(except, dz){
     let n = 0;
     racers.forEach((r, i) => {

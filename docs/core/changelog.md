@@ -19,6 +19,39 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-84"></a>
+## [0.13.84] - 2026-09-11
+- Added: **the field's own lawlessness decides how many police are out.** Owner, 2026-09-10, on the
+  one difference between INTERCEPT and a race with hot pursuit on: "there's no single racer accruing
+  heat" - which left the mode with no dial at all, because the wanted level is what decides how much
+  force arrives and on shift nobody was carrying one. The owner chose the replacement. The level now
+  follows the rivals that are still running AND still over the limit, measured against the same
+  `SPEED_LIMIT` a patrol and a speed trap measure every other driver by, so the field is judged by
+  the rule the world already uses rather than one invented for this mode.
+- Added: it falls as you work, which is the shape of the mode. A full field running flat out is five
+  stars and a complement of four; the same field brought under the limit is nothing and the two
+  wingmen; and stopping a rival takes it out of the count, because a car parked on the verge is the
+  most law-abiding thing on the road. The denominator is the WHOLE field rather than what is left -
+  measured against the survivors, eleven cars and one car would both read as five stars and the road
+  would never thin out to the duel the last rival should be.
+- Added: `FIELD_SWING`, the seconds the level takes to cross its whole range, governing the climb and
+  the fall alike. Twenty is a first answer - about four seconds a star, slow enough that a rival
+  braking for traffic does not announce a level change.
+- Changed: everything that reads `heat` goes on reading the same number meaning the same thing - how
+  thickly traps are laid, when a roadblock may go up, how well a cruiser drives. Only its SOURCE
+  moved, which is exactly what [RLG-169](../fragments/RLG-169.md) did when the stars became points.
+- Added: `API.holdField` and `API.stageField`, and the first of those was needed twice over. A field
+  staged at a speed and let go is behind the traffic within seconds, and a hold that pins the TARGET
+  is not a hold - the rivals still have to accelerate there and lose it again on the first car they
+  meet. Measured at four of eleven still over the limit on a field that was supposed to be flat out.
+  It assigns the speed outright now, the way the player's own `holdSpd` always has.
+- Fixed: `harness.until` waited out its full timeout on a page that had CRASHED. A context going away
+  mid-navigation is not a failure and must not be one; a dead page will never answer, and swallowing
+  that turned a browser crash into a ten-minute hang with a timeout at the end of it.
+- **Not measured, and it is the whole question:** whether a road that thickens with a lawless field
+  and thins to a duel reads as the mode breathing or as it running out. That is a device judgement
+  and `FIELD_SWING` is the dial.
+
 <a id="v0-13-83"></a>
 ## [0.13.83] - 2026-09-10
 - Added: **a racer is STOPPED, not destroyed, and it is your job to stop it.** Owner, 2026-09-10:
