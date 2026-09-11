@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot as engine_boot, until
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -73,10 +73,9 @@ def boot(b, base):
     page = ctx.new_page()
     errs = []
     page.on('pageerror', lambda e: errs.append(str(e)))
-    page.goto('%s/%s' % (base, GAME), wait_until='load')
+    engine_boot(page, '%s/%s' % (base, GAME))
     try:
-        page.wait_for_function(
-            '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5000)
+        until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5000)
         page.wait_for_timeout(1000)
     except Exception:
         pass

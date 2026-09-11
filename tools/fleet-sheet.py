@@ -55,7 +55,7 @@ def _handover():
 _handover()
 
 from playwright.sync_api import sync_playwright   # noqa: E402
-from harness import console_utf8, launch_chromium  # noqa: E402
+from harness import console_utf8, launch_chromium, boot  # noqa: E402
 
 
 SHEET = r"""(cls) => {
@@ -212,7 +212,7 @@ def main():
             pg = ctx.new_page()
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
-            pg.goto('http://127.0.0.1:%d/games/sw/interstate.html' % port, wait_until='load')
+            boot(pg, 'http://127.0.0.1:%d/games/sw/interstate.html' % port)
             pg.wait_for_timeout(1600)
             pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
             pg.click('[data-act="play"]')

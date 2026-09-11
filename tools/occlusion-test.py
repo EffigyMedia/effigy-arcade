@@ -31,7 +31,7 @@ from pathlib import Path
 # reaching its title card, which is a long way from "the server is serving the wrong place".
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot, until
 from playwright.sync_api import sync_playwright
 
 console_utf8()
@@ -63,13 +63,12 @@ def stint(browser, secs):
     errs = []
     page.on('pageerror', lambda e: errs.append(str(e)))
     try:
-        page.goto(f'{BASE}/games/sw/interstate.html', wait_until='load')
+        boot(page, f'{BASE}/games/sw/interstate.html')
         # THE FIRST VISIT RELOADS ITSELF. sw.js claims the client on activate, arcade.js reloads on
         # controllerchange, and anything clicked before that lands on a document that is about to be
         # thrown away - which is why the first version of this test reached the title and no further.
         try:
-            page.wait_for_function(
-                '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+            until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
                 timeout=5000)
             page.wait_for_timeout(1200)
         except Exception:

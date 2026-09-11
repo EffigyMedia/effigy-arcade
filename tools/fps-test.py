@@ -22,7 +22,7 @@ from pathlib import Path
 # an authored file carrying an absolute path breaks the next time the tree moves.
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, until
 from playwright.sync_api import sync_playwright
 console_utf8()
 # ---- THE HOUR IS AN ARGUMENT NOW ----------------------------------------
@@ -51,12 +51,12 @@ with sync_playwright() as p:
     b = launch_chromium(p, headless=True)
     pg = b.new_page(viewport={'width':480,'height':900})
     pg.add_init_script(INIT)
-    pg.goto('http://127.0.0.1:%d/games/sw/interstate.html' % PORT, wait_until='load')
+    boot(pg, 'http://127.0.0.1:%d/games/sw/interstate.html' % PORT)
     try:
-        pg.wait_for_function('() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5000)
+        until(pg, '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5000)
         pg.wait_for_timeout(1200)
     except Exception: pass
-    pg.wait_for_function('!!window.__probe.road', timeout=10000)
+    until(pg, '!!window.__probe.road', timeout=10000)
     pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
     pg.click('[data-act="play"]')
     pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)

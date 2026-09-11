@@ -30,7 +30,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, until
 
 GAME = 'games/sw/interstate.html'
 
@@ -253,8 +253,8 @@ def main():
         page = browser.new_context(viewport={'width': 480, 'height': 900},
                                    has_touch=True, is_mobile=True).new_page()
         page.add_init_script(INIT)
-        page.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
-        page.wait_for_function('!!window.__probe.road', timeout=10000)
+        boot(page, 'http://127.0.0.1:%d/%s' % (port, GAME))
+        until(page, '!!window.__probe.road', timeout=10000)
         page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         page.click('[data-act="play"]')
         page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
@@ -400,7 +400,7 @@ def main():
             pg2 = browser.new_context(viewport={'width': w, 'height': hh},
                                       has_touch=True, is_mobile=True).new_page()
             pg2.add_init_script(INIT)
-            pg2.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
+            boot(pg2, 'http://127.0.0.1:%d/%s' % (port, GAME))
             pg2.wait_for_timeout(1600)
             pg2.click('[data-act="play"]')
             pg2.wait_for_timeout(400)

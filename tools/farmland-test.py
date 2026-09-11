@@ -45,7 +45,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, until
 
 GAME = 'games/sw/interstate.html'
 
@@ -94,7 +94,7 @@ class Results:
 
 
 def drive(page):
-    page.wait_for_function('!!window.__probe.road', timeout=10000)
+    until(page, '!!window.__probe.road', timeout=10000)
     page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
     page.click('[data-act="play"]')
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
@@ -123,10 +123,9 @@ def main():
         browser = launch_chromium(p, headless=not args.headed)
         page = browser.new_page(viewport={'width': 480, 'height': 900})
         page.add_init_script(INIT)
-        page.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
+        boot(page, 'http://127.0.0.1:%d/%s' % (port, GAME))
         try:
-            page.wait_for_function(
-                '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+            until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
                 timeout=5000)
             page.wait_for_timeout(1000)
         except Exception:

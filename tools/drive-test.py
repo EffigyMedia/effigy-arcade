@@ -28,7 +28,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot as engine_boot, until
 
 ROOT = Path(__file__).resolve().parent.parent
 MPH = 200 / 15333          # MAX_SPD is 200mph, road.js:80
@@ -241,7 +241,7 @@ def boot(page, url, res):
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.on('console', lambda m: errors.append('console.error: ' + m.text)
             if m.type == 'error' else None)
-    page.goto(url, wait_until='load')
+    engine_boot(page, url)
     # ---- the first visit reloads itself -------------------------------------
     # sw.js calls clients.claim() on activate, which fires `controllerchange`,
     # and arcade.js reloads on that. On a cold profile it lands a second or so
@@ -249,13 +249,12 @@ def boot(page, url, res):
     # racing it: the init script re-runs on the new document, so the probe
     # survives.
     try:
-        page.wait_for_function(
-            '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+        until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
             timeout=5_000)
         page.wait_for_timeout(1_200)
     except Exception:
         pass
-    page.wait_for_function('!!window.__probe.road', timeout=10_000)
+    until(page, '!!window.__probe.road', timeout=10_000)
 
     # the title card is up, and it has a PLAY button
     page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10_000)
@@ -655,7 +654,7 @@ def lap_check(page, res):
         res.check(False, 'a lap increments', 'no circuit to jump on')
         return
     try:
-        page.wait_for_function(f'() => lap > {before}', timeout=20_000)
+        until(page, f'() => lap > {before}', timeout=20_000)
         after = page.evaluate('() => lap')
         res.check(True, 'a lap increments', f'{before} -> {after} (jumped to the line)')
     except Exception:

@@ -34,7 +34,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot
 
 GAME = 'games/sw/interstate.html'
 
@@ -97,7 +97,7 @@ def main():
                                    has_touch=True, is_mobile=True).new_page()
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
-        page.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
+        boot(page, 'http://127.0.0.1:%d/%s' % (port, GAME))
         page.wait_for_timeout(1500)
         # a gesture, because a context that never started measures silence and passes everything
         page.mouse.click(240, 700)

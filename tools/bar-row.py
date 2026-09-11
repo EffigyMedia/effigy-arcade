@@ -28,7 +28,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot, until
 from playwright.sync_api import sync_playwright
 console_utf8()
 
@@ -78,8 +78,8 @@ with sync_playwright() as p:
     pg = b.new_context(viewport={'width': 480, 'height': 900}).new_page()
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto(f'http://127.0.0.1:{PORT}/games/sw/interstate.html', wait_until='load')
-    pg.wait_for_function('() => window.__road && window.__road.fleet', timeout=15000)
+    boot(pg, f'http://127.0.0.1:{PORT}/games/sw/interstate.html')
+    until(pg, '() => window.__road && window.__road.fleet', timeout=15000)
     pg.wait_for_timeout(1500)
 
     res = pg.evaluate(MEASURE)

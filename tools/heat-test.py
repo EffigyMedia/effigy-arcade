@@ -33,7 +33,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, until
 
 GAME = 'games/sw/interstate.html'
 
@@ -76,8 +76,8 @@ def main():
         pg = b.new_context(viewport={'width': 480, 'height': 900},
                            has_touch=True, is_mobile=True).new_page()
         pg.add_init_script(INIT)
-        pg.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
-        pg.wait_for_function('!!window.__probe.road', timeout=10000)
+        boot(pg, 'http://127.0.0.1:%d/%s' % (port, GAME))
+        until(pg, '!!window.__probe.road', timeout=10000)
         pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         pg.click('[data-act="play"]')
         pg.wait_for_timeout(400)

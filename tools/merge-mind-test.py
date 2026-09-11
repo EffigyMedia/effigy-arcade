@@ -27,11 +27,11 @@ WHAT THIS ASSERTS, AND WHY EACH ONE IS SEPARATE.
   a defect looks like, so a check that could not tell them apart would call a working change of mind
   a bug.
 
-IT NAVIGATES WITH `wait_until="commit"` RATHER THAN "load", and that is not a preference. On
-2026-09-10 this machine entered the wedge RLG-141's neighbour records: chromium stops firing `load`
-for the two driving cabinets while the server hands the same 1.5MB of `road.js` over in 0.09s, and
-it fails identically on the last known-good commit. The page parses, runs and answers on `commit`.
-If `load` is working on your machine, nothing here behaves differently.
+IT BOOTS WITH `harness.boot`, AND THIS FILE IS WHERE THAT CAME FROM. On 2026-09-10 this machine
+stopped firing `load` for the two driving cabinets while the server handed the same 1.5MB of
+`road.js` over in 0.09s, and it failed identically on the last known-good commit. The shape written
+here to get round it - navigate on `commit`, then read the engine directly - is now `harness.boot`
+and the whole suite uses it (RLG-208). If `load` is working on your machine, nothing differs.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -45,7 +45,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -82,17 +82,11 @@ def main():
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
 
-        page.goto('%s/%s' % (base, GAME), wait_until='commit', timeout=30000)
-        # A FIXED WAIT AND A DIRECT READ, not `wait_for_function`. On the wedged
-        # machine of 2026-09-10 the polling form timed out at 20s while a single
-        # `evaluate` after a plain wait answered immediately - the page's own rAF
-        # loop starves the poller. This is the shape that worked.
-        booted = False
-        for _ in range(6):
-            page.wait_for_timeout(4000)
-            if page.evaluate('() => typeof window.__road') == 'object':
-                booted = True
-                break
+        # THIS FILE IS WHERE THE BOOT HELPER CAME FROM. The loop that used to sit here - navigate
+        # on `commit`, then a fixed wait and a direct read - is now `harness.boot`, and every
+        # harness in the suite uses it (RLG-208). `required=False` because the line below reports
+        # a failure to boot rather than raising on it.
+        booted = boot(page, '%s/%s' % (base, GAME), timeout=30000, required=False)
         ok(booted, 'the engine booted', 'window.__road is present')
         if not booted:
             print('  the machine cannot boot the cabinet - nothing below could run')

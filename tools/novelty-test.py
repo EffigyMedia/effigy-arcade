@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -85,7 +85,7 @@ def main():
             return page.query_selector('[data-act="novelty"]')
 
         # ---- BEFORE THE UNLOCK: the control must not be there -------------
-        page.goto('%s/%s' % (base, GAME), wait_until='load')
+        boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
         open_garage()
         clean = bodies()
@@ -100,7 +100,7 @@ def main():
             const A = window.Arcade;
             A.save.merge('interstate-opts', { production:true, utility:true });
         }""")
-        page.reload(wait_until='load')
+        reboot(page)
         page.wait_for_timeout(600)
         open_garage()
         shown = bodies()

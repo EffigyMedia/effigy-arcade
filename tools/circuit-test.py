@@ -25,7 +25,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot, until
 from playwright.sync_api import sync_playwright
 console_utf8()
 h=functools.partial(http.server.SimpleHTTPRequestHandler,directory=str(ROOT))
@@ -36,9 +36,9 @@ with sync_playwright() as p:
     b=launch_chromium(p,headless=True,args=['--mute-audio','--autoplay-policy=no-user-gesture-required'])
     for gid,path in [('motorsport','games/sw/motorsport.html'),('interstate','games/sw/interstate.html')]:
         pg=b.new_context(viewport={'width':480,'height':900}).new_page()
-        pg.goto(f'http://127.0.0.1:{P}/{path}',wait_until='load')
+        boot(pg, f'http://127.0.0.1:{P}/{path}')
         try:
-            pg.wait_for_function('() => navigator.serviceWorker && navigator.serviceWorker.controller',timeout=5000)
+            until(pg, '() => navigator.serviceWorker && navigator.serviceWorker.controller',timeout=5000)
             pg.wait_for_timeout(1200)
         except Exception: pass
         pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]',timeout=10000)

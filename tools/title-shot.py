@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -55,7 +55,7 @@ def main():
         page = ctx.new_page()
 
         # ---- the launcher, and the cabinet card for the driving game
-        page.goto('http://127.0.0.1:%d/index.html' % port, wait_until='load')
+        boot(page, 'http://127.0.0.1:%d/index.html' % port)
         page.wait_for_timeout(2600)
         page.screenshot(path=str(out / 'launcher-rack.png'))
         card = page.query_selector('[data-id="interstate"]') or page.query_selector('.cab')
@@ -66,7 +66,7 @@ def main():
             print('      NO CARD FOUND on the rack')
 
         # ---- and the machine's own title screen
-        page.goto('http://127.0.0.1:%d/games/sw/interstate.html' % port, wait_until='load')
+        boot(page, 'http://127.0.0.1:%d/games/sw/interstate.html' % port)
         page.wait_for_timeout(2600)
         page.screenshot(path=str(out / 'interstate-title.png'))
         print('      wrote the interstate title screen')

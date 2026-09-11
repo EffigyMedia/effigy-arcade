@@ -85,7 +85,7 @@ _handover()
 
 from playwright.sync_api import sync_playwright   # noqa: E402
 
-from harness import console_utf8, launch_chromium  # noqa: E402
+from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
 
 
 def serve(root):
@@ -230,15 +230,14 @@ def run(browser, base_url, game, seconds, settle):
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     try:
-        page.goto(base_url + '/' + GAMES[game], wait_until='load')
+        boot(page, base_url + '/' + GAMES[game])
         try:
-            page.wait_for_function(
-                '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+            until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
                 timeout=5_000)
             page.wait_for_timeout(1_200)
         except Exception:
             pass
-        page.wait_for_function('!!window.__probe.road', timeout=10_000)
+        until(page, '!!window.__probe.road', timeout=10_000)
         if not page.evaluate('() => typeof window.__probe.road.watchDraw === "function"'):
             raise SystemExit('[pop-test] the engine has no draw ledger (API.watchDraw). This '
                              'harness reads the painter\'s own exits and cannot infer them from '

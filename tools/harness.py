@@ -72,3 +72,135 @@ def console_utf8():
             stream.reconfigure(encoding="utf-8")
         except (AttributeError, OSError):
             pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Booting a cabinet: wait for the ENGINE, never for the document.
+# ─────────────────────────────────────────────────────────────────────────────
+
+READY = {
+    # The shell. Present on every cabinet AND on the launcher, so it is the
+    # default: `Arcade.save` rather than bare `Arcade`, because the object is
+    # created early and filled in afterwards.
+    'arcade': '() => !!(window.Arcade && window.Arcade.save)',
+    # The driving engine. Only the two driving cabinets have it.
+    'road': '() => typeof window.__road === "object" && window.__road !== null',
+}
+
+DRIVING = ('interstate', 'motorsport')
+
+
+def ready_for(url):
+    """Which engine a URL's readiness is, so a call site needs no second argument."""
+    return 'road' if any(name in url for name in DRIVING) else 'arcade'
+
+
+def boot(page, url, ready=None, timeout=30_000, settle=0, required=True):
+    """Navigate to a cabinet and wait for its ENGINE. Returns True if it came up.
+
+    ▶ WHY THIS EXISTS, AND WHY IT IS NOT `wait_until="load"` (RLG-208). On 2026-09-09 and again
+    on 2026-09-10 this machine stopped firing `load` for the two driving cabinets. A direct probe
+    found `window.__road` present, a canvas on the page, zero page errors - and
+    `document.readyState` stuck at `interactive`. The engine had booted and was answering, while
+    every harness in the suite sat waiting for a document event that was never going to arrive and
+    reported a timeout that reads exactly like a broken build. It failed identically on the last
+    known-good commit, which is the test that proved it environmental.
+
+    NO HARNESS HERE CARES WHETHER THE DOCUMENT FINISHED. Every one of them cares whether the
+    engine is up, and that is what this waits for. On a healthy machine nothing behaves
+    differently - the engine is up before `load` would have fired either way.
+
+    ▶ A FIXED WAIT AND A DIRECT READ, NOT `wait_for_function`. Measured on the wedged machine: the
+    polling form timed out after 20 seconds while a single `evaluate` after a plain wait answered
+    immediately. The page's own animation loop starves the in-page poller. The loop below polls
+    from Python, one round trip at a time, and is not starved by it.
+
+    `ready` is a key of READY, or a raw JavaScript expression for a cabinet that needs something
+    more specific. Omitted, the URL decides. `settle` is a pause after the engine answers, for a
+    caller that needs a few frames drawn before it reads anything.
+
+    ▶ IT RAISES BY DEFAULT, AND THAT IS THE POINT OF `required`. `goto` raised when the page did
+    not arrive, so every call site it replaces was written expecting a loud stop. A helper that
+    quietly returned False in its place would let a harness run its whole battery against a dead
+    page and report the damage as a dozen unrelated failures. What it raises with is a READING of
+    the page rather than a timeout, so the next person can tell a broken build from a wedged
+    machine without writing a probe first. Pass `required=False` to be told rather than stopped.
+    """
+    expr = READY.get(ready or ready_for(url), ready)
+    page.goto(url, wait_until='commit', timeout=timeout)
+    if until(page, expr, timeout=timeout, required=False):
+        if settle:
+            page.wait_for_timeout(settle)
+        return True
+    if not required:
+        return False
+    raise RuntimeError('[harness] the engine never came up: %s\n%s' % (url, _diagnose(page)))
+
+
+def until(page, expression, timeout=10_000, arg=None, required=True, poll=100):
+    """Wait for a JavaScript expression to go truthy. Returns True if it did.
+
+    ▶ THE REPLACEMENT FOR `page.wait_for_function`, AND THE REASON IS MEASURED (RLG-208). The
+    Playwright form injects a poller into the page and drives it from the page's own animation
+    frames. On the wedged machine of 2026-09-10 that poller timed out after 20 seconds while a
+    single `evaluate` immediately afterwards answered at once - the game's own rAF loop starves
+    it. This polls from PYTHON, one round trip at a time, so nothing in the page can starve it.
+
+    It raises by default, the way `wait_for_function` did, and for the same reason `boot` does:
+    the call sites it replaces were written expecting a loud stop. `required=False` returns a bool
+    instead. `poll` is the gap between reads in milliseconds.
+    """
+    waited = 0
+    while True:
+        try:
+            if page.evaluate(expression, arg) if arg is not None else page.evaluate(expression):
+                return True
+        except Exception:
+            pass                    # the context can go away mid-navigation; that is not an answer
+        if waited >= timeout:
+            break
+        page.wait_for_timeout(poll)
+        waited += poll
+    if not required:
+        return False
+    raise RuntimeError('[harness] never became true within %dms: %s\n%s'
+                       % (timeout, expression, _diagnose(page)))
+
+
+def reboot(page, ready=None, timeout=30_000, settle=0, required=True):
+    """`page.reload()` that waits for the ENGINE rather than for the document. See `boot`."""
+    page.reload(wait_until='commit', timeout=timeout)
+    expr = READY.get(ready or ready_for(page.url), ready)
+    if until(page, expr, timeout=timeout, required=False):
+        if settle:
+            page.wait_for_timeout(settle)
+        return True
+    if not required:
+        return False
+    raise RuntimeError('[harness] the engine never came back after a reload: %s\n%s'
+                       % (page.url, _diagnose(page)))
+
+
+def _diagnose(page):
+    """What the page actually looked like when it would not boot.
+
+    A TIMEOUT NAMES NOTHING. These four lines separate the cases that matter: a build that threw,
+    a shell that never attached, an engine that never started, and a document that is running
+    fine and simply will not finish - which is the wedge this helper exists for.
+    """
+    try:
+        seen = page.evaluate("""() => ({
+            state:  document.readyState,
+            arcade: !!(window.Arcade && window.Arcade.save),
+            road:   typeof window.__road,
+            canvas: document.querySelectorAll('canvas').length })""")
+    except Exception as e:
+        return '          the page could not even be read: %s' % e
+    return ('          document.readyState = %s\n'
+            '          window.Arcade       = %s\n'
+            '          window.__road       = %s\n'
+            '          canvases on the page= %d\n'
+            '          If the shell is attached and readyState is `interactive`, this is the\n'
+            '          document-never-finishes wedge and the readiness expression is wrong,\n'
+            '          not the build.' % (seen['state'], seen['arcade'], seen['road'],
+                                          seen['canvas']))

@@ -19,6 +19,36 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-81"></a>
+## [0.13.81] - 2026-09-10
+- Fixed: **the test suite waited for the document, when every harness in it needs the ENGINE.**
+  Twice now this machine has stopped firing the browser's `load` event for the two driving cabinets
+  while the engine booted, drove and answered underneath - `window.__road` present, a canvas
+  painting, zero page errors, and `document.readyState` stuck at `interactive` forever. Every
+  harness sat waiting for an event that was never going to arrive and reported a timeout that reads
+  exactly like a broken build. Measured on the wedged machine: smoke-test 6/6 where it had been 4/6,
+  and drive-test 37/37 where neither driving cabinet could be reached at all.
+- Added: `harness.boot`, `harness.until` and `harness.reboot`. `boot` navigates on `commit` and waits
+  for the engine; the URL decides which engine, so a call site needs no second argument. `until`
+  replaces `page.wait_for_function`, which polls from INSIDE the page and is starved by the game's
+  own animation loop - measured timing out at 20 seconds on the wedged machine while a single
+  `evaluate` immediately afterwards answered at once. All three raise by default, the way the calls
+  they replace did, and they raise with a reading of the page rather than a bare timeout: readyState,
+  whether the shell attached, whether the engine is there. A timeout names nothing, and telling a
+  broken build from a wedged machine is the whole job.
+- Changed: 218 call sites across 100 harnesses - 104 `goto`, 108 `wait_for_function`, 6 `reload`.
+  The ruling had counted only the first group; converting those alone would have moved the hang four
+  lines down and left the suite just as unable to run.
+- Added: `tools/boot-proof.py`, which MAKES the wedge rather than waiting for one - its own server
+  holds an image request open forever, so `load` cannot fire while the page runs normally. It asserts
+  the negatives too: `boot` returns False on a page with no engine, and `boot(ready='road')` returns
+  False on the launcher, which has the shell and no driving engine.
+- Fixed: five harnesses already had a wrapper of their own called `boot`, and the conversion turned
+  the helper's call inside them into the wrapper calling ITSELF with the wrong arity - drive-test went
+  from 37 checks to a TypeError. They import it as `engine_boot` now, and the proof asserts that no
+  harness shadows a name it imports.
+- Nothing a player can see changed. This is [RLG-208](../fragments/RLG-208.md) and it is tools only.
+
 <a id="v0-13-80"></a>
 ## [0.13.80] - 2026-09-10
 - Added: **a lane change is decided the way a person decides one.** The indicator is a HABIT now,

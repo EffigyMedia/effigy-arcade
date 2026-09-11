@@ -7,7 +7,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 console_utf8()
 h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
@@ -23,13 +23,13 @@ with sync_playwright() as p:
     pg = ctx.new_page()
 
     # the launcher sets music OFF; a fresh cabinet should inherit it ONCE
-    pg.goto(f'{base}/index.html', wait_until='load'); pg.wait_for_timeout(1500)
+    boot(pg, f'{base}/index.html'); pg.wait_for_timeout(1500)
     print('  launcher scope :', pg.evaluate("() => window.Arcade.scope"))
     pg.evaluate("() => window.Arcade.music.toggle ? window.Arcade.music.toggle() : null")
     pg.evaluate("() => localStorage.setItem('effigyarcade.launcher.audio.v1', JSON.stringify({sfx:true,music:false,vMaster:0.5,vMusic:1,vSfx:1}))")
 
     for gid, path in G.items():
-        pg.goto(f'{base}/{path}', wait_until='load'); pg.wait_for_timeout(1600)
+        boot(pg, f'{base}/{path}'); pg.wait_for_timeout(1600)
         scope = pg.evaluate("() => window.Arcade.scope")
         seeded = pg.evaluate("() => JSON.parse(localStorage.getItem('effigyarcade.'+window.Arcade.scope+'.audio.v1')||'null')")
         ok = scope == gid
@@ -37,9 +37,9 @@ with sync_playwright() as p:
         if not ok: bad += 1
 
     # now diverge one machine and prove the others do not move
-    pg.goto(f'{base}/{G["quietus"]}', wait_until='load'); pg.wait_for_timeout(1400)
+    boot(pg, f'{base}/{G["quietus"]}'); pg.wait_for_timeout(1400)
     pg.evaluate("() => localStorage.setItem('effigyarcade.quietus.audio.v1', JSON.stringify({sfx:false,music:false,vMaster:0.1,vMusic:0,vSfx:0}))")
-    pg.goto(f'{base}/{G["hardpoint"]}', wait_until='load'); pg.wait_for_timeout(1400)
+    boot(pg, f'{base}/{G["hardpoint"]}'); pg.wait_for_timeout(1400)
     hp = pg.evaluate("() => JSON.parse(localStorage.getItem('effigyarcade.hardpoint.audio.v1')||'null')")
     q  = pg.evaluate("() => JSON.parse(localStorage.getItem('effigyarcade.quietus.audio.v1')||'null')")
     iso = hp and q and hp.get('vMaster') != q.get('vMaster')

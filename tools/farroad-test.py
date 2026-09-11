@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 
 SHOTS = '--shots' in sys.argv
@@ -172,7 +172,7 @@ def main():
         page = ctx.new_page()
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
-        page.goto(BASE + '/games/sw/interstate.html', wait_until='load')
+        boot(page, BASE + '/games/sw/interstate.html')
         page.wait_for_timeout(1200)
         page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         page.click('[data-act="play"]')

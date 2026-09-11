@@ -28,7 +28,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from harness import console_utf8, launch_chromium, node_exe
+from harness import console_utf8, launch_chromium, node_exe, boot, until, READY, ready_for
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -81,10 +81,9 @@ def smoke(page, base, game, seconds):
     # console has to be part of what "clean" means.
     page.on('console', lambda m: errors.append('console: ' + m.text)
             if m.type == 'error' else None)
-    page.goto(f'{base}/{game["file"]}', wait_until='load')
+    boot(page, f'{base}/{game["file"]}')
     try:
-        page.wait_for_function(
-            '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+        until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
             timeout=5_000)
     except Exception:
         pass
@@ -156,7 +155,7 @@ def launcher(page, base, games):
     def ok(cond, label, detail=''):
         checks.append((bool(cond), label, detail))
 
-    page.goto(f'{base}/index.html', wait_until='load')
+    boot(page, f'{base}/index.html')
     page.wait_for_timeout(900)                      # the loading panel has a floor
 
     # ---- HOLD THE CABINET'S FETCH, AND THIS IS THE WHOLE POINT ------------
@@ -218,7 +217,9 @@ def launcher(page, base, games):
     try:
         page.wait_for_url(lambda u: 'index.html' not in u and not u.endswith('/'),
                           timeout=9000)
-        page.wait_for_load_state('load')
+        # The ENGINE of whatever cabinet the tap opened, not the document (RLG-208). The check
+        # below only reads the URL, so a cabinet that never finishes loading must not stop it.
+        until(page, READY[ready_for(page.url)], timeout=9000, required=False)
     except Exception:
         pass
     page.wait_for_timeout(700)      # let any late timer have its say
@@ -248,7 +249,7 @@ def saves(page, base):
     def ok(cond, label, detail=''):
         checks.append((bool(cond), label, detail))
 
-    page.goto(f'{base}/index.html', wait_until='load')
+    boot(page, f'{base}/index.html')
     page.wait_for_timeout(900)
 
     result = page.evaluate("""() => {

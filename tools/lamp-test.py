@@ -43,7 +43,7 @@ from pathlib import Path
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 spec = importlib.util.spec_from_file_location('dt', ROOT / 'tools' / 'drive-test.py')
 dt = importlib.util.module_from_spec(spec); spec.loader.exec_module(dt)
@@ -101,7 +101,7 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={'width': 480, 'height': 900}); ctx.add_init_script(dt.INIT)
     pg = ctx.new_page()
     errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto('http://127.0.0.1:%d/games/sw/interstate.html' % PORT, wait_until='load')
+    boot(pg, 'http://127.0.0.1:%d/games/sw/interstate.html' % PORT)
     pg.wait_for_timeout(1600)
     pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
     pg.click('[data-act="play"]')

@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -81,10 +81,10 @@ def main():
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
 
-        page.goto('%s/%s' % (base, GAME), wait_until='load')
+        boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
         page.evaluate("() => window.Arcade.save.merge('interstate-opts', { cruiser:true })")
-        page.reload(wait_until='load')
+        reboot(page)
         page.wait_for_timeout(700)
 
         # ---- put the player in a patrol car, THROUGH THE REAL CONTROLS ----

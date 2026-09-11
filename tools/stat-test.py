@@ -97,7 +97,7 @@ _handover()
 
 from playwright.sync_api import sync_playwright   # noqa: E402
 
-from harness import console_utf8, launch_chromium  # noqa: E402
+from harness import console_utf8, launch_chromium, boot as engine_boot, until  # noqa: E402
 
 
 SEED_RNG = r"""
@@ -409,14 +409,13 @@ TYPE_TO_BODY = {'truck': 'SEMI', 'van': 'VAN', 'pickup': 'PICKUP', 'coupe': 'COU
 
 
 def boot(page, base_url, race):
-    page.goto(base_url + '/' + GAME, wait_until='load')
+    engine_boot(page, base_url + '/' + GAME)
     try:
-        page.wait_for_function(
-            '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5_000)
+        until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5_000)
         page.wait_for_timeout(1_200)
     except Exception:
         pass
-    page.wait_for_function('!!window.__probe.road', timeout=10_000)
+    until(page, '!!window.__probe.road', timeout=10_000)
     page.click('[data-act="play"]')
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5_000)
     # hot pursuit off: a roadblock or a PIT in the middle of a 0-60 is not a 0-60

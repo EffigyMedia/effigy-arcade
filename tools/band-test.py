@@ -95,7 +95,7 @@ _handover()
 
 from playwright.sync_api import sync_playwright   # noqa: E402
 
-from harness import console_utf8, launch_chromium  # noqa: E402
+from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
 
 
 # --- the engine constants this harness depends on ----------------------------
@@ -247,16 +247,15 @@ def run_arm(browser, base_url, seconds, settle, mile, label):
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     try:
-        page.goto(base_url + '/' + GAME, wait_until='load')
+        boot(page, base_url + '/' + GAME)
         # the first visit reloads itself when the service worker claims the page; wait it out
         try:
-            page.wait_for_function(
-                '() => navigator.serviceWorker && navigator.serviceWorker.controller',
+            until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller',
                 timeout=5_000)
             page.wait_for_timeout(1_200)
         except Exception:
             pass
-        page.wait_for_function('!!window.__probe.road', timeout=10_000)
+        until(page, '!!window.__probe.road', timeout=10_000)
 
         page.click('[data-act="play"]')
         page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5_000)

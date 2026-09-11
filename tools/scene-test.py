@@ -7,7 +7,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 console_utf8()
 h=functools.partial(http.server.SimpleHTTPRequestHandler,directory=str(ROOT))
@@ -22,7 +22,7 @@ with sync_playwright() as p:
     b=launch_chromium(p,headless=True,args=['--mute-audio','--autoplay-policy=no-user-gesture-required'])
     pg=b.new_context(viewport={'width':390,'height':844},device_scale_factor=2).new_page()
     errs=[]; pg.on('pageerror',lambda e: errs.append(str(e)))
-    pg.goto(f'http://127.0.0.1:{P}/games/em/hardpoint.html',wait_until='load')
+    boot(pg, f'http://127.0.0.1:{P}/games/em/hardpoint.html')
     pg.wait_for_timeout(2200)
     # three frames across the loop so the chase is visibly moving
     for i,ms in enumerate([0,2600,5200]):

@@ -34,7 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -108,7 +108,7 @@ def main():
 
         # ---- ARM 1 - IT IS ADVERTISED BEFORE IT IS WON --------------------
         print('  -- a save that has not won it')
-        page.goto('%s/%s' % (base, GAME), wait_until='load')
+        boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
         open_garage()
         listed = bodies()
@@ -130,7 +130,7 @@ def main():
         page.evaluate("""() => {
             window.Arcade.save.merge('interstate-opts', { supercruiser:true });
         }""")
-        page.reload(wait_until='load')
+        reboot(page)
         page.wait_for_timeout(600)
         del errs[:]
         open_garage()

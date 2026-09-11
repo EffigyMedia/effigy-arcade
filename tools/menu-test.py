@@ -7,7 +7,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 console_utf8()
 h=functools.partial(http.server.SimpleHTTPRequestHandler,directory=str(ROOT))
@@ -24,7 +24,7 @@ with sync_playwright() as p:
         pg=ctx.new_page(); errs=[]
         pg.on('pageerror',lambda e: errs.append(str(e)))
         pg.on('console',lambda m: errs.append('console: '+m.text) if m.type=='error' else None)
-        pg.goto(f'{base}/{path}',wait_until='load'); pg.wait_for_timeout(2600)
+        boot(pg, f'{base}/{path}'); pg.wait_for_timeout(2600)
         btns=[t.strip() for t in pg.locator('#veilBody button, #veil button').all_inner_texts() if t.strip()]
         # NO CONTROLS SCREEN. These are touch games, so a page listing gestures
         # is a page describing what the interface already shows. This check

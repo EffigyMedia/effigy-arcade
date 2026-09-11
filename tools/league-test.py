@@ -40,7 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -77,14 +77,14 @@ def main():
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
 
-        page.goto('%s/%s' % (base, GAME), wait_until='load')
+        boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
         # both police cars won, so the garage will stand in front of them
         page.evaluate("""() => {
             window.Arcade.save.merge('interstate-opts',
                 { super:true, cruiser:true, supercruiser:true });
         }""")
-        page.reload(wait_until='load')
+        reboot(page)
         page.wait_for_timeout(700)
 
         def grid_for(car):

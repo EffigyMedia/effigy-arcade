@@ -33,7 +33,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot, until
 from playwright.sync_api import sync_playwright
 console_utf8()
 
@@ -67,7 +67,7 @@ with sync_playwright() as p:
     pg = b.new_context(viewport={'width': 480, 'height': 900}).new_page()
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto(f'http://127.0.0.1:{PORT}/games/sw/interstate.html', wait_until='load')
+    boot(pg, f'http://127.0.0.1:{PORT}/games/sw/interstate.html')
     pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
     pg.click('[data-act="play"]')
     pg.wait_for_selector('#veil:not(.hidden) [data-act="mode"]', timeout=5000)
@@ -82,8 +82,7 @@ with sync_playwright() as p:
     # and means nothing. This waits for the field to actually be released, and
     # fails loudly if it never is rather than measuring a stationary grid.
     try:
-        pg.wait_for_function(
-            "() => { const g = window.__road.rivalGears();"
+        until(pg, "() => { const g = window.__road.rivalGears();"
             "        return g.length && g.some(r => r.gear >= 1); }",
             timeout=15000)
     except Exception:

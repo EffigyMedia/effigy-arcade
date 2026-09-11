@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -65,7 +65,7 @@ def main():
         page = ctx.new_page()
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
-        page.goto('%s/%s' % (base, GAME), wait_until='load')
+        boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
 
         for old, want in RENAMED:
@@ -74,7 +74,7 @@ def main():
                 window.Arcade.save.merge('interstate-opts', {
                     body:k, production:true, utility:true, super:true, formula:true });
             }""", old)
-            page.reload(wait_until='load')
+            reboot(page)
             page.wait_for_timeout(600)
             got = page.evaluate('() => window.__road.bodyKey()')
             ok(got == want,

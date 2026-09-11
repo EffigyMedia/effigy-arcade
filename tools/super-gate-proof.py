@@ -39,7 +39,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium
+from harness import console_utf8, launch_chromium, boot, until
 
 GAME = 'games/sw/interstate.html'
 TICKS = 64                      # 16 seconds at the harness's own quarter-second
@@ -80,8 +80,8 @@ def main():
         pg = b.new_context(viewport={'width': 480, 'height': 900},
                            has_touch=True, is_mobile=True).new_page()
         pg.add_init_script(INIT)
-        pg.goto('http://127.0.0.1:%d/%s' % (port, GAME), wait_until='load')
-        pg.wait_for_function('!!window.__probe.road', timeout=10000)
+        boot(pg, 'http://127.0.0.1:%d/%s' % (port, GAME))
+        until(pg, '!!window.__probe.road', timeout=10000)
         pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         pg.click('[data-act="play"]')
         pg.wait_for_timeout(400)
@@ -90,7 +90,7 @@ def main():
         pg.click('[data-act="drive"]')
         # THE COUNT-IN HOLDS THE CAR, and it wins over any hold a check asks for.
         # Wait it out rather than measuring through it.
-        pg.wait_for_function('() => window.__probe.road.startLine().left <= 0', timeout=10000)
+        until(pg, '() => window.__probe.road.startLine().left <= 0', timeout=10000)
         pg.evaluate('() => window.__probe.road.setTimed(false)')
 
         gate = pg.evaluate('() => window.__probe.road.pursuit()')

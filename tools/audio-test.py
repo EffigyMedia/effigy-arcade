@@ -30,7 +30,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8
+from harness import launch_chromium, console_utf8, boot
 from playwright.sync_api import sync_playwright
 
 console_utf8()
@@ -104,7 +104,7 @@ def main():
         page = bctx.new_page()
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
-        page.goto(f'{BASE}/games/em/hardpoint.html', wait_until='load')
+        boot(page, f'{BASE}/games/em/hardpoint.html')
         page.wait_for_timeout(2000)
 
         started = page.evaluate("() => { snd.begin(); return !!(snd.eng && snd.burn && snd.air && snd.alarm); }")
