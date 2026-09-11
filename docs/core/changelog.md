@@ -19,6 +19,50 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-83"></a>
+## [0.13.83] - 2026-09-10
+- Added: **a racer is STOPPED, not destroyed, and it is your job to stop it.** Owner, 2026-09-10:
+  "Just destroying them is kinda boring. I suppose the only other option IS to box them in. Maybe
+  there should be other friendly cruiser to help, but its up to YOU! to get in front and slow them
+  down." So the takedown is a manoeuvre: a rival held under a fifth of top speed for two and a half
+  seconds, with the PLAYER in front of it and in its line, is out of the race. It pulls to the verge
+  and comes to rest. The condition asks where the player is and about no other car, because the
+  owner put the emphasis on YOU - friendly cruisers pressure and flank, and the stop stays yours to
+  make. `STOP_SPD`, `STOP_HOLD`, `STOP_NEAR` and `STOP_WIDE` are the tunables and the ruling left
+  their values open; these are a first answer and a judgement on a device.
+- Fixed: **a rival could not see the player as a car in front of it, which is the mode's core verb.**
+  `ahead` caps a rival's target speed to whatever is directly ahead and it scanned traffic, the other
+  rivals and the police - not the player. `laneView` twenty lines below already carried a note about
+  exactly this omission, but it had been fixed only for the LANE CHOICE, so a rival would swerve
+  around the player and never lift for one. **It is gated on the shift and deliberately not fixed
+  for racing**: that would change how every rival behaves in every race, in both driving games, and
+  no ruling asks for it. The general question is the owner's.
+- Added: **the race finishing is the loss.** Owner: "You lose and the shift ends." A rival reaching
+  the line ends the shift, and the player reaching it does nothing - the player is policing, and
+  where they are on the road decides nothing. Stopping the whole field ends it as a win. Both go
+  through the finish path rather than the crash path, because `wreck()` returns early whenever the
+  clock has time left and an ending routed through it would have done nothing at all.
+- Added: **the shift never works alone.** Owner: "maybe we should always try to have at least two
+  cruisers as wingmen in this mode." The first attempt raised the dispatch CAP and put no cars on
+  the road at all: the radio REINFORCES a pursuit in progress - it needs a cruiser already reporting
+  the player's position - and on shift nothing is ever on the player, by design. The floor is its own
+  rule now, kept up to strength and checked every few seconds rather than every twenty.
+- Changed: a police car's HUD counts what the mode is about. The PLACE cell reads LEFT and shows how
+  much of the field is still running, because a player who is not in the race has no position in it.
+- Added: `tools/shift-stop-test.py`. Every positive check has a negative beside it - a rival that is
+  slow but AHEAD of you is a car stuck behind traffic and must not count, and one in front but quick
+  must not either - and the hold is sampled half way through, so a rule that fired instantly could
+  not pass as one that held. The thresholds are read off `API.shift()` rather than hardcoded, so the
+  file cannot keep passing against numbers that have been retuned.
+- **The mode is playable now and is still not finished.** The field's own lawlessness deciding how
+  many police are out is not built - the wanted level is pinned at zero on shift and the wingmen are
+  the whole complement - and [RLG-171](../fragments/RLG-171.md)'s traffic-damage guard has not been
+  read again from the side where the player is the cruiser.
+- **And nobody has driven it.** Whether a player can actually bring a rival to a fifth of top speed,
+  whether two wingmen feel like support or like clutter, and whether two and a half seconds is a
+  moment of tension or a chore are all device questions. A harness staged the condition and measured
+  the rule; it did not play the game.
+
 <a id="v0-13-82"></a>
 ## [0.13.82] - 2026-09-10
 - Added: **INTERCEPT, the mode where you are the police and the racers are the target.** Owner,

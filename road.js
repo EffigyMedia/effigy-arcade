@@ -422,6 +422,32 @@ const HEAT_TAKEDOWN = 35;   /* a cruiser goes down and it was your doing */
    earn nothing.
    -------------------------------------------------------------------- */
 const HEAT_PER_MILE = 2;
+/* ---- WHAT COUNTS AS A RACER STOPPED (RLG-203) ---------------------------
+   Owner, 2026-09-10: "Just destroying them is kinda boring. I suppose the only
+   other option IS to box them in. Maybe there should be other friendly cruiser
+   to help, but its up to YOU! to get in front and slow them down."
+
+   SO THE TAKEDOWN IS A MANOEUVRE, NOT DAMAGE, and the owner put the emphasis on
+   YOU: friendly cruisers pressure and flank, and the stop is the player's to
+   make. That is the line between a mode you play and a mode you watch, so the
+   condition asks where the PLAYER is and about no other car.
+
+   THE ONE NUMBER THE RULING LEFT UNSTATED is how slow, and for how long. It is
+   named here with a committed default rather than edited in place, and the
+   values are a first answer: a fifth of the reference top speed is walking pace
+   at this scale, and two and a half seconds is long enough that a racer bogged
+   behind traffic for a moment does not count as caught. Both are a judgement on
+   a device and the owner's to settle.
+   -------------------------------------------------------------------- */
+const STOP_SPD  = 0.20;   /* under this fraction of MAX_SPD it is going nowhere */
+const STOP_HOLD = 2.5;    /* seconds it has to be held there */
+const STOP_NEAR = 3200;   /* and the player has to be this close, up the road */
+const STOP_WIDE = 0.55;   /* and roughly in front, not two lanes over */
+/* ---- HOW MANY WINGMEN THE SHIFT TRIES TO KEEP (RLG-203) ----------------
+   Owner: "maybe we should always try to have at least two cruisers as wingmen
+   in this mode." A floor rather than a cap, and "try" is the owner's own hedge.
+   -------------------------------------------------------------------- */
+const WINGMEN = 2;
 /* ---- AND A DETECTOR SEES THEM COMING (owner, 2026-09-07, RLG-164) ------
    "We could add a radar detector element for upcoming speed traps and
    traffic cops, just like it was done in the original Need for Speed games."
@@ -9854,8 +9880,15 @@ function spawnSuper(){
   flashWarn('INTERCEPTOR');
 }
 
-/* how many ordinary cruisers the radio will have on you at once, by wanted
-   level. Heat one is the baseline and dispatches nothing at all. */
+/* ---- how many ordinary cruisers the radio will have on you at once, by
+   wanted level. Heat one is the baseline and dispatches nothing at all.
+
+   ON SHIFT IT IS NOT THE DIAL. The wanted level is pinned at zero because
+   nobody is accruing one, so this returns nothing - and the wingmen are kept by
+   their own floor where the cars are actually put on the road, because a cap is
+   a ceiling and what the owner asked for is a floor. What should raise the
+   complement ABOVE that floor is the field's own lawlessness, which the owner
+   chose and which is not built yet (RLG-203). */
 function dispatchCap(){ return heat < 2 ? 0 : Math.min(3, heat - 1); }
 function spawnCop(){
   const z = pos - rnd(3200,4200);
@@ -10013,6 +10046,9 @@ function reset(){
      cars on the road that TEST DRIVE then inherited */
   racers = [];
   if(mode === 'race') buildField();
+  /* the shift's tally is per-run like the rest of these. Left out of this list
+     it would be module state that survives every restart (RLG-203). */
+  stopped = 0;
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
   dist=0; score=0; combo=0; comboTime=0; heat=0; heatPts=0; heatWhy=''; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
@@ -13905,6 +13941,8 @@ let duty = false;
    ------------------------------------------------------------------------- */
 function playerIsPolice(){ return duty && dutyLegal(optBody); }
 let racers = [], place = 12, finished = false, finishZ = 0;
+/* how many of the field this shift has stopped. Reset with the run (RLG-203). */
+let stopped = 0;
 
 function buildField(){
   racers = [];
@@ -14260,13 +14298,97 @@ function hurtRival(r, n){
   }
 }
 
+/* ---- A RACER THAT HAS BEEN STOPPED IS OUT OF THE RACE (RLG-203) ---------
+   Not wrecked, and the distinction is the owner's: "Just destroying them is
+   kinda boring." It pulls to the verge, comes to rest, and stays there. It is
+   still drawn and still solid - a car standing on the shoulder with its hazards
+   on is part of the scene you made - but it no longer races, no longer counts
+   toward the finish, and cannot be stopped twice.
+   ------------------------------------------------------------------------- */
+function stopRacer(r){
+  if(r.out) return;
+  r.out = true;
+  r.stopT = 0;
+  stopped++;
+  flashWarn('#' + r.num + ' STOPPED · ' + running() + ' LEFT');
+  snd.checkpoint();
+}
+/* how many of the field are still running. The one number the mode is about. */
+function running(){
+  let n = 0;
+  for(const r of racers) if(!r.out) n++;
+  return n;
+}
+/* ---- THE END OF A SHIFT (RLG-203) ---------------------------------------
+   IT GOES THROUGH THE FINISH PATH, NOT THE CRASH PATH, and that is the same
+   distinction the ordinary finish already had to make: `wreck()` returns early
+   whenever the clock has time left, so an ending routed through it would do
+   nothing at all and the shift would carry on. A shift ending is not a crash.
+
+   The car is handed to the AI for the same reason a finish does it: leaving the
+   player steering through traffic under the end card means they can still crash
+   after the thing is decided. `coasting` is also what stops `snd.drive()`
+   re-opening the engine voices sixty times a second under a `snd.quiet()`.
+   ------------------------------------------------------------------------- */
+function endShift(won){
+  if(finished) return;
+  finished = true;
+  coasting = true;
+  setGas(false); setBrake(false); nosOn = false;
+  state = 'wrecked';
+  lastWreck = won ? 'SHIFT CLEAR' : 'THEY GOT THROUGH';
+  bestScore = Math.max(bestScore, Math.round(dist*10)/10);
+  bestDist  = Math.max(bestDist, dist);
+  if(AR && AR.save) AR.save.merge(GAME_ID, {
+    best: bestScore, bestMi: +bestDist.toFixed(1), runs: runs,
+    label: 'BEST ' + bestDist.toFixed(1) + ' MI'
+  });
+  snd.quiet();
+  menuMusic();
+  snd.checkpoint();
+  setTimeout(() => showEnd(won
+    ? 'SHIFT CLEAR · ' + stopped + ' OF ' + FIELD + ' STOPPED'
+    : 'THEY GOT THROUGH · ' + stopped + ' OF ' + FIELD + ' STOPPED'), 700);
+}
 function stepRacers(dt){
   const k = Math.min(2.4, dt*60);
+  const pz = pos + PLAYER_Z;
   for(const r of racers){
     if((r.iframe || 0) > 0) r.iframe -= dt;
     if(r.wreck > 0){
       r.wreck -= dt; r.spd *= (1 - 1.6*dt); r.ang += dt*6; r.z += r.spd*dt;
       continue;
+    }
+    /* ---- ONE THAT IS ALREADY OUT JUST COMES TO REST ------------------
+       It steers to the nearer verge and brakes down. Everything below this
+       line is a car deciding how to race, and it is not racing any more. */
+    if(r.out){
+      const verge = r.x < 0 ? -1.02 : 1.02;
+      r.x += clamp(verge - r.x, -0.9*dt, 0.9*dt);
+      r.spd = Math.max(0, r.spd - MAX_SPD * 0.55 * dt);
+      r.z += r.spd*dt;
+      continue;
+    }
+    /* ---- BEING STOPPED: SLOW, AND WITH YOU IN FRONT OF IT (RLG-203) --
+       Owner: "its up to YOU! to get in front and slow them down." So the
+       condition asks about the PLAYER and about no other car - friendly
+       cruisers pressure and flank, and the stop stays the player's to make.
+
+       THE PLAYER HAS TO BE AHEAD, which is `pz > r.z`: a racer crawling
+       because it is stuck behind traffic while you sit behind it is not a
+       car you caught. The count decays faster than it builds, so a racer
+       that gets away does not stay half-stopped waiting for you. */
+    if(playerIsPolice()){
+      const dz = pz - r.z;
+      const slow  = r.spd < MAX_SPD * STOP_SPD;
+      const front = dz > 0 && dz < STOP_NEAR;
+      const lined = Math.abs(playerX - r.x) < STOP_WIDE;
+      if(slow && front && lined){
+        r.stopT = (r.stopT || 0) + dt;
+        if(r.stopT >= STOP_HOLD){ stopRacer(r); continue; }
+      } else {
+        r.stopT = Math.max(0, (r.stopT || 0) - dt*1.5);
+      }
     }
     /* --- how fast this car can go, given whatever is directly in front --- */
     let want = r.base;
@@ -14283,6 +14405,34 @@ function stepRacers(dt){
     ahead(traffic, false);
     ahead(racers, false);
     if(!optEasy) ahead(cops, true);
+    /* ---- AND ON SHIFT, THE PLAYER IS A CAR IN FRONT TOO (RLG-203) --------
+       THIS IS THE MODE'S CORE VERB AND IT WAS MISSING. `ahead` caps a rival's
+       target speed to whatever is directly in front of it, and it scanned
+       traffic, the other rivals and the police - not the player. `laneView`
+       twenty lines down already carries a note about exactly this omission
+       ("THE PLAYER IS A CAR. Rivals scanned traffic, each other and the police
+       and were blind to the one car the player is sitting in"), but it was
+       fixed only for the LANE CHOICE. A rival would swerve around the player
+       and never lift for one.
+
+       Without this the owner's mechanic cannot work: "its up to YOU! to get in
+       front and slow them down" needs the rival to treat the car in front as a
+       car in front. It is RLG-158's rolling block turned around - there the
+       cruiser ahead runs a little under YOUR speed so that staying on the
+       throttle means going through it.
+
+       ▶ IT IS GATED ON THE SHIFT, AND DELIBERATELY NOT FIXED FOR RACING.
+       `road.js` is both driving games and this would change how every rival
+       behaves in every race - a car behind you in your lane would lift where
+       today it presses - which is a change to the feel of two shipped games
+       that no ruling asks for and no harness can judge. The general question is
+       real and is the owner's: tracked, not taken here.
+       ------------------------------------------------------------------ */
+    if(playerIsPolice()){
+      const gap = (pos + PLAYER_Z) - r.z;
+      if(gap > -120 && gap < 3600 && Math.abs(playerX - r.x) <= 0.30)
+        want = Math.min(want, spd * 0.98);
+    }
 
     /* --- DECIDE, THEN COMMIT ------------------------------------------------
        Only when standing in a lane, and only every LANE_THINK seconds - a car
@@ -14486,7 +14636,27 @@ function stepRacers(dt){
     r.place = n + 1;
   }
 
-  if(!finished && pos >= finishZ){
+  /* ---- THE SHIFT ENDS TWO WAYS, AND NEITHER IS THE PLAYER'S LINE (RLG-203)
+     Owner, on what happens if the race finishes with racers left: "You lose and
+     the shift ends." Not a partial score and not a shift that simply stops - the
+     race distance is the mode's clock, and it is a clock the engine already
+     keeps.
+
+     THE LOSS IS A RACER REACHING THE LINE, not the player reaching it. The
+     player is policing; where THEY are on the road decides nothing, and the
+     ordinary finish below is skipped for exactly that reason.
+     ------------------------------------------------------------------- */
+  if(playerIsPolice() && !finished){
+    if(running() === 0){
+      endShift(true);
+    } else {
+      for(const r of racers){
+        if(!r.out && r.z >= finishZ){ endShift(false); break; }
+      }
+    }
+  }
+
+  if(!playerIsPolice() && !finished && pos >= finishZ){
     /* ---- CROSSING THE LINE ENDS IT --------------------------------------
        This called `wreck()`, which now returns early whenever the clock has
        time left — so finishing a race did nothing at all. A finish is not a
@@ -16885,12 +17055,39 @@ function step(dt){
        that has lost you is not reporting your position to anybody */
     const onYou = live.some(k => k.onPlayer !== false
                                  && Math.abs(k.z - (pos + PLAYER_Z)) < LOST_AT);
-    if(onYou && mine < dispatchCap() && live.length < 4){
+    /* ---- THE WINGMEN ARE KEPT DIRECTLY, NOT THROUGH THE RADIO (RLG-203) --
+       Owner: "maybe we should always try to have at least two cruisers as
+       wingmen in this mode." Raising the dispatch CAP does not do it, and that
+       was the first attempt: the radio REINFORCES a pursuit in progress - it
+       needs `onYou`, a cruiser already reporting the player's position - and on
+       shift nothing is ever on the player, by design. The cap said two and the
+       road put out none, which `shift-stop-test` read as zero cruisers after
+       fourteen seconds.
+
+       So the floor is its own rule. It is a FLOOR and not a cap, and "try" is
+       the owner's own hedge - this puts one out per dispatch tick rather than
+       conjuring a pair, so they arrive the way any cruiser does.
+       ---------------------------------------------------------------- */
+    if(playerIsPolice()){
+      /* UP TO THE FLOOR, not one per tick. One at a time meant a shift could
+         spend most of a minute a car short - the tick is twelve to twenty-two
+         seconds - and a wingman that falls behind and is culled left the player
+         alone for as long again. "Always try to have at least two" is a floor
+         that is kept, not one that is approached. */
+      for(let have = live.length; have < WINGMEN; have++){
+        spawnCop();
+        radioSent++;
+      }
+    } else if(onYou && mine < dispatchCap() && live.length < 4){
       spawnCop();
       radioSent++;
       snd.warnCop();
     }
-    nextChaseT = Math.max(4, rnd(12, 22) - heat*1.5);
+    /* and the shift checks its own complement far more often than the radio
+       reinforces a pursuit, for the same reason: a floor that is checked every
+       twenty seconds is not a floor (RLG-203) */
+    nextChaseT = playerIsPolice() ? rnd(3, 6)
+                                  : Math.max(4, rnd(12, 22) - heat*1.5);
   }
   /* patrolWatch runs whether or not pursuit is on, because a patrol has to keep
      track of whether you have gone past it either way - it simply never acts on
@@ -24854,7 +25051,18 @@ function hud(){
   $('placeWrap').hidden = !racing;
   $('distWrap').hidden  = !racing;
   if(racing){
-    $('place').textContent = place + '/12';
+    /* ---- A POLICE CAR IS NOT IN THE RACE, SO IT HAS NO PLACE (RLG-203) --
+       The readout is the same cell and the same shape - a number over twelve -
+       because the shift IS a race and the player is reading the same board from
+       the other side. What it counts is what the mode is about: how much of the
+       field is still running. The label under it changes with it, because
+       "PLACE 7/12" and "LEFT 7/12" are different sentences and the cell is too
+       small to be read twice.
+       ------------------------------------------------------------------ */
+    const onShift = playerIsPolice();
+    const lab = $('placeWrap').querySelector('span');
+    if(lab) lab.textContent = onShift ? 'LEFT' : 'PLACE';
+    $('place').textContent = onShift ? (running() + '/' + FIELD) : (place + '/12');
     const legMi = tourOn ? TOUR_MILES[tourRound] : RACE_MILES;
     $('dist').innerHTML = Math.max(0, legMi - dist).toFixed(1) + '<i>MI</i>';
   }
@@ -28545,7 +28753,74 @@ requestAnimationFrame(frameLoop);
   /* where the rivals are, so a check can say whether a trap's target IS one */
   API.rivalState = function(){
     return racers.map(r => ({ dz: Math.round(r.z - (pos + PLAYER_Z)),
-                              spd: Math.round(r.spd || 0) }));
+                              spd: Math.round(r.spd || 0),
+                              /* the shift's half of a rival's state (RLG-203):
+                                 whether it is out, and how far through the
+                                 hold it is - the second is what tells a check
+                                 "the condition was never met" apart from "it
+                                 was met and the rule did not fire" */
+                              out: !!r.out,
+                              stopT: +(r.stopT || 0).toFixed(2),
+                              num: r.num }));
+  };
+  /* ---- THE SHIFT, FROM OUTSIDE (RLG-203) --------------------------------
+     One call for what the mode is about. `field` is reported beside `running`
+     so a check never has to carry its own copy of FIELD, and `hold` and `spd`
+     are the thresholds, because a harness that hardcoded them would pass on a
+     build where they had been retuned.
+     -------------------------------------------------------------------- */
+  API.shift = function(){
+    return { on: playerIsPolice(), running: running(), stopped: stopped,
+             field: FIELD, finished: finished, outcome: lastWreck,
+             wingmen: WINGMEN, cap: dispatchCap(),
+             hold: STOP_HOLD, under: STOP_SPD, near: STOP_NEAR };
+  };
+  /* ---- PUT A RACER WHERE THE STOP CAN BE TESTED -------------------------
+     THE MANOEUVRE ITSELF CANNOT BE FLOWN BY A HARNESS. Getting in front of a
+     rival and holding it below a fifth of top speed is a driving task, and
+     `drive-test`'s autopilot cannot do it - it steers to a lane and holds a
+     throttle. So the CONDITION is staged and the RULE is what gets measured:
+     the rival is put just up the road at the speed the rule asks for, the
+     player is held in front of it, and the check watches whether the hold runs
+     and the stop lands. What is NOT proved this way is that a player can bring
+     a rival to that speed, which is the part only a device can answer.
+     -------------------------------------------------------------------- */
+  API.stageStop = function(i, dz, v){
+    const r = racers[i === undefined ? 0 : i];
+    if(!r) return null;
+    r.out = false; r.stopT = 0; r.wreck = 0;
+    r.z = pos + PLAYER_Z - (dz === undefined ? 1200 : dz);
+    r.x = playerX;
+    /* ---- AND ITS LANE HAS TO MOVE WITH IT --------------------------------
+       Placing a rival at the player's `x` and leaving `r.lane` where it was
+       meant the steering pulled it straight back to its old lane, out of the
+       player's line, and the hold broke part-way through. `thinkT` is pushed
+       out for the same reason: a car that reconsiders its lane in the middle
+       of a measurement is measuring its own lane change. */
+    let best = 0;
+    for(let l = 1; l < LANES; l++)
+      if(Math.abs(LANE_X[l] - playerX) < Math.abs(LANE_X[best] - playerX)) best = l;
+    r.lane = best;
+    r.thinkT = 99;
+    r.spd = v === undefined ? MAX_SPD * STOP_SPD * 0.5 : v;
+    r.base = r.spd;                  /* or it accelerates straight back out */
+    return { dz: Math.round(r.z - (pos + PLAYER_Z)), spd: Math.round(r.spd) };
+  };
+  /* ---- PUT THE REST OF THE FIELD OUT OF THE WAY -------------------------
+     A measurement of ONE rival has to be a measurement of one rival. Staging a
+     car ahead of the player and then speeding up to test something else meant
+     the player overtook it, and the rule - correctly - stopped it: the tally
+     moved during a check that was about a different car entirely. */
+  API.parkRivals = function(except, dz){
+    let n = 0;
+    racers.forEach((r, i) => {
+      if(i === except) return;
+      r.out = false; r.stopT = 0;
+      r.z = pos + PLAYER_Z - (dz === undefined ? 60000 : dz);
+      r.spd = 0; r.base = 0;
+      n++;
+    });
+    return n;
   };
   /* ---- WHAT THE FIELD IS MADE OF (RLG-202) ------------------------------
      `rivalState` says where the rivals are and how fast they are going, and
