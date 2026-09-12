@@ -159,15 +159,42 @@ def out_body(r):
     return r.get('body') or 'not reported by the engine'
 
 
-def declared_mph(body):
-    """the top speed the RECORD claims for this car, read from `vmax` x 200mph.
+DECLARED = {}      # body -> the top speed the engine says it has, filled by `read_declared`
 
-    Asked of the engine would be better and there is no probe for it, so these are
-    copied from BODY and will go stale if a car is retuned. They are used ONLY to
-    print how far short the driver fell, never to pass or fail anything.
+
+def read_declared(browser, port):
+    """ASK THE ENGINE what each car's top end is, instead of keeping a copy of it.
+
+    This was a hand-written table of seven numbers, under a docstring admitting it was
+    "copied from BODY and will go stale if a car is retuned". IT WENT STALE THE FIRST
+    TIME A CAR WAS RETUNED: RLG-217 moved the SALOON from 112mph to 124 and the HATCH
+    to 110, and this file would have gone on printing the old pair - as a shortfall
+    against a ceiling no longer there.
+
+    The numbers are print-only and fail nothing, which is exactly why nobody would have
+    caught it. `MAX_SPD` and every body's `vmax` are both on the probe already.
     """
-    return {'SALOON': 112, 'COUPE': 120, 'CAB': 100, 'PICKUP': 94,
-            'TUNER': 146, 'ROADSTER': 153, 'MUSCLE': 160}.get(body)
+    page = browser.new_page(viewport={'width': 480, 'height': 900})
+    page.add_init_script(INIT)
+    page.add_init_script(SEED)
+    open_game(page, port)
+    got = page.evaluate("""() => {
+      const R = window.__probe.road, out = {};
+      for (const k of Object.keys(R.BODY)) {
+        if (R.BODY[k].npc) continue;
+        out[k] = Math.round(R.MAX_SPD * R.BODY[k].vmax * (200 / R.MAX_SPD));
+      }
+      return out;
+    }""")
+    page.close()
+    DECLARED.clear()
+    DECLARED.update(got)
+    return got
+
+
+def declared_mph(body):
+    """the top speed the ENGINE claims for this car. None if it was never read."""
+    return DECLARED.get(body)
 
 
 def driver_limits(r, mph, declared):
@@ -344,6 +371,9 @@ def main():
 
         # ---- AND NOW THE REAL QUESTION --------------------------------------------
         print()
+        # read the declared top speeds off the engine before the loop, so the shortfall
+        # lines below are measured against what the cars are TODAY
+        read_declared(browser, port)
         print('  HOW FAR DOES A CAR GET FLAT OUT WITH NOBODY STEERING - A FLOOR')
         print('      checkpoints are 2 miles apart and pay 20s, a crate pays 10s,')
         print('      and the run starts with 60s on the clock')

@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.94';
+window.ROAD_BUILD = '0.13.95';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3393,28 +3393,43 @@ const BODY = {
      ------------------------------------------------------------------------ */
   'COUPE': { hardy:1.10, rig:'coupe',  gears:4, wide:0.010, arch:0.90, horn:1.02,
                redline:9000, pitch:1.05, rear:'GENERIC', mass:1340, hp:210, grip:0.73, launch:0.87, mech:1.03, vmax:0.6,
-               note:'COUPE \u00B7 THE QUICKEST THING THAT IS NOT A RACER' },
+               note:'COUPE \u00B7 NOTHING IT DOES BADLY' },
   /* ---- THE HATCHBACK, THE THIRD PRODUCTION CAR (RLG-213) ----------------
      Owner, 2026-09-12: "the production racers, sedan, coupe, and hatchback."
      Production was two cars and every other class in this game is three.
 
-     WHERE IT SITS IS THE WHOLE OF ITS DESIGN. The COUPE is the quickest thing
-     that is not a racer at vmax 0.60 and the SALOON is 0.56, so the hatchback
-     goes between them - lighter than the saloon, less slippery than the coupe,
-     and the best of the three off the line because there is nothing behind the
-     rear axle. It is the one you pick for a tight circuit and give up on a
-     straight.
+     WHERE IT SITS IS THE WHOLE OF ITS DESIGN, AND THE OWNER STATED IT AS THREE
+     ORDERINGS (2026-09-12, RLG-217): top speed runs HATCH, COUPE, SALOON from
+     slowest to fastest; acceleration is the exact opposite of that; and
+     handling is the opposite as well.
+
+     SO THE HATCHBACK IS THE SHORT-GEARED ONE. It has the quickest launch and
+     the most grip in the class and it gives up the top end to have them -
+     `launch` 1.03 against the coupe's 0.87, `grip` 0.78 against 0.73, and a
+     vmax of 0.55 where the coupe has 0.60. It is the one you pick for a tight
+     circuit and give up on a straight, which is what it was always meant to be;
+     what changed is that it is now true in the numbers rather than only in this
+     comment. Its first table put it BETWEEN the other two on all three axes,
+     where its 0-60 lead over the coupe measured 9.5 seconds against 9.6 - a
+     tenth, which is nothing to feel.
+
+     AND THE SALOON MOVED WITH IT, because these orderings are relative and
+     nobody can be given a place without taking one. Its top end went to 0.62 -
+     past the coupe, which is what makes it the long-legged one - and its launch
+     came down to 0.88 to keep it slowest away from a light. Its grip did not
+     move. THE COUPE'S NUMBERS ARE UNTOUCHED: it is the middle car, its table was
+     already the middle, and the other two were arranged around it.
 
      NO BOTTLE, like the rest of production, and the class says so rather than
      this record: `hasNosFor` names the classes that carry one and production
      is deliberately not among them.
      ------------------------------------------------------------------- */
   'HATCH': { hardy:1.12, rig:'hatch', gears:4, wide:0.014, arch:0.94, horn:1.00,
-               redline:8800, pitch:1.00, rear:'GENERIC', mass:1290, hp:180, grip:0.70, launch:0.95, mech:1.04, vmax:0.58,
-               note:'HATCHBACK · SMALL, KEEN, AND MOSTLY CABIN' },
+               redline:8800, pitch:1.00, rear:'GENERIC', mass:1290, hp:180, grip:0.78, launch:1.03, mech:1.04, vmax:0.55,
+               note:'HATCHBACK · ALL OF IT IN FIRST GEAR' },
   'SALOON': { hardy:1.15, rig:'sedan',  gears:4, wide:0.020, arch:0.92, horn:0.96,
-               redline:8500, pitch:0.92, rear:'GENERIC', mass:1480, hp:160, grip:0.66, launch:0.92, mech:1.03, vmax:0.56,
-               note:'SALOON \u00B7 ENTIRELY UNREMARKABLE' },
+               redline:8500, pitch:0.92, rear:'GENERIC', mass:1480, hp:160, grip:0.66, launch:0.88, mech:1.03, vmax:0.62,
+               note:'SALOON \u00B7 SLOW TO ARRIVE, LAST TO LIFT' },
   'CAB': { hardy:1.15, kin:'SALOON', /* a cab is a saloon with a light on the roof */ rig:'taxi',   gears:4, wide:0.020, arch:0.92, horn:0.90,
                redline:7500, pitch:0.80, rear:'GENERIC', mass:1620, hp:130, grip:0.60, launch:0.91, mech:1.02, vmax:0.5,
                note:'CAB \u00B7 THREE HUNDRED THOUSAND MILES' },
@@ -9831,7 +9846,26 @@ const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55, hatch:0.58,
                        recorded 170mph pass behind it, and that is the whole
                        point of it. */
                     cop:0.71,
-                    sedan:0.58, sedan2:0.58, hatch:0.58, coupe:0.66, tuner:0.74, muscle:0.78,
+                    /* ---- AND THESE THREE MUST AGREE WITH THE GARAGE (RLG-042) ----
+                       A vehicle that disagrees with itself about its own top end
+                       is the fault RLG-042 was written to stop, and the note on
+                       the ambulance above says so in as many words - "both went
+                       up together".
+
+                       THESE THREE HAD DRIFTED APART AND NOBODY NOTICED, because
+                       nothing reads both tables at once. The traffic saloon and
+                       the traffic hatchback were both 0.58 while their garage
+                       bodies were 0.56 and 0.58, and the traffic coupe was 0.66
+                       against a garage 0.60 - a traffic coupe was six points
+                       quicker than the one you can buy. They are the BODY's own
+                       numbers now: SALOON 0.62, HATCH 0.55, COUPE 0.60.
+
+                       `sedan2` is a second saloon shell with no garage car of its
+                       own, so it takes the SALOON's. Raising what these cars CAN
+                       do changes nothing about what they DO - a Civilian cruises
+                       at the limit whatever it is sitting in, which is the whole
+                       of "the car is capable, the driver decides". */
+                    sedan:0.62, sedan2:0.62, hatch:0.55, coupe:0.60, tuner:0.74, muscle:0.78,
                     /* A SUPERCAR IN TRAFFIC GETS THE SUPERCAR'S STATS (RLG-042).
                        It is slow because the person driving it is going to work,
                        not because the car was made slower for being traffic. */

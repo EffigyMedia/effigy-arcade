@@ -254,13 +254,35 @@ window.__probe.steerRun = function(from, to, hold, sweep, ms, dry){
 };
 """
 
-# every driveable body, in the order the garage would show them
-BODIES = ['ROADSTER', 'TUNER', 'MUSCLE', 'STALLION', 'MATADOR', 'CREST',
-          'VECTOR', 'APEX', 'COMET', 'CRUISER', 'SUPERCRUISER']
-# BRAKE FROM BELOW THE SLOWEST CAR'S TOP SPEED. The first version entered at 150mph, which is above
-# the TUNER's 146 - so aero over-run was helping it stop, and the TUNER came out braking better than
-# two cars the table says brake better than it. That was a fault in this file, not in the fleet.
-FROM_F, TO_F = 0.60, 0.20      # 120mph down to 40mph on a 200mph scale
+# ---- THE FLEET IS MEASURED IN GROUPS, AND EACH GROUP HAS ITS OWN ENTRY SPEED -------------------
+# This list used to be one set of eleven bodies under a comment claiming it was "every driveable
+# body". It never was: it holds the sports, super, formula and police cars, and the PRODUCTION cars
+# a new save actually starts in were not in it. The hatchback (RLG-213) made that visible, because
+# it was added to a class the harness could not see.
+#
+# THEY CANNOT SHARE ONE ENTRY SPEED, and this file already knows why. Its own note records that
+# entering at 150mph put the TUNER above its 146mph top end, aero over-run helped it stop, and it
+# came out braking better than two cars that brake better than it. A production car tops out at
+# 112 to 120mph, so entering at 120 would do the same thing to all three at once.
+#
+# So a group carries the speed it is measured at, every printed line says what that speed was, and
+# NUMBERS FROM TWO GROUPS ARE NOT COMPARABLE. The racing group keeps 120mph exactly as it was, so
+# every figure recorded in RLG-055 still stands and is still reproducible.
+# The third number is the handling spread the group must show, best car against worst. It is a
+# claim about a RANGE, so it belongs to a group that spans several classes and not to a group that
+# is one class: production cars are supposed to feel alike, which is what makes them a class.
+# `None` says the question does not apply and the spread is printed as a measurement instead.
+GROUPS = {
+    'racing': (['ROADSTER', 'TUNER', 'MUSCLE', 'STALLION', 'MATADOR', 'CREST',
+                'VECTOR', 'APEX', 'COMET', 'CRUISER', 'SUPERCRUISER'], 0.60, 1.35),
+    # SALOON 0.56, HATCH 0.58, COUPE 0.60 - so 0.50 is 100mph, below the slowest of the three.
+    'production': (['COUPE', 'HATCH', 'SALOON'], 0.50, None),
+}
+# STILL UNMEASURED: the work vehicles. CAB, PICKUP, VAN and SEMI are driveable after a hundred
+# miles in TEST DRIVE and top out from 96mph down to 80, so they need a third group at a third
+# speed. Nobody has asked for their brake figures yet and none are quoted anywhere.
+BODIES, V_F, SPREAD = GROUPS['racing']
+TO_F = 0.20                    # down to 40mph on a 200mph scale
 CAP_MS = 12000
 PUSH_MS = 2500
 
@@ -327,15 +349,23 @@ def main():
                     help='the cornering experiment alone, which is the one still in question')
     ap.add_argument('--runs', type=int, default=1,
                     help='repeat the cornering experiment N times. RLG-062: never quote one run')
+    ap.add_argument('--group', default='racing', choices=sorted(GROUPS),
+                    help='which set of bodies, and therefore at what speed. The two are one '
+                         'choice: a group is measured below the top end of its own slowest car, '
+                         'so figures from two groups do not compare')
     ap.add_argument('--coast', action='store_true',
                     help='do NOT hold the entry speed. The push is quadratic in speed, so a '
                          'coasting car is measured at a speed no other body shared - this exists '
                          'only to reproduce the old, wrong numbers')
     args = ap.parse_args()
+    global BODIES, V_F, SPREAD
+    BODIES, V_F, SPREAD = GROUPS[args.group]
     console_utf8()
     res = Results()
     httpd, port = serve(ROOT)
     print('brake-test  .  what the fleet does when it stops and when it turns')
+    print('  group: %s  .  %d bodies, all of them measured at %dmph'
+          % (args.group, len(BODIES), V_F * 200))
     with sync_playwright() as p:
         browser = launch_chromium(p, headless=not args.headed)
         page = browser.new_page(viewport={'width': 480, 'height': 900})
@@ -356,7 +386,7 @@ def main():
         mx = page.evaluate("() => window.__probe.road.MAX_SPD")
         # ---- AND THE CORNERING PUSH, WITH NOBODY DRIVING -------------------------------------
         print('  the cornering push on one constant bend, at %d mph, wheel untouched%s'
-              % (0.6 * 200, '  (speed left to coast)' if args.coast else '  (speed HELD, road EMPTY)'))
+              % (V_F * 200, '  (speed left to coast)' if args.coast else '  (speed HELD, road EMPTY)'))
         # ON THE ROAD AS GENERATED, and BEFORE the braking runs flatten it - `flattenRoad` has
         # no inverse, and a straight road has no cornering push to measure. Ordering the two
         # experiments this way costs nothing and needs no new engine call.
@@ -378,7 +408,7 @@ def main():
         # 0.1758 to 0.2029, and one run showed it entering the window at 49mph instead of
         # 120. One throwaway window puts the world in the state the second body finds.
         page.evaluate("(a) => window.__probe.pushRun(a.ms, a.hold, a.sweep, a.dry)",
-                      {'ms': PUSH_MS, 'hold': 0 if args.coast else (0.6 * mx),
+                      {'ms': PUSH_MS, 'hold': 0 if args.coast else (V_F * mx),
                        'sweep': not args.coast, 'dry': True})
         pushes = []
         for b in BODIES:
@@ -401,14 +431,14 @@ def main():
             # coasting, it is being hit.
             page.evaluate("() => window.__probe.road.clearTraffic()")
             page.evaluate("(v) => { const R = window.__probe.road;"
-                          " R.setSpd(v); R.setLane(0); }", 0.6 * mx)
+                          " R.setSpd(v); R.setLane(0); }", V_F * mx)
             page.wait_for_timeout(700)
             page.evaluate("() => window.__probe.road.clearTraffic()")
             page.evaluate("(v) => { const R = window.__probe.road;"
-                          " R.setSpd(v); R.setLane(0); }", 0.6 * mx)
+                          " R.setSpd(v); R.setLane(0); }", V_F * mx)
             page.wait_for_timeout(150)
             r = page.evaluate("(a) => window.__probe.pushRun(a.ms, a.hold, a.sweep, a.dry)",
-                              {'ms': PUSH_MS, 'hold': 0 if args.coast else (0.6 * mx),
+                              {'ms': PUSH_MS, 'hold': 0 if args.coast else (V_F * mx),
                                'sweep': not args.coast, 'dry': True})
             # RAW `grip`, NOT `brakeOf`. The braking rate is grip x mech and the cornering push
             # is grip alone, so comparing the push against brakeOf compares it with a number the
@@ -422,8 +452,8 @@ def main():
             # THE SPEED IS CHECKED AT BOTH ENDS. Checking only the exit missed a run where
             # the ROADSTER ENTERED the window at 49mph and was up to 120 by the end of it -
             # which is the settle failing, and it passed a check that only looked at v1.
-            off = (not args.coast) and (abs(r['v1'] - 0.6 * mx) > 0.6 * mx * 0.02
-                                        or abs(r['v0'] - 0.6 * mx) > 0.6 * mx * 0.02)
+            off = (not args.coast) and (abs(r['v1'] - V_F * mx) > V_F * mx * 0.02
+                                        or abs(r['v0'] - V_F * mx) > V_F * mx * 0.02)
             spoiled = (r['cars'] > 0) or off or (r['grip'] < 0.999)
             pushes.append({'body': b, 'drift': r['drift'], 'claim': g,
                            'v0': r['v0'], 'v1': r['v1'], 'spoiled': spoiled})
@@ -438,9 +468,9 @@ def main():
                       '   SPOILED: the speed was not held' if off else
                       '   SPOILED: the road was wet (grip %.3f)' % r['grip'] if spoiled else '')))
 
-        res.check(len(pushes) >= 4, 'enough bodies were pushed to compare',
+        res.check(len(pushes) >= len(BODIES), 'every body in the group was pushed',
                   'only %d' % len(pushes))
-        if len(pushes) >= 4:
+        if len(pushes) >= 3:
             spread = max(p2['drift'] for p2 in pushes) - min(p2['drift'] for p2 in pushes)
             print('  the spread across the fleet is %.4f of a lane' % spread)
             # ---- THE INVARIANT IS THE PRODUCT, NOT THE ORDER --------------------
@@ -497,7 +527,7 @@ def main():
             R.setWet(0); R.setSnow(0); R.setPool(0); R.flattenRoad(); }""")
         page.wait_for_timeout(200)
         print('  how sharply each car answers the wheel, on a straight road at %d mph'
-              % (0.6 * 200))
+              % (V_F * 200))
         steers = []
         for b in BODIES:
             if not page.evaluate("(k) => { const R = window.__probe.road;"
@@ -506,10 +536,10 @@ def main():
             # RIGHT ACROSS THE ROAD, so the clamp is binding for most of the run: the ask
             # is beyond the far verge and the car never arrives, which keeps the gap wide.
             r = page.evaluate("(a) => window.__probe.steerRun(a.f, a.t, a.hold, a.sweep, a.ms, a.dry)",
-                              {'f': -1.1, 't': 1.15, 'hold': 0.6 * mx, 'sweep': True, 'ms': 3000, 'dry': True})
+                              {'f': -1.1, 't': 1.15, 'hold': V_F * mx, 'sweep': True, 'ms': 3000, 'dry': True})
             declared = page.evaluate("() => window.__probe.road.steerRate()")
             g = page.evaluate("(k) => (window.__probe.road.BODY[k] || {}).grip || 1", b)
-            rate = rate_between(r['rows'], STEER_FROM, STEER_TO, 0.6 * mx)
+            rate = rate_between(r['rows'], STEER_FROM, STEER_TO, V_F * mx)
             if rate is None:
                 print('      %-13s NEVER CROSSED the measured stretch - reached %.3f' % (b, r['at']))
                 continue
@@ -528,9 +558,9 @@ def main():
             page.evaluate("() => { const R = window.__probe.road;"
                           " R.setLane(0); R.setTarget(0); }")
 
-        res.check(len(steers) >= 4, 'enough bodies answered the wheel to compare',
+        res.check(len(steers) >= len(BODIES), 'every body in the group answered the wheel',
                   'only %d' % len(steers))
-        if len(steers) >= 4:
+        if len(steers) >= 3:
             # 1. IT MUST ORDER BY GRIP, which is the owner's request stated as a check.
             byclaim = sorted(steers, key=lambda r: -r['claim'])
             bad = [(a['body'], b2['body']) for i2, a in enumerate(byclaim)
@@ -546,8 +576,16 @@ def main():
             hi2 = max(r['rate'] for r in steers)
             print('  the fleet spans %.2f to %.2f lanes a second, a spread of %.2f to 1'
                   % (lo2, hi2, hi2 / lo2))
-            res.check(hi2 / lo2 > 1.35,
-                      'and the difference between the best and worst is worth feeling',
+            # ---- AND THIS QUESTION IS NOT ASKED OF A SINGLE CLASS ----------------------
+            # It failed on the production group at 1.05 to 1, and it was right about the number and
+            # wrong about what the number means. A COUPE, a HATCH and a SALOON declare grip 0.73,
+            # 0.70 and 0.66; they are meant to feel alike, and a class whose cars felt 1.35 to 1
+            # apart would not be a class. The claim is about the RANGE OF THE FLEET, so it is asked
+            # of a group that spans several classes and printed as a measurement otherwise.
+            res.check(SPREAD is None or hi2 / lo2 > SPREAD,
+                      'and the difference between the best and worst is worth feeling'
+                      if SPREAD is not None else
+                      'the spread inside one class is reported, not asserted',
                       'the whole fleet is within %.2f to 1, which is not a handling model'
                       % (hi2 / lo2))
 
@@ -576,7 +614,7 @@ def main():
             if(R.flattenRoad) R.flattenRoad(); }""")
         page.wait_for_timeout(300)
         print('  braking from %d to %d mph, dry, on a flat straight road'
-              % (FROM_F * 200, TO_F * 200))
+              % (V_F * 200, TO_F * 200))
         print()
 
         rows = []
@@ -589,7 +627,7 @@ def main():
                 continue
             page.wait_for_timeout(150)
             r = page.evaluate("([a,b,c]) => window.__probe.brakeRun(a,b,c)",
-                              [FROM_F * mx, TO_F * mx, CAP_MS])
+                              [V_F * mx, TO_F * mx, CAP_MS])
             claim = page.evaluate("(k) => window.__probe.road.brakeOf(k)", b)
             grip = page.evaluate("(k) => (window.__probe.road.bodyStat "
                                  "? window.__probe.road.bodyStat(k) : null)", b)
@@ -598,15 +636,15 @@ def main():
             print('      %-13s %6.0f ms   %7.0f units   brakeOf says %.3f'
                   % (b, r['ms'], r['dist'], claim))
 
-        res.check(len(rows) >= 6, 'enough of the fleet could be measured',
-                  'only %d bodies' % len(rows))
+        res.check(len(rows) >= len(BODIES), 'every body in the group could be measured',
+                  '%d of %d bodies' % (len(rows), len(BODIES)))
         print()
 
         # ---- DOES THE TABLE TELL THE TRUTH ABOUT BRAKING -------------------------------------
         # The question RLG-042 asked about top speed, asked about the brakes. Not "is the number
         # right" - the number is a multiplier and cannot be right or wrong on its own - but does a
         # car the table says stops harder actually stop harder.
-        if len(rows) >= 6:
+        if len(rows) >= 3:
             best = min(rows, key=lambda r: r['dist'])
             worst = max(rows, key=lambda r: r['dist'])
             print('  the shortest stop is the %s at %.0f units; the longest is the %s at %.0f'

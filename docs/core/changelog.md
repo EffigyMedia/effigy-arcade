@@ -19,6 +19,32 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-95"></a>
+## [0.13.95] - 2026-09-12
+- Changed: **the production class has three characters instead of three positions.** Owner: the
+  saloon is slow off the line with the highest top speed and the least handling, the hatchback is the
+  quickest with the lowest top speed and the best handling, and the coupe is the balanced middle. The
+  hatchback was built between the other two on every axis, and its acceleration lead over the coupe
+  measured a tenth of a second - the one thing its own record claimed for it, and nothing a player
+  can feel. It is the short-geared car now: most grip and quickest launch in the class, least top
+  end. Measured, it does 0-60 in 8.9s against the coupe's 9.6 and the saloon's 11.3, tops out at
+  110mph against 120 and 124, and both out-corners and out-brakes both of them. **The coupe's numbers
+  are untouched**; the saloon's top end went past it to 124mph with the longer gearing that implies.
+  [RLG-217](../fragments/RLG-217.md)
+- Fixed: **a traffic coupe was six miles an hour quicker than the one you can buy.** `TYPE_VMAX` and
+  the garage `BODY` table had drifted apart on the saloon, the hatchback and the coupe - the exact
+  fault the note beside them says RLG-042 exists to stop. They carry the body's own numbers now.
+  [RLG-217](../fragments/RLG-217.md)
+- Fixed: **`brake-test.py` could not see a production car.** Its body list was eleven cars under a
+  comment claiming it was every driveable body, and the cars a new save starts in were never in it.
+  The fleet is measured in groups now, each below the top end of its own slowest car, because
+  entering a 110mph car at 120 is the aero over-run fault that file already records about the TUNER.
+  The racing group is unchanged and reproduces its recorded distances to within two per cent.
+  [RLG-217](../fragments/RLG-217.md)
+- Fixed: **`reach-test.py` kept its own copy of seven top speeds**, under a docstring saying it would
+  go stale if a car was retuned. It did. It asks the engine now.
+  [RLG-217](../fragments/RLG-217.md)
+
 <a id="v0-13-94"></a>
 ## [0.13.94] - 2026-09-12
 - Fixed: **the hatchback wears its badge on paint, not on the glass.** Owner, from the fleet sheet:
