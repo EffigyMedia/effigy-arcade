@@ -1,26 +1,59 @@
 #!/usr/bin/env python3
-"""REACH - how far can ONE timed test drive actually go before the clock ends it?
+"""REACH - how far does a timed test drive go WITH NOBODY STEERING? A FLOOR, not a
+ceiling.
 
     .venv/Scripts/python tools/reach-test.py
 
-WHY THIS EXISTS. The distance unlocks are written as `dist >= 25` and `dist >= 50`
-inside `if(mode !== 'race' && timedRun)`, so they are asked of ONE RUN with the
-timer ON. Nothing had ever measured whether a run can reach those numbers. RLG-213
-is about to set a new merged unlock at 50 or 100 miles and the owner asked which is
-better, so the ceiling has to be known before the number is chosen.
+READ THIS FIRST. THIS HARNESS CANNOT ANSWER "HOW FAR CAN A RUN GO", AND IT WAS
+WRITTEN BELIEVING THAT IT COULD. Its first results were reported to the owner as
+proof that the 25- and 50-mile unlocks were unreachable. The owner had driven over
+100 miles in one run, repeatedly. The measurement was of a driver, not of a game -
+see RLG-215, where the finding is withdrawn in full.
 
-THE ARITHMETIC SAYS IT CANNOT, AND ARITHMETIC IS NOT A MEASUREMENT. A checkpoint is
-every CP_MILES (2) and pays CLOCK_BONUS (20s), so a car must average 360mph to break
-even and the fastest car in the game declares 194. A crate pays CRATE_SECS (10) and
-they are scattered rather than placed. So the clock should fall and the run should
-end - but crate density is the free variable and only a run can say.
+WHAT IT ACTUALLY MEASURES. A car with the throttle held down and THE WHEEL NEVER
+TOUCHED. That matters because of two things it therefore never does:
 
-THE FALSIFIER IS BUILT IN AND IT RUNS FIRST. A harness that reports "the run ended at
-6 miles" is worthless if it cannot report 60. So the first arm PINS the speed far
-above any car's top end with `API.holdSpd`: the car then covers two miles in well
-under twenty seconds, the clock GAINS, and the same code path must report a large
-distance. If that arm does not clear the distances being considered, every number
-below it is unreadable and the harness says so.
+    CRATES ARE PARKED ON THE SHOULDER, at x = +/- 0.86 to 1.02, and the engine's
+    own comment says "taking one means leaving the road". Driving straight down
+    the middle collects a crate only by accident - zero to four in a whole run,
+    measured. A player steers to them. A crate pays CRATE_SECS (10s) and arrives
+    on a TIMER, `nextCrateT = rnd(20, 34)`, so a driver who takes all of them
+    earns 0.29 to 0.50 seconds a second and one who takes none earns nothing.
+
+    AND IT NEVER REACHES THE SPEED THE CAR HAS. Peak speeds of 98 to 156mph were
+    measured in a fleet whose top car declares 194, headless, at whatever frame
+    rate the machine chose. Checkpoint credit is v/360 seconds a second, so speed
+    is the other half of the budget.
+
+THE BUDGET, WHICH IS THE THING TO REASON WITH RATHER THAN THIS HARNESS:
+
+    net = v/360 + crate - 1     seconds of clock, per second of driving
+
+    194mph, every crate, fast end   +0.04   the clock CLIMBS and the run is endless
+    194mph, every crate, mean       -0.09   about 11 minutes, ~35 miles
+    150mph, every crate, mean       -0.21   about 4.7 minutes, ~12 miles
+    150mph, no crates               -0.58   about 1.7 minutes, ~4 miles
+
+The last row is what this harness reports. The first is what the game is played at.
+
+SO USE IT FOR WHAT IT IS. It is a floor, and a floor is worth having: it is the
+same code path, it ends a run properly, and a change that moves THIS number has
+moved something real. It is not evidence about what a player can reach, and any
+sentence that uses it that way is the error this file exists to stop repeating.
+
+A FALSIFIER DOES NOT MAKE A DRIVER REPRESENTATIVE, which is the lesson underneath
+all of it. The one below proves this harness can report a run twice past its own
+measured ceiling with the clock climbing - true, and it says nothing at all about
+whether the car was being driven the way a player drives it. `driver_limits` is the
+check that was missing: every distance is now printed with FLOOR ONLY beside it, and
+the reason, whenever the peak speed fell short of what the car declares or no crate
+was taken. It warns rather than failing, because a floor is worth measuring - what
+must not happen again is a floor being quoted as a ceiling.
+
+THE FALSIFIER, WHICH RUNS FIRST. A harness that reports "the run ended at 6 miles"
+is worthless if it cannot report 60. So the first arm PINS the speed far above any
+car's top end with `API.holdSpd`: the car then covers two miles in well under twenty
+seconds, the clock GAINS, and the same code path must report a large distance.
 
 A RUN THAT NEVER STARTED IS BLKD AND NOT A ZERO. The first version of this harness
 reported "SALOON 0.00 miles" and "STALLION 0.00 miles", which reads as a finding and
@@ -31,14 +64,12 @@ classes without writing an unlock flag, which is what lets the SALOON be measure
 there is no equivalent for the racing classes, so the supercars are out of reach from
 here and are not asked for.
 
-AND IT REPEATS, BECAUSE CRATES ARE THE FREE VARIABLE. A crate pays ten seconds and
-the drain is about eight and a half seconds a mile at the top of the fleet, so crate
-density is very nearly the whole answer and it is scattered rather than placed. One
-run of this decides nothing.
+AND IT REPEATS, BECAUSE CRATES ARE THE FREE VARIABLE even for a driver that only
+collects them by accident. One run of this decides nothing.
 
 Exit code 0 if the falsifier cleared its bar, 1 otherwise. THE PER-CAR RESULTS ARE A
-MEASUREMENT AND NOT A PASS OR A FAIL - they are the answer to the owner's question
-and they are printed, not asserted.
+MEASUREMENT AND NOT A PASS OR A FAIL, and they are a FLOOR - they are printed with
+the driver's own limits beside them so that they cannot be quoted as a ceiling.
 """
 
 import argparse
@@ -128,6 +159,47 @@ def out_body(r):
     return r.get('body') or 'not reported by the engine'
 
 
+def declared_mph(body):
+    """the top speed the RECORD claims for this car, read from `vmax` x 200mph.
+
+    Asked of the engine would be better and there is no probe for it, so these are
+    copied from BODY and will go stale if a car is retuned. They are used ONLY to
+    print how far short the driver fell, never to pass or fail anything.
+    """
+    return {'SALOON': 112, 'COUPE': 120, 'CAB': 100, 'PICKUP': 94,
+            'TUNER': 146, 'ROADSTER': 153, 'MUSCLE': 160}.get(body)
+
+
+def driver_limits(r, mph, declared):
+    """SAY HOW THE DRIVER FELL SHORT, on the same line as the number it produced.
+
+    THIS IS THE CHECK THAT WAS MISSING and it is the whole lesson of RLG-215. The
+    falsifier below proves the harness can report a LONG run; nothing proved that the
+    car was being driven the way a player drives it, and it was not. A distance from
+    a driver that never reached the car's speed and never took a crate is a FLOOR, and
+    printing it bare is what let it be quoted as a ceiling.
+
+    It warns rather than failing, because a floor is still worth measuring - what must
+    not happen is a floor being read as something else.
+    """
+    out = []
+    crates = r.get('crates')
+    # A CRATE ARRIVES ON A TIMER, `nextCrateT = rnd(20, 34)`, so the number that were
+    # PUT OUT during the run is the wall clock over the mean of 27 seconds. Comparing
+    # what was taken against what appeared is the check; comparing against zero is not,
+    # and a run that took 1 of about 3 passed the first version of this.
+    if crates is not None and r.get('wall'):
+        offered = r['wall'] / 27.0
+        if offered >= 1 and crates < offered * 0.75:
+            out.append('FLOOR ONLY - took %d crate(s) of about %.0f put out in %.0fs.'
+                       ' They sit on the shoulder and this driver never steers;'
+                       ' each one is 10s of clock' % (crates, offered, r['wall']))
+    if declared and mph < declared * 0.9:
+        out.append('FLOOR ONLY - peak %d mph against the %d this car declares,'
+                   ' and checkpoint credit is v/360 a second' % (mph, declared))
+    return out
+
+
 # THE UNLOCK FLAGS, WRITTEN BEFORE THE GAME BOOTS. `API.dbgTraffic` is NOT enough, and
 # that is a defect in the debug switch rather than in this harness: it widens `openBy`,
 # which decides what the garage LISTS, and `carLocked` - which is what the DRIVE button
@@ -175,8 +247,43 @@ def run_arm(browser, port, body, cap, hold=None):
     return out
 
 
+def selftest():
+    """PROVE THE DRIVER CHECK BOTH FIRES AND STAYS SILENT, without a browser.
+
+    A warning that can never be silent is not a check, it is a banner - and a driver
+    check that only catches a crate count of ZERO is what let a run that took one of
+    about three go by unmarked. So this drives `driver_limits` with rows that are
+    fabricated rather than measured, which is the point: the arithmetic is what is
+    under test here, and a real run cannot be made to order.
+    """
+    cases = [
+        # (label, row, mph, declared, how many warnings are expected)
+        ('the run this harness actually produces - no crates, slow',
+         {'crates': 0, 'wall': 103.0}, 113, 160, 2),
+        ('one crate of about four, at the full declared speed - the case that slipped',
+         {'crates': 1, 'wall': 103.0}, 146, 146, 1),
+        ('a representative driver - most crates taken, at speed',
+         {'crates': 4, 'wall': 103.0}, 146, 146, 0),
+        ('too short for a crate to have been put out at all',
+         {'crates': 0, 'wall': 12.0}, 146, 146, 0),
+    ]
+    bad = 0
+    print('  SELFTEST - does the driver check fire, and can it stay silent?')
+    for label, row, mph, declared, want in cases:
+        got = driver_limits(row, mph, declared)
+        ok = len(got) == want
+        if not ok:
+            bad += 1
+        print(('  ok    ' if ok else '  FAIL  ') + '%d warning(s), %s' % (want, label))
+        for line in got:
+            print('            ' + line)
+    return bad
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--selftest', action='store_true',
+                    help='check the driver check itself, with no browser')
     ap.add_argument('--headed', action='store_true')
     ap.add_argument('--cap', type=float, default=180.0,
                     help='wall-clock seconds before an arm is abandoned')
@@ -187,9 +294,11 @@ def main():
     ap.add_argument('--bodies', default='SALOON,TUNER,MUSCLE')
     args = ap.parse_args()
     console_utf8()
+    if args.selftest:
+        return 1 if selftest() else 0
     httpd, port = serve(ROOT)
     fails = []
-    print('reach  .  how far ONE timed test drive gets before the clock ends it')
+    print('reach  .  a FLOOR for a timed test drive, with nobody steering')
     with sync_playwright() as p:
         browser = launch_chromium(p, headless=not args.headed)
 
@@ -227,15 +336,15 @@ def main():
             ok = f['dist'] > 12 and not f['ended']
             print(('  ok    ' if ok else '  FAIL  ')
                   + 'the harness reports a run twice past the timed ceiling, and the clock CLIMBS')
-            print('        it does NOT prove a 100-mile run would be reported - see the note in')
-            print('        the source. That case is arithmetic: 360mph to break even, 194 declared.')
+            print('        and it says NOTHING about whether this driver is representative.')
+            print('        It is not: read the budget at the top of this file.')
             if not ok:
                 fails.append('the falsifier did not clear 12 miles'
                              ' - every number below is unreadable')
 
         # ---- AND NOW THE REAL QUESTION --------------------------------------------
         print()
-        print('  HOW FAR DOES A REAL CAR GET, FLAT OUT, TIMER ON')
+        print('  HOW FAR DOES A CAR GET FLAT OUT WITH NOBODY STEERING - A FLOOR')
         print('      checkpoints are 2 miles apart and pay 20s, a crate pays 10s,')
         print('      and the run starts with 60s on the clock')
         for body in [b.strip() for b in args.bodies.split(',') if b.strip()]:
@@ -261,6 +370,8 @@ def main():
                 print('      %-10s %6.2f miles   %s after %3.0fs   %s crate(s), peak %d mph'
                       % (body, r['dist'], end, r['wall'],
                          r['crates'] if r['crates'] is not None else '?', mph))
+                for line in driver_limits(r, mph, declared_mph(body)):
+                    print('                 %s' % line)
             if len(reached) > 1:
                 print('      %-10s   -> %.2f to %.2f miles over %d runs'
                       % ('', min(reached), max(reached), len(reached)))
@@ -270,7 +381,10 @@ def main():
     if fails:
         print('FAILED: ' + '; '.join(fails))
         return 1
-    print('the falsifier cleared its bar, so the distances above are the game and not the harness')
+    print('the falsifier cleared its bar, so the distances above are a REAL FLOOR -')
+    print('and a floor is all they are. A player steers to the crates and reaches the')
+    print("car's own top end, and the budget at the top of this file is what says how")
+    print('far THAT goes. See RLG-215.')
     return 0
 
 
