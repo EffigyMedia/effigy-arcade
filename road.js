@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.99';
+window.ROAD_BUILD = '0.14.0';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2971,9 +2971,10 @@ function carWing(g, w, h, S, o, near){
    furniture - on the widest cars they are the outermost ink there is. The face
    drew a pair and the tail drew none, which is the whole of what STALLION and
    MATADOR still disagreed about once their bodies had been brought together. */
-function carMirrors(g, w, h, S, o){
+function carMirrors(g, w, h, S, o, back){
   for(const sx of [-1, 1]){
-    g.fillStyle = o.body;
+    /* the same rule the rig mirrors follow - see `mirrorTone` */
+    g.fillStyle = farTone(o.body, back);
     g.beginPath();
     g.ellipse(w*0.5 + sx*w*S.wid*0.94, S.topY + h*0.015,
               w*0.045, h*0.022, 0, 0, 6.2832);
@@ -2981,7 +2982,40 @@ function carMirrors(g, w, h, S, o){
   }
 }
 
-function rigFurniture(g, w, h, kind, L, P){
+/* ---- A MIRROR SEEN FROM BEHIND IS ITS BACK (RLG-222) --------------------
+   Owner, 2026-09-12: "across the fleet... make sure that the rearview mirrors
+   from the rear perspective are shaded darker than the ones in the front
+   perspective. Remember if we are tinting stuff based on depth."
+
+   WE ARE NOT, AND THAT IS WHY THIS HAS TO BE BAKED IN. Vehicle sprites are
+   built once and drawn with nothing but the draw-edge alpha ramp (RLG-218);
+   the atmospheric haze is the skyline's and never touches a car. So there is
+   no runtime tint that could tell these two apart - the difference has to be
+   in the drawing, which means the shared mirror code has to know which end it
+   is painting.
+
+   AND IT IS A REAL DIFFERENCE, NOT A STYLING CHOICE. From the front you see a
+   mirror's FACE - the housing turned toward you, catching the same light the
+   bonnet does. From behind you see its BACK, turned away, in the car's own
+   shadow. One number, applied by every body that has mirrors, so the fleet
+   cannot answer this two ways.
+
+   THE HIGHLIGHT GOES WITH IT. The white edge on a van's mirror head is a
+   glint off the glass, and the glass faces forward - so from behind there is
+   nothing for it to be. A lit edge on the back of a mirror is the same fault
+   as a lit lamp on a parked car (RLG-053).
+   ------------------------------------------------------------------------ */
+/* THE FACTOR IS THE FLEET'S AND IT IS NAMED HERE AT LAST. 0.74 was written
+   inline in `carWing`, in the formula wings and in the pickup's cab - four
+   copies of one number describing one distance, which is how a rule becomes
+   four fixes again. `FAR_K` is that number and `FAR_HI` is what a highlight
+   drops to, both straight out of RLG-196. */
+const FAR_K = 0.74;
+const FAR_HI = 'rgba(255,255,255,.10)';
+function farTone(hex, far){ return far ? shade(hex, FAR_K) : hex; }
+function mirrorTone(P, back){ return farTone(P.lo, back); }
+
+function rigFurniture(g, w, h, kind, L, P, back){
   if(kind === 'van'){
     /* a van's door mirrors stand outboard of the body and you see them from
        behind as well as from in front */
@@ -3004,13 +3038,16 @@ function rigFurniture(g, w, h, kind, L, P){
       const headX = sx < 0 ? 0.020 : 0.950;      /* the head, outboard */
       const bodyX = sx < 0 ? 0.055 : 0.945;      /* where the arm meets the van */
       const armY = L.top + h*0.118, armH = h*0.020;
-      g.fillStyle = P.lo;
+      g.fillStyle = mirrorTone(P, back);
       g.fillRect(w*Math.min(headX + 0.030, bodyX), armY,
                  w*Math.abs(bodyX - (headX + (sx < 0 ? 0.030 : 0))) + w*0.004, armH);
       g.fillRect(w*headX, L.top + h*0.075, w*0.030, h*0.105);
       /* a little light down the outboard edge of the head, so it is a glass in
-         a housing rather than a block of the body colour */
-      g.fillStyle = 'rgba(255,255,255,.16)';
+         a housing rather than a block of the body colour. It DIMS from behind
+         rather than disappearing: RLG-196's own answer for a highlight on a far
+         surface, and removing it outright would make the fleet hold two rules
+         for one question. */
+      g.fillStyle = back ? FAR_HI : 'rgba(255,255,255,.16)';
       g.fillRect(w*headX, L.top + h*0.075, w*0.010, h*0.105);
     }
     return;
@@ -3018,7 +3055,7 @@ function rigFurniture(g, w, h, kind, L, P){
   if(kind === 'pickup'){
     /* the door mirrors, which stand off the cab and are seen from either end */
     for(const mx of [0.145, 0.825]){
-      g.fillStyle = P.lo; g.fillRect(w*mx, L.top + h*0.075, w*0.030, h*0.070);
+      g.fillStyle = mirrorTone(P, back); g.fillRect(w*mx, L.top + h*0.075, w*0.030, h*0.070);
     }
     /* the chrome bumper, hanging below the sill at both ends */
     g.fillStyle = '#7d838c';
@@ -3039,7 +3076,7 @@ function rigFurniture(g, w, h, kind, L, P){
        exactly where the profile said the two ends disagreed.
        ---------------------------------------------------------------- */
     for(const sx of [-1,1]){
-      g.fillStyle = P.lo;
+      g.fillStyle = mirrorTone(P, back);
       g.beginPath();
       g.ellipse(w*0.5 + sx*w*(L.cab/2 + 0.075), L.deck - h*0.005,
                 w*0.038, h*0.020, 0, 0, 6.2832);
@@ -3846,7 +3883,7 @@ function paintRigFront(kind, o){
         const b = truckMarkerBox(w, h, top, mx);
         rr(g, b[0], b[1], b[2], b[3], 2); g.fill();
       }
-      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P);
+      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P, false);
       return;
     }
 
@@ -4009,7 +4046,7 @@ function paintRigFront(kind, o){
       if(parts)
         parts.wipers = wiperPair(w*0.11, w*0.89, top+h*0.055, top+h*0.200,
                                  P.body, P.hi);
-      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P);
+      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P, false);
       /* ---- THE VAN'S FACE, FROM THE SAVANA REFERENCE (RLG-219) ----------
          Owner, 2026-09-12, with a photograph of a GMC Savana: a tall upright
          grille with horizontal slats and a badge in the middle of it,
@@ -4194,7 +4231,7 @@ function paintRigFront(kind, o){
       /* the same tyres and the same low bumper the back carries - it had
          neither here, and the bumper is why the two ends disagreed */
       vehicleTyres(g, w, h, 'pickup', bot);
-      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P);
+      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P, false);
       /* the cab, exactly as wide as the back's */
       g.fillStyle = grad(cabTop, bedTop);
       rr(g, w*0.20, cabTop, w*0.60, bedTop-cabTop+h*0.03, w*0.035); g.fill();
@@ -4322,8 +4359,18 @@ function paintRigFront(kind, o){
     const pRoof = roofY, pDeck = deckY, pCab = cabW;
 
     /* the spoiler is BEHIND the car from here, so it goes first */
+    /* ---- AND IT IS FURTHER AWAY, SO IT IS DARKER (RLG-222) -------------
+       Owner, 2026-09-12: "anything that is exposed but further forward has a
+       slightly darker shade from the rear perspective. The perfect example of
+       this are spoilers."
+
+       A SPOILER IS THE SAME RULE SEEN FROM THE OTHER SIDE. It lives at the
+       BACK, so from the front it is the far end - which is [[RLG-196]] exactly,
+       already applied to the supercars' wings and the pickup's cab. The tuner's
+       was the one spoiler that never took it: the ORDER was right here, and the
+       comment above says why, but the colour was the near one. */
     if(kind === 'tuner'){
-      g.fillStyle = P.lo;
+      g.fillStyle = farTone(P.lo, true);
       rr(g, w*0.16, pRoof + h*0.030, w*0.68, h*0.028, 3); g.fill();
     }
 
@@ -4511,7 +4558,7 @@ function paintRigFront(kind, o){
     }
 
     /* the mirrors, from the one declaration the tail draws them from too */
-    rigFurniture(g, w, h, 'saloon', { cab:pCab, deck:pDeck }, P);
+    rigFurniture(g, w, h, 'saloon', { cab:pCab, deck:pDeck }, P, false);
 
     /* lamps at the rear's own lamp line: ly = deckY + (bot-deckY)*0.40 */
     const ly = pDeck + (bot-pDeck)*0.40, lh = h*0.055;
@@ -4740,7 +4787,7 @@ function paintRig(kind, o){
          part of the same lamp rather than decoration painted once. */
       /* the underrun bar and the mud flaps, from the one declaration the face
          calls too - they hung under this end only before (RLG-184) */
-      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P);
+      rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P, true);
       /* the low lamps on the frame AND the row of markers along the roof.
          Owner, 2026-08-29: the running lights illuminate as brake lights too -
          which is what a lorry does, and it is the thing you actually see of one
@@ -4852,7 +4899,7 @@ function paintRig(kind, o){
       const top = h*0.10, bot = cy - h*0.10;
       vehicleTyres(g, w, h, 'van', bot);
       /* the mirrors are the same declaration the face uses - see `rigFurniture` */
-      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P);
+      rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P, true);
       g.fillStyle = grad(top, bot);
       rr(g, w*0.055, top, w*0.89, bot-top, w*0.045); g.fill();
       /* roof cap */
@@ -5015,7 +5062,7 @@ function paintRig(kind, o){
       decl(g, lamps, 'turn.r', turnBulb(w*0.877, bot-h*0.085, w*0.048, h*0.065));
       /* the chrome bumper hangs below the sill, and it is the same one the
          face carries - see `rigFurniture` */
-      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P);
+      rigFurniture(g, w, h, 'pickup', { top:cabTop, bot:bot }, P, true);
       return;
     }
 
@@ -5149,7 +5196,7 @@ function paintRig(kind, o){
     }
 
     /* the mirrors this end never drew - see `rigFurniture` */
-    rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P);
+    rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P, true);
 
     /* the boot shut line, which is what says saloon */
     /* ---- WHAT SAYS HATCHBACK FROM BEHIND (RLG-213) ----------------------
@@ -5294,8 +5341,12 @@ function paintRig(kind, o){
     }
 
     /* the scoop, seen from behind as a raised block on the bonnet line */
+    /* AND A BONNET IS THE FAR END FROM HERE (RLG-222). The scoop is the mirror
+       case of the spoiler above: it lives at the FRONT, so this is the view it
+       is distant in. Its own comment already said "seen from behind" and drew
+       it in the near colour anyway. */
     if(isMuscle){
-      g.fillStyle = P.lo;
+      g.fillStyle = farTone(P.lo, true);
       rr(g, w*0.375, deckY - h*0.052, w*0.25, h*0.052, 4); g.fill();
     }
 
@@ -5850,7 +5901,7 @@ function paintFront(o){
       parts.wipers = wiperPair(w*(0.5-wid*0.62), w*(0.5+wid*0.62),
                                gRoof, topY - h*0.005, o.body, o.hi);
     }
-    carMirrors(g, w, h, S, o);
+    carMirrors(g, w, h, S, o, false);
 
     /* ---- THE LIGHT BAR, SEEN HEAD ON ------------------------------------
        The tail draws one for any `force` body and the nose drew none, so the
@@ -6320,7 +6371,7 @@ function paintCar(o){
     }
 
     /* the door mirrors, which the tail never drew - see `carMirrors` */
-    if(B) carMirrors(g, w, h, S, o);
+    if(B) carMirrors(g, w, h, S, o, true);
 
     /* the shoulder crease that runs across every one of them */
     g.strokeStyle = 'rgba(255,255,255,.16)'; g.lineWidth = Math.max(1, h*0.006);

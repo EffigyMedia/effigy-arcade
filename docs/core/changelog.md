@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-0"></a>
+## [0.14.0] - 2026-09-12
+- Changed: **what sits at one end of a car is now darker from the other, across the fleet.** Owner:
+  the door mirrors seen from behind, and "anything that is exposed but further forward... the perfect
+  example of this are spoilers". Three parts never took the near/far rule: the door mirrors on every
+  body that has them, the tuner's boot spoiler seen from the front, and the muscle car's bonnet scoop
+  seen from behind. The spoiler is the owner's own example and its draw ORDER was already right - the
+  comment says "the spoiler is BEHIND the car from here" - while its colour was the near one.
+  [RLG-222](../fragments/RLG-222.md)
+- Changed: **the near/far factor is named once.** 0.74 was written inline in four places describing
+  one distance. `FAR_K`, `FAR_HI` and `farTone()` are that number and that rule, and `rigFurniture`
+  and `carMirrors` take the same `back` flag the wings already use.
+  [RLG-222](../fragments/RLG-222.md)
+- Removed: `docs/fleet/utility.png`, a sheet for a class that no longer exists.
+
 <a id="v0-13-99"></a>
 ## [0.13.99] - 2026-09-12
 - Changed: **the ambulance is a box on a cab.** Owner, with a box-ambulance reference: a red light bar
