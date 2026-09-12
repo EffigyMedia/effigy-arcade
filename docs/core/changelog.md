@@ -19,6 +19,25 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-96"></a>
+## [0.13.96] - 2026-09-12
+- Fixed: **you could see vehicles through the scenery on a bend.** Owner, from the device. The
+  roadside was drawn at an alpha that only reached solid a quarter of the way in from the draw edge,
+  so a third of the trees in any frame were see-through - 4,306 of 12,733 on one forest frame,
+  running down to fully transparent. The trees themselves looked fine, because a translucent tree in
+  front of more trees is invisibly translucent; it only becomes a hole when a light-coloured car is
+  behind it. On a bend the road swings sideways and puts the traffic behind the far treeline, which
+  is exactly where that quarter was. [RLG-218](../fragments/RLG-218.md)
+- Fixed: **the cars, the trees and the lamp posts all arrived on different schedules.** Owner: "the
+  vehicles need the same Alpha ramp or else that just looks funky." They did not have it - a sixth of
+  the road for a car, a quarter for the roadside, a quarter for a lamp post under a comment saying it
+  should only be the far edge. It is one number in one place now, and everything at the draw edge
+  reads it: a car that far away is exactly as faint as the tree in front of it.
+  [RLG-218](../fragments/RLG-218.md)
+- Added: `tools/seethru-shot.py`, which puts traffic among the scenery and photographs it. It asserts
+  nothing - a picture is the only thing that can settle whether a car is in front of a tree it should
+  be behind. [RLG-218](../fragments/RLG-218.md)
+
 <a id="v0-13-95"></a>
 ## [0.13.95] - 2026-09-12
 - Changed: **the production class has three characters instead of three positions.** Owner: the

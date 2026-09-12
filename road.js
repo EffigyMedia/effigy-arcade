@@ -229,6 +229,26 @@ function roadsideAt(p, out, wid){
 const LANES = 4;
 const DRAW = 150;   /* was 95 — the road stopped short of the horizon and
                        the ground base showed as a band under the skyline */             // segments drawn
+/* ---- HOW MUCH OF THE DRAW IS THE ARRIVAL (RLG-218) ----------------------
+   Owner, 2026-09-12: "the vehicles need the same Alpha ramp or else that just
+   looks funky." They did not have it. The cars faded over the last SIXTH of the
+   drawn road and the roadside over the last QUARTER, so a car arrived against a
+   treeline that was on a different schedule - and a quarter of the draw spent
+   translucent is what let the owner see traffic through the trees on a bend.
+
+   SO IT IS ONE NUMBER AND EVERYTHING READS IT. Cars, trees, crops, boats and
+   lamp posts all arrive over the same last slice of the road. A second copy of
+   it is how the two drifted apart in the first place.
+
+   THE VALUE IS THE MIRROR'S. RLG-128 settled a band of six per cent through the
+   glass, for this exact complaint, with the reasoning written there: long enough
+   that an object arrives, short enough that it is never the see-through object
+   the owner saw. There is no reason for the windscreen to answer differently.
+   ------------------------------------------------------------------------ */
+const EDGE_FADE = 1/16;      /* the last 6% of the draw, where things arrive */
+/* solid until the last `EDGE_FADE` of the draw, then easing in. `t` is 1 at the
+   camera and 0 at the draw edge - the shape `fade` already has. */
+function edgeFade(t){ return Math.min(1, Math.max(0, t) / EDGE_FADE); }
 const CAM_H = 1050;
 /* how far above the driving eye the mirror sits, as a multiple of it. See the
    note in `drawMirrorFull`: this has moved three times and is the number that
@@ -256,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.95';
+window.ROAD_BUILD = '0.13.96';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8289,7 +8309,38 @@ function drawScenery(idx, p1, y1, z1, fade){
       } else crestDid('scenery', 'drawn');
       /* the last stretch of the draw fades them in, so an object does not arrive
          whole at the edge of the world. The lamps do the same. */
-      ctx.globalAlpha = Math.min(1, fade * 4);
+      /* ---- A TREE IS NOT SEE-THROUGH, AND A QUARTER OF THE DRAW IS NOT AN
+         ARRIVAL (RLG-218) ---------------------------------------------------
+         Owner, 2026-09-12, from the device: "when I play and the road bends
+         around the corner I can see vehicles through the scenery. That's all
+         the problem is, the trees were fine."
+
+         BOTH HALVES OF THAT ARE EXACTLY RIGHT. `fade` is the distance ramp and
+         it is 1 only right in front of you, so `fade * 4` left everything in the
+         FAR QUARTER of the draw translucent: measured on one forest frame,
+         4,306 of 12,733 objects were drawn at an alpha below 0.99, running all
+         the way down to 0.
+
+         AND THE TREES DID LOOK FINE, because a translucent tree standing in
+         front of more trees of the same colour is invisibly translucent. It only
+         becomes a hole when something light-coloured is behind it - which is a
+         CAR, and on a BEND is exactly where the cars are, because the road
+         swings sideways and puts the traffic behind the far treeline instead of
+         at the vanishing point.
+
+         THIS EXACT MISTAKE IS RECORDED TWICE ALREADY IN THIS FILE. The lamp
+         posts: "`globalAlpha = fade` made the whole post see-through for most of
+         its life... a steel column is not translucent at any distance." And the
+         mirror, RLG-128, where the owner reported the same thing through the
+         glass and the answer was a band of SIX PER CENT - "long enough that it
+         arrives, short enough that it is never the see-through object the owner
+         saw".
+
+         So the band is the mirror's band. Sixteen rather than four puts the fade
+         in the last 6% of the draw, where an object is a pixel or two wide and
+         about to be culled by the width test below anyway, and everything
+         nearer than that is solid. */
+      ctx.globalAlpha = edgeFade(fade);
       sceneSides[side < 0 ? 'left' : 'right']++;
       if(seaSideNow) sceneSides.seaKeys[artKey] = (sceneSides.seaKeys[artKey] || 0) + 1;
       /* debug only: where each object was actually drawn this frame, so a
@@ -8317,7 +8368,7 @@ function drawScenery(idx, p1, y1, z1, fade){
                    ? sceneryLitArt(artKey, kind) : null;
       if(litArt && lampsOn() > 0.02){
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = Math.min(1, fade * 4) * lampsOn();
+        ctx.globalAlpha = edgeFade(fade) * lampsOn();
         ctx.drawImage(litArt, x - w2/2, y1 - h2, w2, h2);
         ctx.globalCompositeOperation = 'source-over';
       }
@@ -21845,8 +21896,12 @@ function drawRoad(){
          front of you. A steel column is not translucent at any distance. The
          ramp is now only used to fade a post IN at the far edge of the draw
          distance, where it would otherwise pop. */
+      /* AND A QUARTER OF THE DRAW IS NOT AN EDGE (RLG-218). The sentence above
+         says "the far edge" and `fade * 4` is the far QUARTER - the note was
+         right about the principle and the number did not match it. Sixteen is
+         the same band the trees and the mirror use: the last 6% of the draw. */
       ctx.save();
-      ctx.globalAlpha = Math.min(1, fade * 4);
+      ctx.globalAlpha = edgeFade(fade);
       ctx.fillStyle = '#2b3038';
       ctx.fillRect(lx - poleW/2, topY, poleW, poleH);
       ctx.fillStyle = 'rgba(255,255,255,.16)';
@@ -22192,13 +22247,14 @@ function drawSprite(img, worldX, worldZ, worldW, alpha, flip, beneath){
      costs one multiply and turns the pop into an arrival. RLG-061 holds the
      question of how far the road should be drawn; this is not an answer to it.
      -------------------------------------------------------------------- */
-  const FADE_IN = 0.16;                 /* the last sixth of the drawn road */
+  /* THE BAND IS `EDGE_FADE` AND IT IS NOT THIS FUNCTION'S TO CHOOSE (RLG-218).
+     This was its own 0.16 while the roadside used a quarter, so a car arrived on
+     one schedule and the trees behind it on another - which is the owner's
+     "vehicles need the same Alpha ramp or else that just looks funky". */
   let a = alpha === undefined ? 1 : alpha;
   const edge = DRAW * SEG;
-  if(worldZ - pos > edge * (1 - FADE_IN)){
-    a *= clamp((edge - (worldZ - pos)) / (edge * FADE_IN), 0, 1);
-    if(a <= 0.004){ drawWhy = 'fading'; return null; }
-  }
+  a *= edgeFade((edge - (worldZ - pos)) / edge);
+  if(a <= 0.004){ drawWhy = 'fading'; return null; }
   alpha = a;
   /* ---- NO OCCLUSION TEST HERE ANY MORE -------------------------------
      `hiddenBehindHill` asked whether `roadY[idx]` had been filled — but
