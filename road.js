@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.87';
+window.ROAD_BUILD = '0.13.88';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -707,9 +707,31 @@ function tourStanding(){
   for(const r of tourField) if(r.pts > tourPts) ahead++;
   return ahead + 1;
 }
+/* ---- WHAT AN OLD SAVE CALLED THE SAME THING (RLG-213, RLG-197) ---------
+   The merged class is `traffic`, which was already the flag from the
+   hundred-mile rule - but a save written between 2026-08-29 and the resort
+   holds `production` and `utility` instead, granted at 50 and 25 miles, and
+   neither name means anything now. Read literally, such a save LOSES every car
+   it had won: measured at 0 of 3 for a `utility` save before this existed.
+
+   SO THE OLD NAMES ARE READ AS THE NEW ONE. Either of them means the player
+   earned part of what is now one class, and the class cannot be given out in
+   parts - so either grants it whole. A player who had only reached 25 miles
+   gains the cab and the pickup they had not won, which is the right way for
+   this to be wrong: a merge that takes cars away is a bug report, and one that
+   rounds up is a gift nobody notices.
+
+   IT IS NEVER REMOVED. RLG-197 states the rule and the reason: the save it
+   repairs may not be opened for a year.
+   --------------------------------------------------------------------- */
+const OLD_UNLOCK_NAMES = { traffic: ['production', 'utility'] };
 function unlocked(key){
   const sv = (AR && AR.save) ? AR.save.get((GAME_ID + '-opts')) : null;
-  return !!(sv && sv[key]);
+  if(!sv) return false;
+  if(sv[key]) return true;
+  const was = OLD_UNLOCK_NAMES[key];
+  if(was) for(const w of was) if(sv[w]) return true;
+  return false;
 }
 function zUnlocked(){ return unlocked('formula'); }
 let clock = CLOCK_START, nextCP = 0, cpGantries = [], lastBeep = -1, wreckWait = 0;
@@ -16640,35 +16662,35 @@ function step(dt){
      conditions matter: without the clock there is no pressure, and without
      pursuit there is nothing to survive. */
   /* ---- THE ROAD CARS ARE EARNED BY DISTANCE, ON THE CLOCK --------------
-     Owner, 2026-08-29, replacing the old rule. That was a hundred miles on TEST
-     DRIVE with any settings at all, and it opened every road car at once - one
-     enormous wall and then nothing.
+     Owner, 2026-08-29, and the shape has been through three versions. It was a
+     hundred miles on TEST DRIVE at any settings, opening every road car at
+     once; then two triggers at 25 and 50 for utility and production; and it is
+     ONE again now, because [[RLG-213]] merges those two classes back into one.
 
-     Two now, and both need the clock RUNNING. Without the timer a hundred miles
-     is a thing you can leave the game doing; with it, distance is something you
-     have to keep earning at checkpoints, which is what makes it a reward rather
-     than an errand.
+     THE CLOCK MUST BE RUNNING, which is the part that has never changed.
+     Without the timer a hundred miles is a thing you can leave the game doing;
+     with it, distance is something you have to keep earning at checkpoints,
+     which is what makes it a reward rather than an errand.
 
-       25 miles   the UTILITY class - pickup, van, lorry
-       50 miles   the PRODUCTION class - saloon, coupe, cab
+       TRAFFIC_MILES in ONE timed run   the whole non-racing fleet:
+                                        cab, pickup, van, lorry, ambulance
 
-     Utility first because they are the odd ones to drive, and the ordinary
-     saloon is the better prize for going twice as far. Each announces itself as
-     it lands, so twenty-five miles is a moment rather than a discovery in a
-     menu later.
+     ONE TRIGGER FOR ONE CLASS, by the owner's own words: "those just get
+     unlocked with a single unlock trigger." Production is not here any more
+     because the player starts in it.
+
+     AND THE NUMBER IS A CONSTANT BECAUSE IT IS THE ONE THING STILL OPEN. The
+     owner asked whether it should be 50 or 100 and 100 was recommended - the
+     merged class pays FIVE vehicles where two triggers paid three and three,
+     so the bar carries more - but they have not said. It is one edit either
+     way and nothing else in the resort depends on it.
      ------------------------------------------------------------------- */
   if(mode !== 'race' && timedRun){
-    if(dist >= 25 && !unlocked('utility')){
-      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { utility:true });
+    if(dist >= TRAFFIC_MILES && !unlocked('traffic')){
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { traffic:true });
       wonTraffic = true;
       snd.checkpoint();
-      flashWarn('UTILITY UNLOCKED');
-    }
-    if(dist >= 50 && !unlocked('production')){
-      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { production:true });
-      wonTraffic = true;
-      snd.checkpoint();
-      flashWarn('PRODUCTION UNLOCKED');
+      flashWarn('VEHICLES UNLOCKED');
     }
   }
   /* ---- THE POLICE CARS ARE NOT WON OUT HERE ANY MORE ---------------------
@@ -26004,25 +26026,54 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                   written for that name before the car could be driven.
                   -------------------------------------------------------- */
                'SUPERCRUISER':'supercruiser',
-               /* ---- THE PICKUP IS PRODUCTION (RLG-114) ------------------
-                  Owner, 2026-08-31: "we move pickup to production."
+               /* ---- THE FLEET RESORT (RLG-213) --------------------------
+                  Owner, 2026-09-12: production becomes the LOW END RACE
+                  class and everything else that is not a racer becomes ONE
+                  class on a single unlock. So three groups where there were
+                  four, and two of the old rows move.
 
-                  IT IS ONE LINE AND IT IS ALSO A BALANCE CHANGE, which is
-                  the part worth a moment. Production unlocks at 50 miles and
-                  utility at 25, so this makes the pickup unlock LATER rather
-                  than sooner - and it leaves utility with two entries where
-                  it had three, so both classes change size at once. A player
-                  who has just earned utility now finds two vehicles in it.
+                  PRODUCTION KEEPS ITS ROW AND STOPS BEING A GATE, which is
+                  the part that took a second attempt. Dropping the row would
+                  have made the two cars open from the start - the table's own
+                  rule for a body with no entry - and it would also have made
+                  them indistinguishable from a sports car, and the ladder
+                  needs to tell those apart to know which league a car enters.
+                  So the NAME stays and `OPEN_FROM_THE_START` below is what
+                  says the class costs nothing. A class is what a car IS; an
+                  unlock is a separate question about it, and this is the
+                  first time the two have had to be asked apart.
 
-                  AND IT IS THE CLASSIFICATION CATCHING UP WITH THE DRAWING.
-                  The wheel work already splits the fleet into a sporty group
-                  and the ones the owner named production and utility, and the
-                  pickup already sits with a four-speed gearbox and a
-                  production-shaped wheel. Nothing about the vehicle changes.
+                  THIS REVERSES [[RLG-114]], which moved the PICKUP TO
+                  production on 2026-08-31. It goes back out. That ruling
+                  also recorded the move as a balance change because the two
+                  classes unlocked at different distances, and that reasoning
+                  stops applying the moment there is one trigger.
+
+                  AND THE MERGED CLASS IS CALLED `traffic`, WHICH IS NOT A
+                  NEW NAME. It is the flag from the old hundred-mile rule,
+                  which already meant "all the non-racing cars" and which
+                  `carLocked` and `openBy` have honoured as a fall-through
+                  ever since. Reusing it means every save that ever earned it
+                  keeps every car, with no migration table to write and none
+                  to maintain forever after ([[RLG-197]]).
                   -------------------------------------------------------- */
-               'COUPE':'production','SALOON':'production','CAB':'production',
-               'PICKUP':'production',
-               'VAN':'utility','SEMI':'utility','AMBULANCE':'utility' };
+               'SALOON':'production', 'COUPE':'production',
+               'CAB':'traffic', 'PICKUP':'traffic',
+               'VAN':'traffic', 'SEMI':'traffic', 'AMBULANCE':'traffic' };
+/* ---- A CLASS YOU DO NOT HAVE TO WIN (RLG-213) ---------------------------
+   The player STARTS in production, so the class names a car without gating
+   it. Everything that asks "is this unlocked" asks here first.
+
+   IT IS A SET RATHER THAN A TEST FOR ONE NAME, because the sports class is
+   already open-from-the-start and says so by having no row in `BODY_CLASS` at
+   all. Two ways of saying the same thing is how the two drift apart - a
+   second free class added tomorrow goes in here and needs no other edit.
+   --------------------------------------------------------------------- */
+const OPEN_FROM_THE_START = { production:1 };
+/* HOW FAR THE MERGED CLASS COSTS, in miles of ONE timed test drive. A tunable
+   with a committed default rather than a number written into the branch that
+   reads it - and the owner has not settled between 50 and 100. See RLG-213. */
+const TRAFFIC_MILES = 100;
 
 /* ---- THE CARS THE EVENTS ARE FOR (RLG-115) --------------------------------
    Owner, 2026-08-31: "if you have a production or utility vehicle selected, the
@@ -26048,7 +26099,18 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
    you already had. These two rows and `dutyLegal` below land in the same
    release, and there is no order in which only one of them is true.
    ------------------------------------------------------------------------- */
-const RACE_BANNED = { production:1, utility:1, cruiser:1, supercruiser:1 };
+/* ---- AND PRODUCTION IS STILL BANNED, FOR NOW (RLG-213) ------------------
+   The resort and the LADDER are two pieces of work and this is the seam. Under
+   the ladder a production car races production cars - but `classOf` has no
+   production league to put it in yet, so lifting the ban here would put a
+   SALOON on a grid of sports cars, which is the one thing this game has never
+   done ([[RLG-202]]).
+
+   So the row stays until the league exists, and every commit in between is a
+   build that can be shipped. It comes out in the same unit that gives
+   `classOf` a production answer, and not before.
+   --------------------------------------------------------------------- */
+const RACE_BANNED = { production:1, traffic:1, cruiser:1, supercruiser:1 };
 function bodyClass(k){ return BODY_CLASS[k] || 'sport'; }
 function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
 /* ---- WHICH CARS CAN GO ON SHIFT ------------------------------------------
@@ -26173,7 +26235,14 @@ const UNLOCK_HOW = {
    it is worse than no silhouette: it advertises that something exists and
    refuses to say what, which is a puzzle the game never intends to answer.
    ---------------------------------------------------------------------- */
-const SECRET_UNLOCK = { production:1, utility:1 };
+/* ---- AND IT IS ONE SECRET CLASS NOW, NOT TWO (RLG-213) ----------------
+   Production cannot be secret when the player STARTS in one, so it leaves this
+   table and the merged `traffic` class is the only thing left in it. The
+   reasoning above is unchanged and fits the merged class better than it fitted
+   two: one trigger, found once, paying the whole of the fleet that is not a
+   racer.
+   ---------------------------------------------------------------------- */
+const SECRET_UNLOCK = { traffic:1 };
 
 /* whether this car is still to be won, ignoring the debug overrides - those
    open a car WITHOUT writing the flag, and a car opened for testing should
@@ -26181,8 +26250,9 @@ const SECRET_UNLOCK = { production:1, utility:1 };
 function carLocked(k){
   const need = BODY_CLASS[k];
   if(!need) return false;
+  /* a class the player starts in is never locked (RLG-213) */
+  if(OPEN_FROM_THE_START[need]) return false;
   if(unlocked(need)) return false;
-  if((need === 'production' || need === 'utility') && unlocked('traffic')) return false;
   return true;
 }
 /* how it is won, or '' for the two that do not say */
@@ -26197,8 +26267,10 @@ function unlockHow(k){
    a list of bodies, so a van added tomorrow is covered without a second edit.
    ---------------------------------------------------------------------- */
 function isNovelty(k){
-  const c = BODY_CLASS[k];
-  return c === 'production' || c === 'utility';
+  /* ONE CLASS NOW (RLG-213). The test was a pair of names and is a lookup, so
+     the toggle covers whatever `SECRET_UNLOCK` holds rather than whatever this
+     line was last edited to say. */
+  return !!SECRET_UNLOCK[BODY_CLASS[k] || ''];
 }
 /* whether the toggle has anything to act on. A control that hides nothing is
    worse than no control: it asks the player to make a choice that changes
@@ -26224,10 +26296,10 @@ function garageBodies(){
   const openBy = k => {
     const need = BODY_CLASS[k];
     if(!need) return true;
+    /* a class the player starts in costs nothing (RLG-213) */
+    if(OPEN_FROM_THE_START[need]) return true;
     if(unlocked(need)) return true;
-    /* honoured for anyone who earned it under the hundred-mile rule */
-    if((need === 'production' || need === 'utility') && unlocked('traffic')) return true;
-    if(need === 'production' || need === 'utility') return !!dbgTraffic;
+    if(need === 'traffic') return !!dbgTraffic;
     /* the police car has its own switch: a patrol car is not a racer, and
        testing pursuit should not require opening the whole ladder */
     if(need === 'cruiser' || need === 'supercruiser') return !!dbgPolice;
@@ -29301,9 +29373,16 @@ requestAnimationFrame(frameLoop);
                   VECTOR:'formula', APEX:'formula', COMET:'formula',
                   ROADSTER:'sport', TUNER:'sport', MUSCLE:'sport',
                   CRUISER:'police', SUPERCRUISER:'police',
-                  SALOON:'production', COUPE:'production', CAB:'production',
+                  SALOON:'production', COUPE:'production',
                   sedan:'production', sedan2:'production', coupe:'production',
-                  taxi:'production', tuner:'sport', muscle:'sport',
+                  tuner:'sport', muscle:'sport',
+                  /* ---- THE CAB MOVES OUT OF PRODUCTION (RLG-213) ----------
+                     Production is the LOW END RACE class now, and a taxi is not
+                     one. It joins the merged non-racing class with the pickup
+                     and the three utility vehicles - the same move, in the
+                     sheet's own copy of the map, for the reason the note below
+                     gives. */
+                  CAB:'traffic', taxi:'traffic',
                   /* ---- A PICKUP IS A PICKUP (RLG-114) ---------------------
                      The fleet sheet's own copy of the class map, and it has to
                      move with the unlock map above or the sheet prints a class
@@ -29319,14 +29398,21 @@ requestAnimationFrame(frameLoop);
                      what a pickup is is exactly the fault the note above claims
                      to be preventing - written while introducing it.
                      -------------------------------------------------------- */
-                  PICKUP:'production', pickup:'production',
-                  VAN:'utility', SEMI:'utility',
-                  /* an AMBULANCE is a utility vehicle, and this copy of the class
-                     map has to say so too. RLG-114's lesson: the sheet keeps its
-                     own copy and a class that moves in one and not the other makes
+                  /* ---- AND RLG-213 MOVES IT AGAIN, WITH EVERYTHING ELSE ---
+                     The pickup went TO production under RLG-114 and comes back
+                     out: production is the low end RACE class now, and the
+                     utility vehicles and the low end traffic merge into one.
+                     The owner's ruling is one class, so this table has one
+                     name where it had two - and both halves of the pickup
+                     move together, which is the lesson above. */
+                  PICKUP:'traffic', pickup:'traffic',
+                  VAN:'traffic', SEMI:'traffic',
+                  /* an AMBULANCE is one of them too, and this copy of the class
+                     map has to say so. RLG-114's lesson: the sheet keeps its own
+                     copy and a class that moves in one and not the other makes
                      the sheet print something the garage disagrees with. */
-                  AMBULANCE:'utility',
-                  van:'utility', truck:'utility' };
+                  AMBULANCE:'traffic',
+                  van:'traffic', truck:'traffic' };
     /* `key` is the body this row was built from, and `name` is what a reader
        prints. They part company where one body has two liveries: the name says
        CRUISER . BLACK and the key is still CRUISER, which is what the class

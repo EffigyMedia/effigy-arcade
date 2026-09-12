@@ -19,6 +19,24 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-88"></a>
+## [0.13.88] - 2026-09-12
+- Changed: **the fleet resorts into three groups, and everything that is not a racer is one class.**
+  RLG-213, the first of its three pieces - the ladder and the formula novelty are separate work.
+  Production is the low-end race class and the player starts in it, so a class and an unlock are now
+  two questions rather than one: the row stays in `BODY_CLASS` and `OPEN_FROM_THE_START` says it
+  costs nothing. The cab and the pickup leave production, which reverses RLG-114, and join the van,
+  the lorry and the ambulance in a single class on a single trigger. The merged class is called
+  `traffic`, which is the flag from the retired hundred-mile rule, so a save that earned it keeps
+  everything. Production stays `RACE_BANNED` until `classOf` has a production league to put a saloon
+  in - lifting it early would put a saloon on a grid of supercars.
+- Fixed: **a save from before the resort keeps every car it had won.** The two old flags,
+  `production` and `utility`, mean nothing under the new names, and read literally a save holding
+  only `utility` lost all three vehicles it had earned - measured at three of three. Either old name
+  now reads as the merged class. A player who had reached only 25 miles gains the two cars they had
+  not won, which is the right way round for this to be wrong.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-87"></a>
 ## [0.13.87] - 2026-09-12
 - Changed: **the flip control is a rotate glyph rather than the word REAR.** Owner, 2026-09-12, with
