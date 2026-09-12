@@ -19,6 +19,22 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-85"></a>
+## [0.13.85] - 2026-09-12
+- Fixed: **a cruiser takes damage from the traffic it weaves past wherever it is.** The collision ran
+  only under a guard, `k.z > pz - 900`, so a cruiser more than 900 units behind the player was tested
+  against nothing at all - and [RLG-157](../fragments/RLG-157.md) established that the police only
+  ever arrive from behind, so that was most of them for most of a chase. It is why the owner's report
+  that the police "are constantly crashing into traffic and destroying themselves" could never be
+  reproduced: a harness drives straight at a fixed speed, which leaves its cruisers behind the guard
+  where it was shut, and a real player's cruisers get level and ahead where it was open. The guard is
+  REMOVED rather than widened, because it was the only positional exemption from traffic damage on
+  the road - a rival racer is tested with no reference to the player and so is the player's own car.
+  Measured with a new check that counts HITS rather than kills, which is what makes it able to fail:
+  six traffic hits in the band over ninety seconds with the guard out, and zero with it back, on runs
+  that spent 11,491 and 10,779 cruiser-frames in that band.
+  [RLG-171](../fragments/RLG-171.md)
+
 <a id="v0-13-84"></a>
 ## [0.13.84] - 2026-09-11
 - Added: **the field's own lawlessness decides how many police are out.** Owner, 2026-09-10, on the

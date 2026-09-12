@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.70';
+window.ROAD_BUILD = '0.13.85';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -18197,9 +18197,35 @@ function step(dt){
     if((k.iframe || 0) > 0) k.iframe -= dt;
     if(Math.abs(k.x) > 1.16){ hurtCop(k, 60, 'barrier'); continue; }
 
-    // cops eat traffic too — that is the player's best weapon
+    /* ---- COPS EAT TRAFFIC TOO, WHEREVER THEY ARE (RLG-171) --------------
+       That is the player's best weapon, and for most of every pursuit it was
+       switched off. The test used to be guarded on `k.z > pz - 900`, so a
+       cruiser more than 900 units BEHIND the player was tested against
+       nothing and drove through the traffic it was weaving past. RLG-157
+       established that the police only ever arrive from behind, so that was
+       most of them for most of a chase.
+
+       IT IS ALSO WHY THE OWNER'S REPORT COULD NOT BE REPRODUCED. They wrote
+       that the police "are constantly crashing into traffic and destroying
+       themselves" and no harness run on either engine ever put a single
+       cruiser out that way - ninety seconds at four stars, five conditions,
+       both engines, zero. A harness driving straight at a fixed speed leaves
+       its cruisers behind the guard, where it was shut. A real player's
+       cruisers get level and ahead, where it was open.
+
+       THE GUARD IS GONE RATHER THAN WIDENED, because it was the only
+       positional exemption from traffic damage on the road and nothing else
+       has one. A rival racer is tested against traffic with no reference to
+       the player at all, and so is the player's own car. The owner has ruled
+       that everyone takes damage including the player, and a cruiser was the
+       single body that did not.
+
+       IT COSTS NOTHING TO REMOVE. `traffic` only holds cars near the player,
+       so a cruiser far up the road behind has nothing to be tested against
+       and the loop finds none - which is what the guard was buying.
+       ------------------------------------------------------------------- */
     let smashed=false;
-    if(k.grace<=0 && k.z > pz - 900) for(const c of traffic){
+    if(k.grace<=0) for(const c of traffic){
       if(Math.abs(c.z - k.z) < (c.len+k.len)/2 && Math.abs(c.x-k.x) < (c.w+k.w)/2){
         hurtCop(k, 45, 'traffic'); c.spd*=0.6; smashed=true; break;
       }
