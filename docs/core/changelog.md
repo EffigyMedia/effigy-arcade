@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-91"></a>
+## [0.13.91] - 2026-09-12
+- Changed: **the formula entry control carries no caption.** Owner: "we don't need to say there's no
+  formula league. That's true by omission." The button appears only for a formula car, so its
+  presence already says the car needs telling.
+- Fixed: **a formula win unlocks nothing.** Owner: "I don't think the formula car can be used to
+  unlock anything. It's just a novelty that breaks the game." A formula gold paid the iridescent
+  paints, from when formula was the top of the ladder with a league of its own - and with no league,
+  that meant winning any race in a formula car paid the last prize in the game against a class it
+  outguns by design. The ladder stops at super. The iridescent paints now have no source, which
+  belongs to the reward schedule and is not settled.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-90"></a>
 ## [0.13.90] - 2026-09-12
 - Added: **a formula car is told which class it is entering.** RLG-213's last piece. Owner: the

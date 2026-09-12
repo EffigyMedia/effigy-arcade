@@ -230,9 +230,16 @@ def main():
             " for(const k of ['SALOON','TUNER','STALLION','VECTOR']){"
             "   R.setBody(k); out[R.duty().cls] = R.goldPays(); } return out; }")
         res.ok(rungs == {'production': 'sports', 'sports': 'super',
-                         'super': 'formula', 'formula': 'iridescent'},
-               'and the whole ladder runs production, sports, super, formula',
+                         'super': 'formula', 'formula': ''},
+               'the ladder runs production, sports, super, formula - and STOPS',
                'it reads %r' % rungs)
+        # Owner, 2026-09-12: "I don't think the formula car can be used to unlock
+        # anything." A win in one used to pay the iridescent paints, which with no
+        # formula league meant winning ANY race in it paid the last prize in the
+        # game - against a class it outguns by design.
+        res.ok(rungs.get('formula') == '',
+               'a formula win unlocks nothing at all',
+               'it pays %r' % rungs.get('formula'))
 
         # ---- AND A PRODUCTION CAR CARRIES NO BOTTLE (owner, 2026-09-12) ------
         # "Production cars will not have nitrous bottles." It was already true and

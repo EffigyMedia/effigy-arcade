@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.90';
+window.ROAD_BUILD = '0.13.91';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -6307,8 +6307,19 @@ const PRODUCTION_BODIES = ['SALOON','COUPE'];
    because they are the only prize that is not a car, so nothing is made
    obsolete by winning them.
    --------------------------------------------------------------------- */
-const GOLD_PAYS = { production:'sports', sports:'super',
-                    super:'formula', formula:'iridescent' };
+const GOLD_PAYS = { production:'sports', sports:'super', super:'formula' };
+/* ---- AND A FORMULA WIN PAYS NOTHING (owner, 2026-09-12) -----------------
+   "I don't think the formula car can be used to unlock anything. It's just a
+   novelty that breaks the game."
+
+   So `formula` has no row. It had one: a formula gold paid the iridescent
+   paints, from when formula was the top of the ladder and had a league of its
+   own. With no league, that row meant winning ANY race in a formula car paid
+   the last prize in the game - against a class the car outguns by design.
+
+   THE IRIDESCENT PAINTS NOW HAVE NO SOURCE. That is a real gap and it belongs
+   to the reward schedule the owner has not settled, not to this line.
+   --------------------------------------------------------------------- */
 const SPORTS_BODIES = ['ROADSTER','TUNER','MUSCLE'];
 const SUPER_BODIES  = ['STALLION','MATADOR','CREST'];
 /* ---- AND THE OPEN-WHEELERS ARE A CLASS OF THEIR OWN ----------------------
@@ -25978,18 +25989,19 @@ function showGarage(){
 
          IT IS ONLY THERE FOR A FORMULA CAR, and that is not the usual rule on
          this screen - RLG-115 argues for greying a control out with the reason
-         given rather than hiding it, because a control that vanishes teaches
-         nothing. That reasoning does not carry here: MODE is shut for a van to
-         explain a RULE the player will meet again, while a class choice is
-         meaningless for a car that has a class. There is nothing to teach.
+         given rather than hiding it. That reasoning does not carry here: MODE
+         is shut for a van to explain a RULE the player meets again, while a
+         class choice for a car that HAS a class is nothing to teach.
 
-         IT IS BUILT LIKE THE MODE BUTTON, which is one function answering one
-         question so the label and the cycle cannot disagree.
+         AND IT CARRIES NO CAPTION. It shipped with a note reading NO FORMULA
+         LEAGUE . PICK A CLASS TO RACE, and the owner cut it the same day: the
+         button is only there for a formula car, so its presence already says
+         the car needs telling. A caption that states what the control's own
+         existence states is text the player reads once and never needs.
          ---------------------------------------------------------------- */
       (isFormula(optBody) ?
         '<button class="go ghost" data-act="entry">ENTER · <b>' +
-          entryClass().toUpperCase() + '</b></button>' +
-        '<div class="gnote">NO FORMULA LEAGUE · PICK A CLASS TO RACE</div>'
+          entryClass().toUpperCase() + '</b></button>'
         : '') +
       /* ---- THE MODE CONTROL, AND WHY IT MAY BE SHUT (RLG-115) ------------
          Owner, 2026-09-05, choosing between three shapes for what the player
