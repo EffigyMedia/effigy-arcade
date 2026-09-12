@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.92';
+window.ROAD_BUILD = '0.13.93';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4717,7 +4717,65 @@ function paintRig(kind, o){
     rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P);
 
     /* the boot shut line, which is what says saloon */
-    if(!isCoupe){
+    /* ---- WHAT SAYS HATCHBACK FROM BEHIND (RLG-213) ----------------------
+       The OUTLINE cannot say it - it is shared with the face by RLG-184, and
+       the attempt to run the glass down to a short tail gave the front a bus
+       windscreen. So the tailgate is a DETAIL inside the outline, which is
+       exactly what the invariant leaves free: "only the details inside it
+       differ".
+
+       A SALOON HAS A BOOT LID AND A HATCHBACK HAS A DOOR. The saloon's single
+       horizontal shut line below the glass is what draws that lid, so the hatch
+       does not get it; it gets a seam all the way round instead, from under the
+       glass down past the lamps, which is the one panel that opens.
+       ------------------------------------------------------------------- */
+    if(isHatch){
+      /* THE GLASS CARRIES ON DOWN, which is the whole of what a hatchback looks
+         like from behind: no boot lid under the window, just a door with a
+         window in it. Painted in the same gradient the greenhouse uses, so it
+         reads as one pane rather than as a dark rectangle. The seam round it is
+         where the door opens. */
+      /* it stops ABOVE the badge - a hatchback wears its marque on the door
+         below the window, and a badge floating on the glass reads as a sticker */
+      /* IT IS ONE PANE WITH THE GREENHOUSE, NOT A SECOND ONE UNDER IT. The
+         first build started it narrower than the glass above and framed the
+         top edge, so the car wore two windows with a bar between them. A
+         hatchback's rear window IS the top of its tailgate, so this begins at
+         exactly the width the greenhouse glass ends at - `0.5 +/- cabW/2 +
+         0.03`, the same expression that draws that edge - and carries the same
+         gradient on down. */
+      const gW = cabW/2 + 0.03;
+      const ty0 = deckY - h*0.012, ty1 = deckY + (bot - deckY)*0.30;
+      const tapr = 0.055;
+      const tg = g.createLinearGradient(0, roofY, 0, ty1);
+      tg.addColorStop(0,'#46586c'); tg.addColorStop(0.4,'#131a24');
+      tg.addColorStop(1,'#0a0d13');
+      g.fillStyle = tg;
+      g.beginPath();
+      g.moveTo(w*(0.5-gW), ty0); g.lineTo(w*(0.5+gW), ty0);
+      g.lineTo(w*(0.5+gW-tapr), ty1); g.lineTo(w*(0.5-gW+tapr), ty1);
+      g.closePath(); g.fill();
+      /* the streak the sky puts across it, raked the way the pane is */
+      g.fillStyle = 'rgba(255,255,255,.09)';
+      g.beginPath();
+      g.moveTo(w*(0.5-gW+0.035), ty0 + h*0.004);
+      g.lineTo(w*(0.5-gW+0.175), ty0 + h*0.004);
+      g.lineTo(w*(0.5-gW+0.110), ty1 - h*0.006);
+      g.lineTo(w*(0.5-gW+0.040), ty1 - h*0.006);
+      g.closePath(); g.fill();
+      /* and the rubber at its foot, which is where the glass stops and the
+         painted part of the door begins */
+      g.fillStyle = 'rgba(0,0,0,.38)';
+      g.fillRect(w*(0.5-gW+tapr), ty1, w*(gW-tapr)*2, Math.max(1, h*0.010));
+      /* the shut line: round the door, and past the lamps to the bumper */
+      g.strokeStyle='rgba(0,0,0,.34)'; g.lineWidth=Math.max(1,w*0.007);
+      const gx0 = w*0.10, gx1 = w*0.90, gy1 = bot - h*0.050;
+      g.beginPath();
+      g.moveTo(gx0, ty0); g.lineTo(gx0, gy1);
+      g.moveTo(gx1, ty0); g.lineTo(gx1, gy1);
+      g.moveTo(gx0, gy1); g.lineTo(gx1, gy1);
+      g.stroke();
+    } else if(!isCoupe){
       g.strokeStyle='rgba(0,0,0,.26)'; g.lineWidth=Math.max(1,w*0.006);
       g.beginPath();
       g.moveTo(w*0.10, deckY+h*0.055); g.lineTo(w*0.90, deckY+h*0.055); g.stroke();

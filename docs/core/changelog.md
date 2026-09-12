@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-93"></a>
+## [0.13.93] - 2026-09-12
+- Fixed: **the hatchback's tailgate reads as glass.** Owner: "it doesn't read as glass on the
+  tailgate." It was a second window under the first - narrower than the greenhouse glass ends,
+  framed along its top edge, and painted with only the dark end of the glass gradient, so the car
+  wore two panes with a bar between them and the lower one was a black rectangle. It is one pane now:
+  it begins at exactly the width the greenhouse glass ends at, using the same expression that draws
+  that edge, and carries the same three colour stops down to a rubber line where the painted part of
+  the door begins.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-92"></a>
 ## [0.13.92] - 2026-09-12
 - Added: **the HATCHBACK, the third production car.** Owner: "the production racers, sedan, coupe,
