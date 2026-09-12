@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.93';
+window.ROAD_BUILD = '0.13.94';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4755,14 +4755,24 @@ function paintRig(kind, o){
       g.moveTo(w*(0.5-gW), ty0); g.lineTo(w*(0.5+gW), ty0);
       g.lineTo(w*(0.5+gW-tapr), ty1); g.lineTo(w*(0.5-gW+tapr), ty1);
       g.closePath(); g.fill();
-      /* the streak the sky puts across it, raked the way the pane is */
-      g.fillStyle = 'rgba(255,255,255,.09)';
-      g.beginPath();
-      g.moveTo(w*(0.5-gW+0.035), ty0 + h*0.004);
-      g.lineTo(w*(0.5-gW+0.175), ty0 + h*0.004);
-      g.lineTo(w*(0.5-gW+0.110), ty1 - h*0.006);
-      g.lineTo(w*(0.5-gW+0.040), ty1 - h*0.006);
-      g.closePath(); g.fill();
+      /* ---- THERE IS NO SPECULAR STREAK ON THIS PANE, DELIBERATELY (RLG-216)
+         A raked quad of flat `rgba(255,255,255,.09)` was drawn here to be the
+         light the sky lays across the glass. On the fleet sheet it read as a
+         hard-edged triangle cut OUT of the tailgate rather than as light lying
+         ON it, in every one of the seven rear lamp states.
+
+         Softening it did not fix it. Narrowing it and fading it to nothing at
+         the foot of the pane still left a wedge, because the fault is not the
+         edge: THE TAILGATE AND THE GREENHOUSE ARE ONE PANE, which is the whole
+         point of drawing it from the same three colour stops, and the
+         greenhouse above carries no streak. A highlight on the lower half
+         alone declares a seam across the middle of a pane that has none.
+
+         So the streak is gone and the glass is continuous. If light on this
+         pane is ever wanted, it has to run the FULL height of the greenhouse
+         and the tailgate together, as one drawing, or it will say the same
+         wrong thing again.
+         ---------------------------------------------------------------- */
       /* and the rubber at its foot, which is where the glass stops and the
          painted part of the door begins */
       g.fillStyle = 'rgba(0,0,0,.38)';
@@ -4875,13 +4885,29 @@ function paintRig(kind, o){
     /* the marque, on the boot lid between the lamps — the tuner and the
        muscle car have their own, everything else gets the generic one */
     /* a car can share a BODY without sharing an identity */
-    if(o.marque) drawMarque(g, o.marque, w*0.5, deckY + h*0.088, h*0.034);
+    /* ---- A BADGE GOES ON PAINT, NOT ON GLASS (RLG-216) -------------------
+       `deckY + 0.088` is the boot lid, and every other body in the fleet has
+       painted metal there. THE HATCHBACK DOES NOT: its tailgate glass runs
+       from `deckY - 0.012` down to `deckY + (bot-deckY)*0.30`, which on this
+       body is 0.50h to 0.628h, and the badge at 0.588h was sitting inside it.
+       A marque floating on a rear window is a sticker, and the owner read it
+       as one on the fleet sheet.
+
+       So the hatch alone wears its badge LEVEL WITH THE LAMPS. That is the
+       first painted panel below the glass, it is where a real hatchback's
+       badge sits, and the lamp clusters stop at 0.315 and start again at
+       0.685 of the width, so the middle of the car is clear for it.
+
+       Read from `ly` and `lh` rather than written as a number, so the badge
+       follows the lamps if they ever move. */
+    const mqY = isHatch ? ly + lh*0.5 : deckY + h*0.088;
+    if(o.marque) drawMarque(g, o.marque, w*0.5, mqY, h*0.034);
     else if(!isTuner && !isMuscle && kind !== 'cop')
-      drawMarque(g, 'GENERIC', w*0.5, deckY + h*0.088, h*0.034);
+      drawMarque(g, 'GENERIC', w*0.5, mqY, h*0.034);
     if(isTuner || isMuscle)
       /* lower: it was riding on the shut line rather than sitting on the
          panel below it */
-      drawMarque(g, isTuner ? 'TUNER' : 'MUSCLE', w*0.5, deckY + h*0.088, h*0.038);
+      drawMarque(g, isTuner ? 'TUNER' : 'MUSCLE', w*0.5, mqY, h*0.038);
 
     /* the taxi's chequer band and its roof sign */
     if(isTaxi){

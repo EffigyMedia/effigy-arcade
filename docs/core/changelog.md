@@ -19,6 +19,25 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-94"></a>
+## [0.13.94] - 2026-09-12
+- Fixed: **the hatchback wears its badge on paint, not on the glass.** Owner, from the fleet sheet:
+  the badge sits on the tailgate glass and must drop below it, because the saloon and the coupe wear
+  theirs on painted metal. The rear painter drew the marque at one height for the whole fleet, and on
+  every other body that height is the boot lid; the hatchback has no boot lid, so the badge was
+  floating on the rear window and read as a sticker. It now sits level with the lamps, on the first
+  painted panel under the glass, read from the lamps' own position so it follows them if they move.
+  Every other body is untouched. [RLG-216](../fragments/RLG-216.md)
+- Fixed: **the streak on the hatchback's tailgate is gone.** It was a flat raked quad of white at
+  nine per cent, and at the size a car is drawn it read as a hard-edged triangle cut out of the glass
+  rather than as light lying on it. Narrowing it and fading it out still left a wedge: the tailgate
+  and the greenhouse are one pane, the greenhouse carries no streak, and a highlight on the lower
+  half alone declares a seam that is not there. [RLG-216](../fragments/RLG-216.md)
+- Added: `tools/badge-test.py`, which reads the built rear sprite and asserts the glass is unbroken
+  and the badge is below it. `--falsify` serves the badge back at the boot-lid height and both checks
+  fail. Two earlier builds of it were vacuous and the second passed its own falsifier; the fragment
+  records why. [RLG-216](../fragments/RLG-216.md)
+
 <a id="v0-13-93"></a>
 ## [0.13.93] - 2026-09-12
 - Fixed: **the hatchback's tailgate reads as glass.** Owner: "it doesn't read as glass on the
