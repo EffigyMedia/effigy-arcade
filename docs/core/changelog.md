@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-92"></a>
+## [0.13.92] - 2026-09-12
+- Added: **the HATCHBACK, the third production car.** Owner: "the production racers, sedan, coupe,
+  and hatchback." Production was two cars and every other class is three. It is the shared shell
+  again, like the tuner and the muscle car - one constant in each painter rather than a new drawing -
+  and it is in traffic as well, taking a slice of the plain-saloon band. 116mph, between the saloon
+  and the coupe, lighter than both and the best of the three off the line. Its first shape dropped
+  the deck so the glass ran to a short tail, and the face came out with a windscreen the depth of a
+  bus: the greenhouse is part of the outline and the outline is shared by both ends, so a rear-only
+  shape change is not available to this fleet. It is a small upright car instead.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-91"></a>
 ## [0.13.91] - 2026-09-12
 - Changed: **the formula entry control carries no caption.** Owner: "we don't need to say there's no

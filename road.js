@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.91';
+window.ROAD_BUILD = '0.13.92';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3394,6 +3394,24 @@ const BODY = {
   'COUPE': { hardy:1.10, rig:'coupe',  gears:4, wide:0.010, arch:0.90, horn:1.02,
                redline:9000, pitch:1.05, rear:'GENERIC', mass:1340, hp:210, grip:0.73, launch:0.87, mech:1.03, vmax:0.6,
                note:'COUPE \u00B7 THE QUICKEST THING THAT IS NOT A RACER' },
+  /* ---- THE HATCHBACK, THE THIRD PRODUCTION CAR (RLG-213) ----------------
+     Owner, 2026-09-12: "the production racers, sedan, coupe, and hatchback."
+     Production was two cars and every other class in this game is three.
+
+     WHERE IT SITS IS THE WHOLE OF ITS DESIGN. The COUPE is the quickest thing
+     that is not a racer at vmax 0.60 and the SALOON is 0.56, so the hatchback
+     goes between them - lighter than the saloon, less slippery than the coupe,
+     and the best of the three off the line because there is nothing behind the
+     rear axle. It is the one you pick for a tight circuit and give up on a
+     straight.
+
+     NO BOTTLE, like the rest of production, and the class says so rather than
+     this record: `hasNosFor` names the classes that carry one and production
+     is deliberately not among them.
+     ------------------------------------------------------------------- */
+  'HATCH': { hardy:1.12, rig:'hatch', gears:4, wide:0.014, arch:0.94, horn:1.00,
+               redline:8800, pitch:1.00, rear:'GENERIC', mass:1290, hp:180, grip:0.70, launch:0.95, mech:1.04, vmax:0.58,
+               note:'HATCHBACK · SMALL, KEEN, AND MOSTLY CABIN' },
   'SALOON': { hardy:1.15, rig:'sedan',  gears:4, wide:0.020, arch:0.92, horn:0.96,
                redline:8500, pitch:0.92, rear:'GENERIC', mass:1480, hp:160, grip:0.66, launch:0.92, mech:1.03, vmax:0.56,
                note:'SALOON \u00B7 ENTIRELY UNREMARKABLE' },
@@ -3909,11 +3927,39 @@ function paintRigFront(kind, o){
        lamps — all of which sit on the shared shell, so it costs the same
        almost-nothing the tuner did. */
     const isMuscle = kind === 'muscle';
+    /* ---- THE HATCHBACK (RLG-213) ------------------------------------------
+       The third production car. It is the shared shell again, like the tuner
+       and the muscle car before it, and it is a SILHOUETTE rather than a set
+       of details: a saloon has a boot behind its rear glass and a hatchback
+       does not, so the greenhouse runs further down the back of the car and
+       the tail below it is short.
+
+       ONE ROOF, ONE DECK, ONE CAB WIDTH, AND BOTH PAINTERS READ THE SAME
+       THREE. `car-ends-test` measures the outline column by column at both
+       ends and fails a car whose face and tail disagree (RLG-184), so these
+       lines exist once in each painter and must be kept identical - which is
+       why they are named here rather than written into the shape.
+
+       AND THAT IS WHY THE DECK IS NOT WHAT SAYS HATCHBACK. The first build
+       dropped `deckY` to 0.60 on the reasoning that a hatchback's glass runs
+       down to a short tail. It does - but the greenhouse is part of the
+       OUTLINE, the outline is shared by both ends, and the face came out with
+       a windscreen the depth of a bus. The invariant passed and the car looked
+       wrong, which is the invariant doing exactly its job: a rear-only shape
+       change is not available to this fleet.
+
+       SO IT IS A SMALL UPRIGHT CAR AT BOTH ENDS: the roof higher than a
+       saloon's and the cabin narrower. That reads from the front and from
+       behind, and it is what a supermini actually is.
+       ------------------------------------------------------------------- */
+    const isHatch = kind === 'hatch';
     const isCoupe = kind === 'coupe' || isTuner || isMuscle || isOpen;
-    const roofY = h*(isOpen ? 0.30 : isMuscle ? 0.20 : isCoupe ? 0.22 : 0.16);
-    const deckY = h*(isCoupe ? 0.52 : 0.48);
+    const roofY = h*(isOpen ? 0.30 : isMuscle ? 0.20
+                   : isCoupe ? 0.22 : isHatch ? 0.13 : 0.16);
+    const deckY = h*(isCoupe ? 0.52 : isHatch ? 0.50 : 0.48);
     const bot   = cy - h*0.075;
-    const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44 : 0.52;
+    const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44
+                : isHatch ? 0.48 : 0.52;
 
     const pRoof = roofY, pDeck = deckY, pCab = cabW;
 
@@ -4578,11 +4624,39 @@ function paintRig(kind, o){
        lamps — all of which sit on the shared shell, so it costs the same
        almost-nothing the tuner did. */
     const isMuscle = kind === 'muscle';
+    /* ---- THE HATCHBACK (RLG-213) ------------------------------------------
+       The third production car. It is the shared shell again, like the tuner
+       and the muscle car before it, and it is a SILHOUETTE rather than a set
+       of details: a saloon has a boot behind its rear glass and a hatchback
+       does not, so the greenhouse runs further down the back of the car and
+       the tail below it is short.
+
+       ONE ROOF, ONE DECK, ONE CAB WIDTH, AND BOTH PAINTERS READ THE SAME
+       THREE. `car-ends-test` measures the outline column by column at both
+       ends and fails a car whose face and tail disagree (RLG-184), so these
+       lines exist once in each painter and must be kept identical - which is
+       why they are named here rather than written into the shape.
+
+       AND THAT IS WHY THE DECK IS NOT WHAT SAYS HATCHBACK. The first build
+       dropped `deckY` to 0.60 on the reasoning that a hatchback's glass runs
+       down to a short tail. It does - but the greenhouse is part of the
+       OUTLINE, the outline is shared by both ends, and the face came out with
+       a windscreen the depth of a bus. The invariant passed and the car looked
+       wrong, which is the invariant doing exactly its job: a rear-only shape
+       change is not available to this fleet.
+
+       SO IT IS A SMALL UPRIGHT CAR AT BOTH ENDS: the roof higher than a
+       saloon's and the cabin narrower. That reads from the front and from
+       behind, and it is what a supermini actually is.
+       ------------------------------------------------------------------- */
+    const isHatch = kind === 'hatch';
     const isCoupe = kind === 'coupe' || isTuner || isMuscle || isOpen;
-    const roofY = h*(isOpen ? 0.30 : isMuscle ? 0.20 : isCoupe ? 0.22 : 0.16);
-    const deckY = h*(isCoupe ? 0.52 : 0.48);
+    const roofY = h*(isOpen ? 0.30 : isMuscle ? 0.20
+                   : isCoupe ? 0.22 : isHatch ? 0.13 : 0.16);
+    const deckY = h*(isCoupe ? 0.52 : isHatch ? 0.50 : 0.48);
     const bot   = cy - h*0.075;
-    const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44 : 0.52;
+    const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44
+                : isHatch ? 0.48 : 0.52;
 
     /* the greenhouse: narrower than the body, and raked on a coupe */
     g.fillStyle = P.lo;
@@ -6299,7 +6373,7 @@ let optPaint = 'WHITE', optEasy = true;   /* no cops unless HOT PURSUIT is on */
    classes above it. The third car is its own piece of work and drops in here
    with no other edit.
    --------------------------------------------------------------------- */
-const PRODUCTION_BODIES = ['SALOON','COUPE'];
+const PRODUCTION_BODIES = ['SALOON','COUPE','HATCH'];
 /* ---- WHAT A GOLD PAYS, AS ONE TABLE (RLG-213) --------------------------
    The rungs of the ladder, in one place because three readers ask: the finish
    that grants it, the garage caption that promises it, and a harness that
@@ -6502,7 +6576,7 @@ function rigBox(rig){
        : rig === 'van' || rig === 'ambulance' ? [200,176]
        : rig === 'pickup' ? [206,176]
        : rig === 'truck'  ? [230,250]
-       : rig === 'sedan' || rig === 'taxi' ? [200,164]
+       : rig === 'sedan' || rig === 'taxi' || rig === 'hatch' ? [200,164]
        : [206,150];
 }
 
@@ -6698,7 +6772,10 @@ function buildFleet(){
      at boot. Cheap, and it turns a road of identical grey saloons into
      traffic. */
   TRAFFIC_SP = {};
-  for(const kind of ['sedan','sedan2','coupe','tuner','muscle','pickup','van']){
+  /* THE HATCHBACK IS TRAFFIC TOO (owner, 2026-09-12): "of course those remain
+     in traffic as well". A production racer is an ordinary car that races, so
+     the same body keeps turning up in the field. */
+  for(const kind of ['sedan','sedan2','hatch','coupe','tuner','muscle','pickup','van']){
     const rig = kind === 'sedan2' ? 'sedan' : kind;
     const size = kind === 'van'    ? [200,196]
                : kind === 'pickup' ? [206,176]
@@ -6811,7 +6888,10 @@ function buildFleet(){
      already covered further down. Both gaps are closed here, and the block
      renderer they were falling back to is gone.
      ------------------------------------------------------------------- */
-  for(const kind of ['sedan','sedan2','coupe','tuner','muscle','pickup','van']){
+  /* THE HATCHBACK IS TRAFFIC TOO (owner, 2026-09-12): "of course those remain
+     in traffic as well". A production racer is an ordinary car that races, so
+     the same body keeps turning up in the field. */
+  for(const kind of ['sedan','sedan2','hatch','coupe','tuner','muscle','pickup','van']){
     const rig = kind === 'sedan2' ? 'sedan' : kind;
     const size = kind === 'van'    ? [200,196]
                : kind === 'pickup' ? [206,176]
@@ -9179,7 +9259,9 @@ function spawnBehind(){
           : roll<0.40 ? 'pickup' : roll<0.52 ? 'coupe'
           : roll<0.58 ? 'tuner'  : roll<0.66 ? 'muscle'
           : roll<0.72 ? 'taxi'
-          : roll<0.86 ? 'sedan'  : 'sedan2';
+          /* the HATCHBACK is an ordinary car before it is a racer (RLG-213),
+             so it takes a slice of the plain-saloon band rather than a new one */
+          : roll<0.80 ? 'sedan'  : roll<0.88 ? 'hatch' : 'sedan2';
   const behindCruise = Math.min((TYPE_VMAX[t] || 0.58) * MAX_SPD, 0.46 * MAX_SPD,
                                 Math.max(spd * 1.12, (t==='truck' ? 0.24 : 0.34) * MAX_SPD));
   traffic.push({
@@ -9326,7 +9408,9 @@ function spawnWave(z){
             : roll<0.42 ? 'pickup' : roll<0.53 ? 'coupe'
             : roll<0.59 ? 'tuner'  : roll<0.67 ? 'muscle'
             : roll<0.73 ? 'taxi'
-            : roll<0.86 ? 'sedan'  : 'sedan2';
+            /* the HATCHBACK is an ordinary car before it is a racer (RLG-213),
+             so it takes a slice of the plain-saloon band rather than a new one */
+          : roll<0.80 ? 'sedan'  : roll<0.88 ? 'hatch' : 'sedan2';
     if(t === 'cop') patrolsMade++;
     const mind = rollMind(t);
     traffic.push({
@@ -9633,7 +9717,7 @@ function stepDeer(){
 }
 /* what each vehicle can actually do, as a fraction of MAX_SPD. This is the CAR,
    and it is the only thing in here that reads the body. */
-const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55,
+const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55, hatch:0.58,
                     /* ---- AN AMBULANCE IS A QUICKER VAN (owner, 2026-09-07) ----
                        "let's make the ambulance a little bit faster than the van."
                        It is the same box on the same wheels, so it is nowhere near
@@ -9663,7 +9747,7 @@ const TYPE_VMAX = { truck:0.34, van:0.50, pickup:0.52, taxi:0.55,
                        recorded 170mph pass behind it, and that is the whole
                        point of it. */
                     cop:0.71,
-                    sedan:0.58, sedan2:0.58, coupe:0.66, tuner:0.74, muscle:0.78,
+                    sedan:0.58, sedan2:0.58, hatch:0.58, coupe:0.66, tuner:0.74, muscle:0.78,
                     /* A SUPERCAR IN TRAFFIC GETS THE SUPERCAR'S STATS (RLG-042).
                        It is slow because the person driving it is going to work,
                        not because the car was made slower for being traffic. */
@@ -15619,8 +15703,9 @@ function drawWheel(){
      The patrol cars are not in this list. They are pursuit vehicles, and the
      owner named production and utility.
      ------------------------------------------------------------------- */
-  const PLAIN_WHEEL = { SALOON:1, COUPE:1, CAB:1, PICKUP:1, VAN:1, SEMI:1,
-                        sedan:1, sedan2:1, coupe:1, taxi:1, pickup:1, van:1, truck:1 };
+  const PLAIN_WHEEL = { SALOON:1, COUPE:1, HATCH:1, CAB:1, PICKUP:1, VAN:1, SEMI:1,
+                        sedan:1, sedan2:1, hatch:1, coupe:1, taxi:1, pickup:1,
+                        van:1, truck:1 };
   const plain = !!PLAIN_WHEEL[optBody];
   /* a lorry's wheel is big and THIN - it is turned with the whole arm rather
      than gripped, and a fat sports rim on one reads as the wrong vehicle */
@@ -26209,7 +26294,7 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                   rows and the production gold below land together.
                   -------------------------------------------------------- */
                'ROADSTER':'sports', 'TUNER':'sports', 'MUSCLE':'sports',
-               'SALOON':'production', 'COUPE':'production',
+               'SALOON':'production', 'COUPE':'production', 'HATCH':'production',
                'CAB':'traffic', 'PICKUP':'traffic',
                'VAN':'traffic', 'SEMI':'traffic', 'AMBULANCE':'traffic' };
 /* ---- A CLASS YOU DO NOT HAVE TO WIN (RLG-213) ---------------------------
@@ -29434,7 +29519,9 @@ requestAnimationFrame(frameLoop);
               : roll<0.42 ? 'pickup' : roll<0.53 ? 'coupe'
               : roll<0.59 ? 'tuner'  : roll<0.67 ? 'muscle'
               : roll<0.73 ? 'taxi'
-              : roll<0.86 ? 'sedan'  : 'sedan2';
+              /* the HATCHBACK is an ordinary car before it is a racer (RLG-213),
+             so it takes a slice of the plain-saloon band rather than a new one */
+          : roll<0.80 ? 'sedan'  : roll<0.88 ? 'hatch' : 'sedan2';
       out[t] = (out[t] || 0) + 1;
     }
     return out;
@@ -29560,8 +29647,9 @@ requestAnimationFrame(frameLoop);
                   VECTOR:'formula', APEX:'formula', COMET:'formula',
                   ROADSTER:'sport', TUNER:'sport', MUSCLE:'sport',
                   CRUISER:'police', SUPERCRUISER:'police',
-                  SALOON:'production', COUPE:'production',
+                  SALOON:'production', COUPE:'production', HATCH:'production',
                   sedan:'production', sedan2:'production', coupe:'production',
+                  hatch:'production',
                   tuner:'sport', muscle:'sport',
                   /* ---- THE CAB MOVES OUT OF PRODUCTION (RLG-213) ----------
                      Production is the LOW END RACE class now, and a taxi is not
@@ -29694,9 +29782,11 @@ requestAnimationFrame(frameLoop);
     }
     const traf = { sedan:SP.sedan, sedan2:SP.sedan2, coupe:SP.coupe, van:SP.van,
                    pickup:SP.pickup, truck:SP.truck, taxi:(TRAFFIC_SP.taxi||[])[0],
+                   hatch:(TRAFFIC_SP.hatch||[])[0],
                    muscle:(TRAFFIC_SP.muscle||[])[0], tuner:(TRAFFIC_SP.tuner||[])[0] };
     const trafRig = { sedan:'sedan', sedan2:'sedan', coupe:'coupe', van:'van', pickup:'pickup',
-                      truck:'truck', taxi:'taxi', muscle:'muscle', tuner:'tuner' };
+                      truck:'truck', taxi:'taxi', hatch:'hatch',
+                      muscle:'muscle', tuner:'tuner' };
     for(const k in traf)
       if(traf[k]) add(k, 'rig:'+trafRig[k], traf[k], (FRONT_SP[k]||[])[0] || null);
     if(SP.cop) add('CRUISER', 'rig:cop', SP.cop, (FRONT_SP.cop||[])[0] || null);

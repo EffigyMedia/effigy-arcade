@@ -46,7 +46,7 @@ GAMES = {
 # AND RLG-213 PUT A CLASS UNDERNEATH SPORTS, so it failed again for the same reason and the same way:
 # a fresh save now holds PRODUCTION, and the sports cars are won by taking a production tournament.
 # The list follows the bottom of the ladder wherever it goes.
-EXPECTED_CARS = ['SALOON', 'COUPE']
+EXPECTED_CARS = ['SALOON', 'COUPE', 'HATCH']
 # and the ones that must NOT be there until they are earned - the sports cars among them now
 LOCKED_CARS = ['ROADSTER', 'TUNER', 'MUSCLE',
                'STALLION', 'MATADOR', 'CREST', 'VECTOR', 'APEX', 'COMET', 'CAB', 'VAN', 'SEMI']

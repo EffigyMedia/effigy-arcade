@@ -51,10 +51,10 @@ from harness import console_utf8, launch_chromium, boot, until
 GAME = 'games/sw/interstate.html'
 KEY = 'effigyarcade.save.v1.interstate-opts'
 
-PRODUCTION = ['SALOON', 'COUPE']
+PRODUCTION = ['SALOON', 'COUPE', 'HATCH']
 MERGED = ['CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE']
 SPORTS = ['ROADSTER', 'TUNER', 'MUSCLE']
-EXPECT = {'production': ['SALOON', 'COUPE'],
+EXPECT = {'production': ['SALOON', 'COUPE', 'HATCH'],
           'sports': ['ROADSTER', 'TUNER', 'MUSCLE'],
           'super': ['STALLION', 'MATADOR', 'CREST']}
 
@@ -137,7 +137,7 @@ def main():
         have = listed(page)
         missing = [k for k in PRODUCTION if k not in have]
         res.ok(not missing,
-               'a new player STARTS in production - both cars, nothing to unlock',
+               'a new player STARTS in production - every car, nothing to unlock',
                'not offered: %s' % ', '.join(missing))
         early = [k for k in MERGED if k in have]
         res.ok(not early, 'and has none of the merged class yet',
