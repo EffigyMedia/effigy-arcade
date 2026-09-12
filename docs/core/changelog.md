@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-1"></a>
+## [0.14.1] - 2026-09-12
+- Fixed: **from behind, the body now stands in front of the mirror.** Owner: "the rearview mirrors
+  from the rear view are being drawn on top of the body, which suggests they are not being obscured by
+  the body." They were painted last, so a mirror sat on the shoulder like a sticker instead of
+  standing out from behind it. The rear painters draw them first now and let the body cover what lies
+  inboard of the flank. The FRONT still paints them last, which is not an inconsistency: near is on
+  top, far is behind - the same rule as the shading, applied to draw order.
+  [RLG-224](../fragments/RLG-224.md)
+
 <a id="v0-14-0"></a>
 ## [0.14.0] - 2026-09-12
 - Changed: **what sits at one end of a car is now darker from the other, across the fleet.** Owner:

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.0';
+window.ROAD_BUILD = '0.14.1';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -5140,6 +5140,28 @@ function paintRig(kind, o){
     const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44
                 : isHatch ? 0.48 : 0.52;
 
+    /* ---- AND FROM BEHIND, THE CAR IS IN FRONT OF ITS OWN MIRROR (RLG-224)
+       Owner, 2026-09-12: "the rearview mirrors from the rear view are being
+       drawn on top of the body, which suggests they are not being obscured by
+       the body."
+
+       THEY WERE PAINTED LAST, so a mirror sat ON the shoulder like a sticker
+       instead of standing out from behind it. A door mirror is mounted halfway
+       down the car: from the back, the bodywork is between you and everything
+       of it that lies inboard of the flank, and only the part that clears the
+       body should be visible.
+
+       SO THE REAR DRAWS IT FIRST AND LETS THE BODY COVER IT. The FRONT keeps
+       painting it last, and that is not an inconsistency - from the front you
+       are looking at the face of the mirror with nothing in the way, and it is
+       the nearest thing on that end of the car. Near is on top, far is behind:
+       the same rule as the shading (RLG-222), applied to order instead of
+       colour. The van already did it this way and looked right, which is what
+       gave the answer away.
+       ------------------------------------------------------------------- */
+    /* the mirrors this end never drew - see `rigFurniture` */
+    rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P, true);
+
     /* the greenhouse: narrower than the body, and raked on a coupe */
     g.fillStyle = P.lo;
     g.beginPath();
@@ -5194,9 +5216,6 @@ function paintRig(kind, o){
            w*0.124, h*0.016, h*0.010); g.fill();
       }
     }
-
-    /* the mirrors this end never drew - see `rigFurniture` */
-    rigFurniture(g, w, h, 'saloon', { cab:cabW, deck:deckY }, P, true);
 
     /* the boot shut line, which is what says saloon */
     /* ---- WHAT SAYS HATCHBACK FROM BEHIND (RLG-213) ----------------------
@@ -6273,6 +6292,10 @@ function paintCar(o){
       paintFormulaTail(g, w, h, o, B, lamps);
       return;
     }
+    /* the door mirrors, which the tail never drew - see `carMirrors`. Drawn
+       BEFORE the body for the reason the rig painter records. */
+    if(B) carMirrors(g, w, h, S, o, true);
+
     // lower body
     const bg = g.createLinearGradient(0, h*o.bodyTop, 0, cy);
     bg.addColorStop(0, o.hi); bg.addColorStop(0.5, o.body); bg.addColorStop(1, o.lo);
@@ -6369,9 +6392,6 @@ function paintCar(o){
       g.fillStyle = '#2b3038';
       for(const sx of [0.285, 0.695]) g.fillRect(w*sx, bY + h*0.040, w*0.020, h*0.020);
     }
-
-    /* the door mirrors, which the tail never drew - see `carMirrors` */
-    if(B) carMirrors(g, w, h, S, o, true);
 
     /* the shoulder crease that runs across every one of them */
     g.strokeStyle = 'rgba(255,255,255,.16)'; g.lineWidth = Math.max(1, h*0.006);
