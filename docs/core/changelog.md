@@ -19,6 +19,23 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-99"></a>
+## [0.13.99] - 2026-09-12
+- Changed: **the ambulance is a box on a cab.** Owner, with a box-ambulance reference: a red light bar
+  across the top of the box, three amber marker lamps on the cab roof, a very tall dark windscreen,
+  mirrors on arms, a grille with red in it, and a black bumper with a white plate - and a body wider
+  than the cab. It was a van in white with a cross on it. From the front you now see the cab with the
+  box standing proud above and to each side; from behind, the box alone.
+  [RLG-221](../fragments/RLG-221.md)
+- Changed: **and its outline moved at both ends, deliberately.** The widening is a silhouette change,
+  which costs nothing on this vehicle because the box IS the back. 188x174 at both ends against
+  192x166, at 0.0% silhouette error. Every shared number lives in one place so the two ends cannot
+  drift. [RLG-221](../fragments/RLG-221.md)
+- Changed: **the light bar rose with the box, and the wash it throws followed it.** `barY` is measured
+  off the finished sprite rather than derived - the bar's red rows are 3 to 8 of 176, mid 0.0313,
+  against a declared 0.032. The bar keeps the fleet's 0.24-0.76 span: a wider one would have put the
+  red wash either side of the lamps casting it. [RLG-221](../fragments/RLG-221.md)
+
 <a id="v0-13-98"></a>
 ## [0.13.98] - 2026-09-12
 - Fixed: **a four-speed's gate has two rails, on the thumb as well as the keyboard.** Owner: "you can

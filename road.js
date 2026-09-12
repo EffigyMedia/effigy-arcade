@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.98';
+window.ROAD_BUILD = '0.13.99';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3503,7 +3503,12 @@ const BODY = {
      an ambulance is built to get moving rather than to have a higher top end.
      The owner has ruled the other way and the vehicle is faster in both tables.
      -------------------------------------------------------------------- */
-  'AMBULANCE': { hardy:1.20, rig:'ambulance', big:true, bar:'medical', barY:0.074, gears:4,
+  'AMBULANCE': { hardy:1.20, rig:'ambulance', big:true, bar:'medical',
+               /* the bar rose with the box (RLG-221): the heads now sit at rows
+                  0.015 to 0.049 of the sprite, mid 0.032, where they were 0.055 to
+                  0.099 on a van's roofline. This is what puts the RED WASH on the
+                  road under the lamps casting it rather than above them. */
+               barY:0.032, gears:4,
                wide:0.060, arch:1.00, horn:0.78,
                /* quicker than the van, on the owner's word - see TYPE_VMAX, which
                   carries the reasoning and had to move by the same amount */
@@ -3672,6 +3677,44 @@ let optBody = 'SALOON';
    it: a lorry is a wall of glass, a van is a slab, a pickup has a tall square
    grille, a coupe sits low.
    =========================================================================== */
+/* ---- THE AMBULANCE IS A BOX ON A CAB, AND THE BOX IS THE OUTLINE (RLG-221)
+   Owner, 2026-09-12, with a box-ambulance reference: a red light bar across the
+   top of the box, three amber marker lamps on the cab roof, a very tall dark
+   windscreen, mirrors on arms, a grille with red in it, and a black bumper with
+   a white plate. And the body itself is a BOX WIDER THAN THE CAB.
+
+   THAT LAST ONE IS AN OUTLINE CHANGE AND THE OWNER WAS TOLD SO BEFORE IT WAS
+   BUILT. RLG-184 declares the outline once and both painters trace it, so
+   anything that changes the shape changes the tail as well - and the owner
+   agreed to plan it that way, which is right for an ambulance because THE BOX
+   IS THE BACK. There is no version of this where the two ends disagree.
+
+   AND THE BOX ENCLOSES EVERYTHING, WHICH IS WHAT MAKES IT LEGAL. From the front
+   you see the cab with the box standing proud above it and to each side; from
+   behind you see the box alone. Both silhouettes are the same rectangle. The
+   cab is a DETAIL INSIDE it, which is exactly what the invariant leaves free -
+   the hatchback learned that the hard way when a rear-only shape change gave
+   its face a bus windscreen (RLG-216).
+
+   SO THE NUMBERS LIVE HERE AND NOT IN EITHER PAINTER. Written twice they drift,
+   and this file has been caught by that four times. The mirrors are the one
+   thing that is front-only, and legitimately: they stand outboard of the CAB
+   and the box is wider still, so they are inside the outline rather than part
+   of it - which is also what you actually see, because from directly behind an
+   ambulance the box hides its own mirrors.
+   ------------------------------------------------------------------------- */
+function ambBox(h){
+  const cy = h;
+  return {
+    x0: 0.030, x1: 0.970,          /* the box - wider than the van's 0.055/0.945 */
+    top: h*0.055,                   /* and taller than its 0.10 */
+    bot: cy - h*0.10,               /* on the same floor, because it is the same chassis */
+    cx0: 0.120, cx1: 0.880,         /* the cab, inside it, seen from the front only */
+    ctop: h*0.190,                  /* its roof, below the box's */
+    mx0: 0.050, mx1: 0.920          /* the mirror heads - outboard of the cab, inboard of the box */
+  };
+}
+
 function paintRigFront(kind, o){
   /* ---- AN AMBULANCE IS DRAWN AS A VAN -----------------------------------
      It carries its own RIG so that it can have its own sprite: `SP` is keyed by
@@ -3804,6 +3847,149 @@ function paintRigFront(kind, o){
         rr(g, b[0], b[1], b[2], b[3], 2); g.fill();
       }
       rigFurniture(g, w, h, 'truck', { top:top, bot:bot }, P);
+      return;
+    }
+
+    if(kind === 'van' && o.bar){
+      /* ---- THE AMBULANCE'S FACE (RLG-221) --------------------------------
+         A cab standing in front of a box, and the box is what you see the edges
+         of. `ambBox` owns every number that is shared with the tail; nothing
+         below invents one.
+
+         IT RETURNS BEFORE THE VAN'S FACE, which is the point. The first pass at
+         this put an `isAmb` test inside the van's grille block, so the two
+         vehicles' faces were interleaved and every later edit to one had to be
+         reasoned about against the other. They are two faces on one rig; they
+         read better as two blocks. */
+      const A = ambBox(h);
+      const bw = A.x1 - A.x0, cw = A.cx1 - A.cx0;
+      vehicleTyres(g, w, h, 'van', A.bot);
+      /* the box, which is the whole outline */
+      g.fillStyle = grad(A.top, A.bot);
+      rr(g, w*A.x0, A.top, w*bw, A.bot - A.top, w*0.030); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.14)';
+      rr(g, w*A.x0, A.top, w*bw, h*0.024, w*0.022); g.fill();
+      /* ---- THE RED BAR SITS ON THE BOX, NOT ON A CAR'S ROOFLINE ---------
+         Owner: "a RED LIGHT BAR across the top of the box". The shared bar
+         block at the foot of this painter draws at a van's `top`, and the box
+         roof is higher - so this branch draws its own from `A.top`, and the
+         tail draws the same bar from the same number. The lenses MIRROR: this
+         end's left is the tail's right, which is the rule every barred vehicle
+         in the fleet already follows. */
+      {
+        /* ---- THE SPAN IS THE FLEET'S, NOT THIS BODY'S (RLG-221) ---------
+           The first build drew this bar 0.150 to 0.850, to look proportionate
+           on a box wider than a van. It would have been wrong for a reason that
+           is nowhere near here: `drawCopLights` throws the bar's WASH onto the
+           road from one hardcoded pair of offsets, and the note beside them
+           says why it can - "both cars agree to three decimals, because both
+           bars are drawn from the same 0.24-0.76 span". Widening this one would
+           have put an ambulance's red wash either side of the lamps casting it.
+
+           So the bar keeps the fleet's span and only its HEIGHT moves, which is
+           what `barY` on the BODY record exists to carry. */
+        const SC = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
+        g.fillStyle = '#1b1e24';
+        rr(g, w*0.24, A.top - h*0.046, w*0.52, h*0.046, 2); g.fill();
+        decl(g, lamps, 'bar.fl', (gg, on) => {
+          gg.fillStyle = SC.b[on ? 0 : 1];
+          rr(gg, w*0.255, A.top - h*0.040, w*0.235, h*0.034, 2); gg.fill();
+        });
+        decl(g, lamps, 'bar.fr', (gg, on) => {
+          gg.fillStyle = SC.a[on ? 0 : 1];
+          rr(gg, w*0.51, A.top - h*0.040, w*0.235, h*0.034, 2); gg.fill();
+        });
+      }
+      /* the mirrors, on arms, standing off the CAB - see the note in `ambBox`
+         for why they are front-only and why that does not break the invariant */
+      for(const sx of [-1, 1]){
+        const headX = sx < 0 ? A.mx0 : A.mx1;
+        const armTo = sx < 0 ? A.cx0 : A.cx1;
+        /* BESIDE THE SCREEN, NOT ON THE ROOF. The first build hung them at the
+           cab's top edge, where they read as two marks floating off the corners
+           of the box rather than as mirrors a driver could use. A door mirror
+           sits at eye level, which on this cab is the middle of the glass. */
+        const headT = A.ctop + h*0.085;
+        const armY = headT + h*0.042, armH = h*0.018;
+        const from = sx < 0 ? headX + 0.030 : armTo;
+        g.fillStyle = P.lo;
+        g.fillRect(w*from, armY, w*Math.abs(armTo - (headX + (sx < 0 ? 0.030 : 0))), armH);
+        g.fillRect(w*headX, headT, w*0.030, h*0.100);
+        g.fillStyle = 'rgba(255,255,255,.16)';
+        g.fillRect(w*headX, headT, w*0.010, h*0.100);
+      }
+      /* the cab, in front of the box. A seam down each side is what says it
+         stands proud rather than being painted on. */
+      g.fillStyle = grad(A.ctop, A.bot);
+      rr(g, w*A.cx0, A.ctop, w*cw, A.bot - A.ctop, w*0.026); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,.20)'; g.lineWidth = Math.max(1, w*0.005);
+      rr(g, w*A.cx0, A.ctop, w*cw, A.bot - A.ctop, w*0.026); g.stroke();
+      /* THREE AMBER MARKERS ON THE CAB ROOF. Owner's words, and they are a
+         marker set rather than an indicator - they are not wired to `turn`,
+         because a marker lamp is lit whenever the vehicle is and says nothing
+         about where it is going. */
+      for(const mxx of [0.425, 0.485, 0.545]){
+        g.fillStyle = AMBER_OFF;
+        rr(g, w*mxx, A.ctop - h*0.020, w*0.042, h*0.020, 1); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.18)';
+        rr(g, w*mxx, A.ctop - h*0.020, w*0.042, h*0.007, 1); g.fill();
+      }
+      /* A VERY TALL DARK WINDSCREEN - the owner's phrase, and the one thing
+         that most separates this face from a van's. A van's screen is 0.145 of
+         the sprite; this is 0.235. */
+      /* 0.215 rather than 0.235: the first build left the cross with 2 pixels of
+         air above the grille, and a badge touching a grille reads as part of it.
+         A van's screen is 0.145 of the sprite, so this is still half again as
+         tall and the owner's "very tall" survives the trim. */
+      const scT = A.ctop + h*0.030, scH = h*0.215;
+      g.fillStyle = '#0e141c';
+      rr(g, w*(A.cx0+0.030), scT, w*(cw-0.060), scH, 3); g.fill();
+      g.fillStyle = 'rgba(90,120,150,.16)';
+      rr(g, w*(A.cx0+0.030), scT, w*(cw-0.060), h*0.055, 3); g.fill();
+      if(parts)
+        parts.wipers = wiperPair(w*(A.cx0+0.030), w*(A.cx1-0.030), scT, scT+scH,
+                                 P.body, P.hi);
+      /* the cross, on the panel the screen and the grille leave between them -
+         placed from those two landmarks rather than from a fraction of the
+         body, so it stays centred if either ever moves (owner, 2026-09-05) */
+      const grT = A.bot - h*0.250;
+      drawCross(g, w*0.5, (scT + scH + grT) * 0.5, w*0.140, 0.34);
+      /* A GRILLE WITH RED IN IT. Owner's words. The red is a band THROUGH the
+         grille rather than a stripe above it: the reference has the livery
+         carried across the slats, which is a thing a real one does and a
+         separate red bar is not. */
+      g.fillStyle = 'rgba(10,12,16,.90)';
+      rr(g, w*0.300, grT, w*0.400, h*0.090, 3); g.fill();
+      g.fillStyle = '#d1121f';
+      g.fillRect(w*0.300, grT + h*0.034, w*0.400, h*0.022);
+      g.strokeStyle = 'rgba(170,182,196,.22)'; g.lineWidth = Math.max(1, h*0.008);
+      for(const k of [0.22, 0.78]){
+        const yy = grT + h*0.090*k;
+        g.beginPath(); g.moveTo(w*0.316, yy); g.lineTo(w*0.684, yy); g.stroke();
+      }
+      /* the lamps, flanking the grille the way the van's do */
+      const LW = 0.150, lL = 0.300 - 0.026 - LW, lR = 0.700 + 0.026;
+      decl(g, lamps, 'head', (gg, on) => {
+        for(const lx of [lL, lR]){
+          gg.fillStyle = headOf(on);
+          rr(gg, w*lx, grT - h*0.004, w*LW, h*0.058, 2); gg.fill();
+        }
+      });
+      const amber = (lx) => (gg, on) => {
+        gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+        rr(gg, w*lx, grT + h*0.070, w*LW, h*0.040, 2); gg.fill();
+      };
+      decl(g, lamps, 'turn.l', amber(lL));
+      decl(g, lamps, 'turn.r', amber(lR));
+      /* A BLACK BUMPER WITH A WHITE PLATE. Owner's words, and it is the place
+         the van and the ambulance are MEANT to differ - the van's is chrome
+         (RLG-219), so this branch is not waiting to be unified with it. */
+      g.fillStyle = '#14171c';
+      rr(g, w*A.cx0, A.bot - h*0.072, w*cw, h*0.072, 3); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.10)';
+      rr(g, w*A.cx0, A.bot - h*0.072, w*cw, h*0.016, 3); g.fill();
+      g.fillStyle = '#eeeade';
+      rr(g, w*0.415, A.bot - h*0.056, w*0.170, h*0.040, 2); g.fill();
       return;
     }
 
@@ -4580,6 +4766,83 @@ function paintRig(kind, o){
       /* a lorry indicates from the outer end of the same cluster */
       decl(g, lamps, 'turn.l', turnBulb(w*0.055, cy-h*0.155, w*0.040, h*0.032));
       decl(g, lamps, 'turn.r', turnBulb(w*0.905, cy-h*0.155, w*0.040, h*0.032));
+      return;
+    }
+
+    if(kind === 'van' && o.bar){
+      /* ---- THE AMBULANCE'S BACK (RLG-221) --------------------------------
+         The box, and nothing but the box. Every number that decides the SHAPE
+         comes from `ambBox`, the same call the face makes - which is the whole
+         of how the two ends are kept in one silhouette. What differs is what is
+         drawn inside it: the face has a cab, and this has two doors.
+
+         THE BOX IS THE BACK, which is why the owner agreed to the widening once
+         it was put to them that it would read from behind as well. On this
+         vehicle that is not a cost of the change; it IS the change. */
+      const A = ambBox(h);
+      const bw = A.x1 - A.x0;
+      vehicleTyres(g, w, h, 'van', A.bot);
+      g.fillStyle = grad(A.top, A.bot);
+      rr(g, w*A.x0, A.top, w*bw, A.bot - A.top, w*0.030); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.14)';
+      rr(g, w*A.x0, A.top, w*bw, h*0.024, w*0.022); g.fill();
+      /* the bar, from the box's own roof - the same expression the face uses,
+         with the lenses mirrored */
+      {
+        /* the fleet's span, for the reason the face records */
+        const SC = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
+        g.fillStyle = '#1b1e24';
+        rr(g, w*0.24, A.top - h*0.046, w*0.52, h*0.046, 2); g.fill();
+        decl(g, lamps, 'bar.rl', (gg, on) => {
+          gg.fillStyle = SC.a[on ? 0 : 1];
+          rr(gg, w*0.255, A.top - h*0.040, w*0.235, h*0.034, 2); gg.fill();
+        });
+        decl(g, lamps, 'bar.rr', (gg, on) => {
+          gg.fillStyle = SC.b[on ? 0 : 1];
+          rr(gg, w*0.51, A.top - h*0.040, w*0.235, h*0.034, 2); gg.fill();
+        });
+      }
+      /* the two door windows, high and small, as a box ambulance has */
+      g.fillStyle = '#10151d';
+      rr(g, w*0.115, A.top + h*0.060, w*0.360, h*0.115, 3); g.fill();
+      rr(g, w*0.525, A.top + h*0.060, w*0.360, h*0.115, 3); g.fill();
+      g.fillStyle = 'rgba(120,160,200,.20)';
+      rr(g, w*0.126, A.top + h*0.068, w*0.338, h*0.036, 2); g.fill();
+      rr(g, w*0.536, A.top + h*0.068, w*0.338, h*0.036, 2); g.fill();
+      /* the cross, one piece of paint that the doors happen to divide, with the
+         handles sitting centred in it - both of those are owner rulings from
+         2026-09-05 and neither changed here. The seam is stroked back OVER it. */
+      const hy = A.top + (A.bot - A.top)*0.58;
+      drawCross(g, w*0.5, hy + h*0.008, w*0.380, 0.32);
+      g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = Math.max(1, w*0.008);
+      g.beginPath(); g.moveTo(w*0.5, A.top + h*0.03); g.lineTo(w*0.5, A.bot - h*0.03); g.stroke();
+      g.fillStyle = '#3a3d44';
+      g.fillRect(w*0.430, hy, w*0.048, h*0.016);
+      g.fillRect(w*0.522, hy, w*0.048, h*0.016);
+      /* one indicator above one brake light on each corner, which is the owner's
+         2026-08-29 ruling for this body and is unchanged - only the corners
+         moved, because the box is wider than the slab they used to sit on */
+      const AX = [w*0.048, w*0.872], AW = w*0.080;
+      decl(g, lamps, 'turn.l', (gg, on) => {
+        gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+        rr(gg, AX[0], A.bot - h*0.158, AW, h*0.044, 2); gg.fill();
+      });
+      decl(g, lamps, 'turn.r', (gg, on) => {
+        gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+        rr(gg, AX[1], A.bot - h*0.158, AW, h*0.044, 2); gg.fill();
+      });
+      decl(g, lamps, 'tail', (gg, on) => {
+        gg.fillStyle = redOf(on);
+        for(const x of AX){ rr(gg, x, A.bot - h*0.098, AW, h*0.076, 2); gg.fill(); }
+      });
+      /* the black bumper, and a plate on this end too - a vehicle carries one
+         at both ends and the face has one (RLG-221) */
+      g.fillStyle = '#14171c';
+      rr(g, w*A.cx0, A.bot - h*0.072, w*(A.cx1-A.cx0), h*0.072, 3); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.10)';
+      rr(g, w*A.cx0, A.bot - h*0.072, w*(A.cx1-A.cx0), h*0.016, 3); g.fill();
+      g.fillStyle = '#eeeade';
+      rr(g, w*0.415, A.bot - h*0.056, w*0.170, h*0.040, 2); g.fill();
       return;
     }
 
