@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.89';
+window.ROAD_BUILD = '0.13.90';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -6366,11 +6366,49 @@ function classOf(k){
   if(PRODUCTION_BODIES.indexOf(k) >= 0) return 'production';
   return SPORTS_BODIES.indexOf(k) >= 0 ? 'sports' : 'super';
 }
+/* ---- A FORMULA CAR HAS NO LEAGUE AND IS TOLD WHICH ONE TO ENTER ---------
+   Owner, 2026-09-12: the formula cars are "just novelty - no formula specific
+   races or tournament. You can only race against the first 3 classes."
+
+   SO `classOf` STILL ANSWERS `formula` AND IT NOW MEANS THE OPPOSITE OF WHAT
+   IT MEANT. It used to mean "this car has a league of its own"; it means "this
+   car has none, and something has to say which it is entering". That is the
+   whole of the change, and every other reader of `classOf` is unaffected -
+   `GOLD_PAYS` still pays a formula win in iridescent paint, because it asks
+   what the CAR is rather than what it was racing.
+
+   THE ENTERED CLASS IS PERSISTED, unlike the garage card's flip. It is a
+   choice about the event you are entering, which puts it with the gearbox and
+   the paint rather than with a look at the car.
+
+   AND IT IS VALIDATED ON READ. A save can hold a class that no longer exists,
+   or one a later ruling removes, and a grid built from `undefined` is a race
+   against nothing.
+   --------------------------------------------------------------------- */
+const ENTRY_CLASSES = ['production','sports','super'];
+let optEntry = 'super';
+function entryClass(){
+  return ENTRY_CLASSES.indexOf(optEntry) >= 0 ? optEntry : 'super';
+}
+/* THE STEP ITSELF, IN ONE PLACE. The garage button and the test affordance both
+   move the entered class on by one, and each was written with its own copy of
+   that line - which is how a control and the thing that checks it come to
+   disagree. `modeLabel` is the pattern: one function answering one question. */
+function cycleEntryClass(){
+  const i = ENTRY_CLASSES.indexOf(entryClass());
+  optEntry = ENTRY_CLASSES[(i + 1) % ENTRY_CLASSES.length];
+  if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { entry:optEntry });
+  return optEntry;
+}
+function bodiesOf(c){
+  return c === 'production' ? PRODUCTION_BODIES
+       : c === 'sports' ? SPORTS_BODIES : SUPER_BODIES;
+}
 function racerBodies(){
   const c = classOf(optBody);
-  return c === 'production' ? PRODUCTION_BODIES
-       : c === 'sports' ? SPORTS_BODIES
-       : c === 'formula' ? FORMULA_BODIES : SUPER_BODIES;
+  /* the only class that does not field itself */
+  if(c === 'formula') return bodiesOf(entryClass());
+  return bodiesOf(c);
 }
 /* kept for the sprite pre-build, which needs every body a rival might use */
 /* kept for the sprite pre-build, which needs every body a rival might use -
@@ -25934,6 +25972,25 @@ function showGarage(){
         ? '<button class="go ghost" data-act="novelty">WORK VEHICLES \u00B7 <b>' +
             (optNovelty ? 'SHOWN' : 'HIDDEN') + '</b></button>'
         : '') +
+      /* ---- WHICH CLASS A FORMULA CAR IS ENTERING (RLG-213) ---------------
+         The one part of the ladder that needed a control that did not exist.
+         A formula car has no league, so without this it has no grid at all.
+
+         IT IS ONLY THERE FOR A FORMULA CAR, and that is not the usual rule on
+         this screen - RLG-115 argues for greying a control out with the reason
+         given rather than hiding it, because a control that vanishes teaches
+         nothing. That reasoning does not carry here: MODE is shut for a van to
+         explain a RULE the player will meet again, while a class choice is
+         meaningless for a car that has a class. There is nothing to teach.
+
+         IT IS BUILT LIKE THE MODE BUTTON, which is one function answering one
+         question so the label and the cycle cannot disagree.
+         ---------------------------------------------------------------- */
+      (isFormula(optBody) ?
+        '<button class="go ghost" data-act="entry">ENTER · <b>' +
+          entryClass().toUpperCase() + '</b></button>' +
+        '<div class="gnote">NO FORMULA LEAGUE · PICK A CLASS TO RACE</div>'
+        : '') +
       /* ---- THE MODE CONTROL, AND WHY IT MAY BE SHUT (RLG-115) ------------
          Owner, 2026-09-05, choosing between three shapes for what the player
          sees: the modes GREY OUT WITH THE REASON GIVEN. Not hidden - a control
@@ -26041,6 +26098,10 @@ function showGarage(){
         enforceModeRules();
         showGarage();
       },
+      /* ---- CYCLE THE CLASS A FORMULA CAR ENTERS (RLG-213) -------------
+         Persisted, because it is a choice about the event rather than a look
+         at the car - it belongs with the gearbox and the paint. */
+      entry: () => { cycleEntryClass(); showGarage(); },
       time:  () => { optTime = (optTime + 1) % TIMES.length;
                      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { time:optTime });
                      showGarage(); },
@@ -27380,6 +27441,10 @@ if (AR && AR.options) AR.options.define([
     if(g0.paint && PAINT[g0.paint]){ optPaint = g0.paint; freePaint = g0.paint; }
     if(typeof g0.manual === 'boolean') optManual = g0.manual;
     if(typeof g0.timed === 'boolean') timedRun = g0.timed;
+    /* which class a formula car enters (RLG-213). `entryClass()` validates on
+       every read, so a save holding a class that no longer exists falls back
+       rather than building a grid out of `undefined`. */
+    if(g0.entry) optEntry = g0.entry;
     if(typeof g0.stripes === 'boolean') optStripes = g0.stripes;
     if(typeof g0.novelty === 'boolean') optNovelty = g0.novelty;
     /* range-checked rather than trusted: a save written by a future build with
@@ -27646,6 +27711,9 @@ requestAnimationFrame(frameLoop);
   /* the grid as it stands: speed, target speed and the launch each rival drew.
      `q` is deliberately uncorrelated with grid order and a harness should be
      able to prove that rather than take the comment's word for it. */
+  /* cycles the entered class the way the garage button does - the SAME step,
+     so a check cannot prove that the harness agrees with itself */
+  API.cycleEntry = function(){ return cycleEntryClass(); };
   API.grid = function(){
     return racers.map((r, i) => ({ i:i, spd:Math.round(r.spd), base:Math.round(r.base),
                                    q:+(r.launchQ || 1).toFixed(3),
@@ -28425,6 +28493,13 @@ requestAnimationFrame(frameLoop);
      is exactly what [[RLG-213]] made the sports class.
      ------------------------------------------------------------------- */
   API.playableBodies = function(){ return playableBodies().slice(); };
+  /* the grid the selected car would actually face, and which class it entered.
+     A formula car has no league of its own (RLG-213), so these two part company
+     only for that car - which is the whole thing worth checking. */
+  API.grid = function(){
+    return { cls: classOf(optBody), entry: entryClass(),
+             field: racerBodies().slice() };
+  };
   /* the round and the points are kept when a mode is dropped - this is how a
      check proves the tournament was switched OFF rather than erased */
   API.tourState = function(){ return { on:!!tourOn, round:tourRound, pts:tourPts }; };

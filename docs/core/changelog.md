@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-90"></a>
+## [0.13.90] - 2026-09-12
+- Added: **a formula car is told which class it is entering.** RLG-213's last piece. Owner: the
+  formula cars are "just novelty - no formula specific races or tournament. You can only race against
+  the first 3 classes." So `classOf` still answers `formula` and it now means the opposite of what it
+  meant - not "this car has a league of its own" but "this car has none". An `ENTER` button on the
+  garage stack cycles production, sports and super, and the grid is built from whichever it holds.
+  The choice is persisted and validated on read, so a save naming a class that no longer exists falls
+  back rather than building a race against nothing. The button is hidden for every other car, which
+  breaks this screen's usual rule deliberately: MODE is greyed for a van to explain a rule the player
+  will meet again, and a class choice for a car that has a class is not a rule but nothing at all.
+  A formula win still pays the iridescent paints whichever class it entered, and never pays a rung -
+  so the car cannot be used to climb the ladder it sits at the top of.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-89"></a>
 ## [0.13.89] - 2026-09-12
 - Added: **the ladder starts in production.** RLG-213's second piece. A production gold now unlocks

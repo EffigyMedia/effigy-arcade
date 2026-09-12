@@ -54,6 +54,9 @@ KEY = 'effigyarcade.save.v1.interstate-opts'
 PRODUCTION = ['SALOON', 'COUPE']
 MERGED = ['CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE']
 SPORTS = ['ROADSTER', 'TUNER', 'MUSCLE']
+EXPECT = {'production': ['SALOON', 'COUPE'],
+          'sports': ['ROADSTER', 'TUNER', 'MUSCLE'],
+          'super': ['STALLION', 'MATADOR', 'CREST']}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -254,6 +257,40 @@ def main():
             bare = [k for k in SPORTS if not nos.get(k)]
             res.ok(not bare, 'and the sports cars still do - so the check is paired',
                    'these do not: %s' % ', '.join(bare))
+        ctx.close()
+
+        # ---- THE FORMULA NOVELTY (RLG-213) -----------------------------------
+        # "No formula specific races or tournament. You can only race against the
+        # first 3 classes." So a formula car's GRID is whatever class it was told
+        # to enter, and `classOf` still answers `formula` - which now means "this
+        # car has no league" rather than "this car has one of its own".
+        #
+        # IT IS ASKED OF THE FIELD, not of the setting. A control that cycles a
+        # variable while the grid stays formula is the exact failure here.
+        ctx, page = boot_with(b, port, '{"sports":true,"super":true,'
+                                       '"formula":true,"traffic":true}')
+        seen = {}
+        for want in ('production', 'sports', 'super'):
+            g = page.evaluate(
+                "(c) => { const R = window.__road; R.setBody('VECTOR');"
+                " let g = R.grid(); let n = 0;"
+                " while(g.entry !== c && n++ < 6){ R.cycleEntry(); g = R.grid(); }"
+                " return g; }", want)
+            seen[want] = g
+        for want, g in seen.items():
+            res.ok(g['entry'] == want and set(g['field']) == set(EXPECT[want]),
+                   'a formula car entering %s races %s cars' % (want, want),
+                   'it entered %r against %s' % (g['entry'], ', '.join(g['field'])))
+        res.ok(all('VECTOR' not in g['field'] for g in seen.values()),
+               'and never races other formula cars - there is no formula league',
+               'a formula body turned up on the grid')
+        # AND A REAL CLASS STILL FIELDS ITSELF, which is what stops the above
+        # passing on a build where every grid is production.
+        g = page.evaluate("() => { const R = window.__road;"
+                          " R.setBody('TUNER'); return R.grid(); }")
+        res.ok(set(g['field']) == set(EXPECT['sports']),
+               'a sports car still races sports cars',
+               'it faced %s' % ', '.join(g['field']))
         ctx.close()
 
         if errs:
