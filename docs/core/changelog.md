@@ -19,6 +19,24 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-87"></a>
+## [0.13.87] - 2026-09-12
+- Changed: **the flip control is a rotate glyph rather than the word REAR.** Owner, 2026-09-12, with
+  a reference image of a ring of curved arrows. The word forced the question every labelled toggle
+  forces - does it say where I am or where I am going - and a rotate mark asks neither, because it
+  names the action instead of either state. The `aria-label` still says which, so a screen reader
+  gets the sentence the glyph has no room for. The mark is drawn here rather than fetched: the
+  reference is somebody else's artwork on somebody else's server, this product makes no network call
+  at launch, and nothing licensed goes in this repository. It is rotationally symmetric, so it reads
+  the same whichever end is showing. Sized at 21 pixels in a 34-pixel chip after 26 proved too small
+  to read the arrowheads at all.
+- Fixed: **a car you have not unlocked no longer offers to turn round.** Owner: "the functionality to
+  flip the view of a car you don't have unlocked yet is unnecessary." Both ends of a silhouette are
+  the same flat grey, so the control promised a second look and did not deliver one. It asks
+  `carLocked`, which is the same question the DRIVE button and the `???` name already ask, so the
+  three controls on a locked card cannot disagree.
+  [RLG-210](../fragments/RLG-210.md)
+
 <a id="v0-13-86"></a>
 ## [0.13.86] - 2026-09-12
 - Changed: **the garage card shows one end of the car, large and centred, with a button to turn it

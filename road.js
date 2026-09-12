@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.86';
+window.ROAD_BUILD = '0.13.87';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -25408,23 +25408,48 @@ function garageCard(){
      Owner, 2026-09-12: "a little button in the corner of the view pane that
      toggles between front and rear view."
 
-     IT SAYS WHERE IT WILL TAKE YOU rather than where you are. A toggle
-     labelled with its current state is the oldest ambiguity in an interface,
-     and there is no room here for both - the button is a corner of a card.
+     IT IS A GLYPH RATHER THAN A WORD, and the owner chose the shape: a ring
+     of curved arrows, the ordinary rotate mark. It shipped as the word REAR
+     first, which had to answer "does this label say where I am or where I am
+     going" - the oldest ambiguity in a toggle. A rotate mark asks neither
+     question, because it names the ACTION instead of either state.
 
-     IT IS ON THE LOCKED CARD TOO. A silhouette has two ends like any other
-     car, and the shape is the whole invitation, so refusing to turn it round
-     would withhold half of what the card is for.
+     DRAWN HERE RATHER THAN FETCHED. The reference the owner sent is somebody
+     else's artwork on somebody else's server, and both halves of that are
+     disqualifying: this product makes no network call at launch, and nothing
+     licensed goes in this repository. So the concept is the brief and these
+     two arcs are ours. Inline SVG rather than a file, because `--standalone`
+     has to inline every asset anyway.
 
-     NO LABEL FOR A CAR WITH ONE END. Nothing in the fleet is in that state,
-     and if one ever is, a button that cannot change what you see is worse
-     than no button.
+     IT IS NOT ON A LOCKED CARD (owner, 2026-09-12): "the functionality to flip
+     the view of a car you don't have unlocked yet is unnecessary." That
+     reverses what shipped an hour earlier, which argued that a silhouette has
+     two ends and the shape is the whole invitation. It is the owner's call,
+     and their reading is the better one: both ends of a silhouette are the
+     same flat grey, so the control promises a second look at a car and then
+     does not deliver one.
+
+     NO BUTTON FOR A CAR WITH ONE END either. Nothing in the fleet is in that
+     state, and a control that cannot change what you see is worse than none.
      ------------------------------------------------------------------- */
   function flipButton(){
-    if(!SP.playerFront) return '';
+    if(!SP.playerFront || carLocked(optBody)) return '';
+    /* two arcs of one circle with a head on each, rotationally symmetric -
+       so it reads the same whichever end is showing and does not have to be
+       redrawn or mirrored on a flip */
+    const glyph =
+      '<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"' +
+      ' fill="none" stroke="currentColor" stroke-width="2.1"' +
+      ' stroke-linecap="round">' +
+      '<path d="M4.95 9.43A7.5 7.5 0 0 1 19.05 9.43"/>' +
+      '<path d="M19.05 14.57A7.5 7.5 0 0 1 4.95 14.57"/>' +
+      '<polygon points="20.08,12.25 17.36,10.05 20.74,8.81" fill="currentColor"' +
+      ' stroke="none"/>' +
+      '<polygon points="3.92,11.75 6.64,13.95 3.26,15.19" fill="currentColor"' +
+      ' stroke="none"/></svg>';
     return '<button class="gflip" data-act="flip" aria-label="' +
       (garageEnd === 'front' ? 'show the rear' : 'show the front') + '">' +
-      (garageEnd === 'front' ? 'REAR' : 'FRONT') + '</button>';
+      glyph + '</button>';
   }
   if(carLocked(optBody)){
     return '<div class="gwrap locked">' +

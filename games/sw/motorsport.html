@@ -628,15 +628,21 @@ h1 u{text-decoration:none;display:block;font-size:.34em;letter-spacing:.26em;col
 
    THE TOUCH TARGET IS BIGGER THAN THE BUTTON LOOKS, and that is the whole
    trick. The owner asked for "a little button", and a little button is under
-   the 44px a thumb needs - so the CHIP is small and `::after` lays a 44px
+   the 44px a thumb needs - so the CHIP is 34px and `::after` lays a 44px
    square over its centre to be pressed. Padding it to 44px instead was tried
-   and it reads as a panel rather than a corner control. */
+   and it reads as a panel rather than a corner control.
+
+   IT WENT 26px FIRST AND THAT WAS TOO SMALL. Owner, 2026-09-12: "you can make
+   it a little bigger than that so that it's legible" - a rotate ring is two
+   arcs and two heads, and under about 18px the heads stop reading as arrows
+   and the whole mark turns into a circle. */
 .gflip{position:absolute;top:6px;right:8px;z-index:2;
-  padding:4px 8px;
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;padding:0;
   background:rgba(12,10,18,.62);border:1px solid rgba(255,255,255,.14);
   border-radius:8px;color:#c8cede;
-  font-family:inherit;font-size:9px;letter-spacing:.14em;
   -webkit-tap-highlight-color:transparent;cursor:pointer}
+.gflip svg{display:block}
 .gflip:active{background:rgba(32,28,44,.86);color:#fff3e2}
 .gflip::after{content:'';position:absolute;left:50%;top:50%;
   width:44px;height:44px;transform:translate(-50%,-50%)}

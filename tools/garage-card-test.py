@@ -214,23 +214,69 @@ def main():
             if sw.count() > 1:
                 sw.nth(1).click()
                 page.wait_for_timeout(250)
+                # THE BUTTON CARRIES A GLYPH NOW, so its label is no longer the
+                # thing to read. `aria-label` is what says which end is showing,
+                # and it is the accessible name a screen reader gets - so reading
+                # it checks something the player is actually served rather than a
+                # test hook.
                 still = page.evaluate(
-                    "() => document.querySelector('.gflip')"
-                    " ? document.querySelector('.gflip').textContent.trim() : ''")
-                res.ok(still == 'FRONT',
+                    "() => { const b = document.querySelector('.gflip');"
+                    " return b ? b.getAttribute('aria-label') : ''; }")
+                res.ok(still == 'show the front',
                        'changing the paint leaves the rear showing',
-                       'the button reads %r, so the card flipped back' % still)
+                       'the button offers %r, so the card flipped back' % still)
 
             # AND THE FRONT COMES BACK WHEN THE GARAGE IS REOPENED.
             page.click('[data-act="back"]')
             page.wait_for_timeout(250)
             open_garage(page)
             label = page.evaluate(
-                "() => document.querySelector('.gflip')"
-                " ? document.querySelector('.gflip').textContent.trim() : ''")
-            res.ok(label == 'REAR',
+                "() => { const b = document.querySelector('.gflip');"
+                " return b ? b.getAttribute('aria-label') : ''; }")
+            res.ok(label == 'show the rear',
                    'reopening the garage shows the FRONT again',
-                   'the button reads %r, so the rear was still showing' % label)
+                   'the button offers %r, so the rear was still showing' % label)
+
+        # ---- AND A CAR YOU HAVE NOT WON GETS NO BUTTON (owner, 2026-09-12) ----
+        # "The functionality to flip the view of a car you don't have unlocked yet
+        # is unnecessary." Both ends of a silhouette are the same flat grey, so the
+        # control would promise a second look and not deliver one.
+        #
+        # THE CHECK IS PAIRED, because "no button" passes on a build where the card
+        # never renders at all. So it walks to a LOCKED car and asserts the button is
+        # gone AND the card still paints a silhouette, then walks back to an owned
+        # car and asserts the button returns.
+        locked = page.evaluate(
+            "() => { const R = window.__road;"
+            " return R.garageBodies().filter(k => R.carLocked && R.carLocked(k)); }")
+        if not locked:
+            # `carLocked` may not be exposed; fall back to the card's own ??? name
+            locked = page.evaluate(
+                "() => { const R = window.__road; const out = [];"
+                " for(const k of R.garageBodies()){ R.setBody(k); R.showGarage();"
+                "   const n = document.querySelector('.gname');"
+                "   if(n && n.textContent.trim() === '???') out.push(k); }"
+                " return out; }")
+        if not locked:
+            print('  BLKD  no locked car in the garage to test the rule on')
+            res.fails.append('no locked car was available')
+        else:
+            page.evaluate("(k) => { const R = window.__road;"
+                          " R.setBody(k); R.showGarage(); }", locked[0])
+            page.wait_for_timeout(200)
+            n = page.locator('.gflip').count()
+            ink = page.evaluate(INK)
+            res.ok(n == 0, 'a locked car has NO flip button',
+                   '%s still shows %d' % (locked[0], n))
+            res.ok(bool(ink and ink['ink'] > 0),
+                   'and its card still paints the silhouette',
+                   'nothing was drawn, so the check above proves nothing')
+            page.evaluate("() => { const R = window.__road;"
+                          " R.setBody('TUNER'); R.showGarage(); }")
+            page.wait_for_timeout(200)
+            res.ok(page.locator('.gflip').count() == 1,
+                   'and an owned car gets it back',
+                   'the button did not return, so it is gone for everyone')
 
         if errs:
             res.ok(False, 'the page reported no errors', '; '.join(errs[:3]))
