@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.97';
+window.ROAD_BUILD = '0.13.98';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16401,9 +16401,34 @@ knobEl.addEventListener('pointermove', e => {
     return;
   }
   if(knobY === MID_Y){
-    /* nearest of the three rails, not a two-way split */
+    /* nearest of the rails THIS CAR HAS, not a two-way split */
+    /* ---- AND `RAIL_X.length` IS NOT THAT NUMBER (RLG-220) ---------------
+       Owner, 2026-09-12: "you can still change the gear to 5 and 6 on a 4
+       speed... they act as neutral but the gates aren't rendered yet you can
+       still put the shifter there."
+
+       RLG-069 SAYS IT FIXED EXACTLY THIS, AND IT DID - FOR THE KEYBOARD. Its
+       note names the fault in as many words: "`shiftStep` clamped to
+       `RAIL_X.length`, which is three whatever you are driving, so a four-speed
+       could be dragged into slots labelled 5 and 6." `shiftStep` is what the
+       I/K/J/L handler and the right-stick walker call. THE THUMB DOES NOT GO
+       THROUGH IT - this listener picked its own rail, with this loop, over the
+       same constant the note had just condemned.
+
+       SO THE CLAMP LANDED ON THE TWO INPUTS THAT ARE OUT OF SCOPE AND MISSED
+       THE ONLY ONE THAT SHIPS. This product is touch (RLG-002); the drag IS the
+       shifter, and the keyboard and pad handlers are inherited and explicitly
+       not load-bearing. A fix applied to the parts of the code that are kept
+       only because they cost nothing, and not to the part the player uses.
+
+       `railCount()` has been right the whole time - 2 for a four-speed, 3 above
+       it. Nothing here needed inventing; this loop needed to ask.
+
+       THE FIVE-SPEED KEEPS ITS THIRD RAIL AND THE NEUTRAL SLOT ON IT. Owner,
+       asked directly: "It's fine if it's there for 5 speed... remove it on 4
+       speed!" That is `railCount()` exactly as it already reads. */
     let wantRail = 0, bd = 1e9;
-    for(let i2=0;i2<RAIL_X.length;i2++){
+    for(let i2=0;i2<railCount();i2++){
       const d2 = Math.abs(RAIL_X[i2] - x);
       if(d2 < bd){ bd = d2; wantRail = i2; }
     }

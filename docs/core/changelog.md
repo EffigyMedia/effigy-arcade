@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-98"></a>
+## [0.13.98] - 2026-09-12
+- Fixed: **a four-speed's gate has two rails, on the thumb as well as the keyboard.** Owner: "you can
+  still change the gear to 5 and 6 on a 4 speed... they act as neutral but the gates aren't rendered
+  yet you can still put the shifter there." RLG-069 fixed exactly this in `shiftStep`, which is the
+  keyboard and the gamepad; the drag listener never went through it and kept its own loop over
+  `RAIL_X.length`. So the clamp landed on the two inputs that are out of scope for this product and
+  missed the only one that ships. **The five-speed keeps its third rail and the neutral slot on it** -
+  owner: "It's fine if it's there for 5 speed... remove it on 4 speed!"
+  [RLG-220](../fragments/RLG-220.md)
+- Added: `tools/gate-rails-test.py`, which drags the knob with a real pointer and asserts both halves
+  - that a four-speed cannot reach a rail it has not got, and that a six-speed *can* reach its last
+  one. The second is what stops the first passing on a gesture that never happened, which two builds
+  of this harness did. [RLG-220](../fragments/RLG-220.md)
+
 <a id="v0-13-97"></a>
 ## [0.13.97] - 2026-09-12
 - Changed: **the van has a face.** Owner, with a GMC Savana reference: a tall upright grille with
