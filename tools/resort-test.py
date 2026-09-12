@@ -53,6 +53,7 @@ KEY = 'effigyarcade.save.v1.interstate-opts'
 
 PRODUCTION = ['SALOON', 'COUPE']
 MERGED = ['CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE']
+SPORTS = ['ROADSTER', 'TUNER', 'MUSCLE']
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -94,7 +95,13 @@ def boot_with(browser, port, save):
 
 
 def listed(page):
-    """the cars the garage actually offers.
+    """the cars that can actually be DRIVEN.
+
+    `garageBodies` is the wrong question and was asked first: it is what the
+    garage LISTS, and a locked class that is not secret is listed as a
+    SILHOUETTE. So the sports cars read as owned on a fresh save, and the check
+    that they are locked passed with them wide open. `playableBodies` filters
+    by `carLocked`, which is the question ownership actually is.
 
     MEMBERSHIP IS THE INSTRUMENT, and the first version of this used the card's
     name instead - it asked each body in turn whether its card read `???`. That
@@ -104,7 +111,7 @@ def listed(page):
     not won falls back to a ROADSTER and the card reads ROADSTER. Every arm
     reported "nothing lost" because nothing was there to lose.
     """
-    return set(page.evaluate("() => window.__road.garageBodies()"))
+    return set(page.evaluate("() => window.__road.playableBodies()"))
 
 
 def main():
@@ -187,6 +194,68 @@ def main():
             res.ok(not wrong2, 'and about production',
                    '; '.join('%s is %s' % (k, '/'.join(sorted(seen[k])))
                              for k in wrong2))
+        # ---- THE LADDER, AND THAT A FRESH SAVE HAS A ROAD OUT ----------------
+        # RLG-213: production -> sports -> super -> formula. The rung that matters
+        # most is the FIRST one, because a locked sports class with no way to win
+        # it is a new game with two cars and nowhere to go - so this asks the
+        # engine what league a production car enters and what a gold in it pays.
+        ctx, page = boot_with(b, port, '{}')
+        have = listed(page)
+        shut = [k for k in SPORTS if k in have]
+        res.ok(not shut, 'a fresh save does NOT hold the sports cars',
+               'already offered: %s' % ', '.join(shut))
+        d = page.evaluate("() => { const R = window.__road;"
+                          " R.setBody('SALOON'); return R.duty(); }")
+        res.ok(d['cls'] == 'production',
+               'a production car enters the PRODUCTION league',
+               "it reads %r, so its grid is somebody else's class" % d['cls'])
+        res.ok(d['raceLegal'],
+               'and it may actually enter a race',
+               'RACE_BANNED still holds it, so the league it has cannot be reached')
+        print('      with a SALOON the MODE control reads %r' % d['label'])
+
+        # THE RUNG ITSELF. `goldPays` looks the selected car's class up in the same
+        # GOLD_PAYS table the finish grants from, so this exercises the ladder
+        # rather than a harness's copy of it.
+        pays = page.evaluate("() => { const R = window.__road;"
+                             " R.setBody('SALOON'); return R.goldPays(); }")
+        res.ok(pays == 'sports',
+               'a gold in production unlocks the sports class',
+               'it pays %r, so a new game has no road out' % pays)
+        rungs = page.evaluate(
+            "() => { const R = window.__road; const out = {};"
+            " for(const k of ['SALOON','TUNER','STALLION','VECTOR']){"
+            "   R.setBody(k); out[R.duty().cls] = R.goldPays(); } return out; }")
+        res.ok(rungs == {'production': 'sports', 'sports': 'super',
+                         'super': 'formula', 'formula': 'iridescent'},
+               'and the whole ladder runs production, sports, super, formula',
+               'it reads %r' % rungs)
+
+        # ---- AND A PRODUCTION CAR CARRIES NO BOTTLE (owner, 2026-09-12) ------
+        # "Production cars will not have nitrous bottles." It was already true and
+        # true by ACCIDENT - production was not a racing class when `hasNosFor`
+        # was written, so it was never a candidate. It is a league now, and the
+        # next reader of that list sees three racing classes in it and a fourth
+        # missing. This is what stops it being added for symmetry.
+        #
+        # THE CHECK IS PAIRED, because "no bottle" passes on a build where nobody
+        # has one: it asserts the sports cars still DO.
+        nos = page.evaluate(
+            "() => { const R = window.__road; const out = {};"
+            " for(const k of ['SALOON','COUPE','TUNER','ROADSTER','MUSCLE'])"
+            "   out[k] = R.hasNosFor ? R.hasNosFor(k) : null; return out; }")
+        if nos.get('SALOON') is None:
+            print('  BLKD  the engine does not expose which cars carry a bottle')
+            res.fails.append('the bottle rule could not be asked')
+        else:
+            armed = [k for k in PRODUCTION if nos.get(k)]
+            res.ok(not armed, 'a production car carries NO nitrous bottle',
+                   'these do: %s' % ', '.join(armed))
+            bare = [k for k in SPORTS if not nos.get(k)]
+            res.ok(not bare, 'and the sports cars still do - so the check is paired',
+                   'these do not: %s' % ', '.join(bare))
+        ctx.close()
+
         if errs:
             res.ok(False, 'the page reported no errors', '; '.join(errs[:3]))
         ctx.close()

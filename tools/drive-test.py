@@ -38,13 +38,29 @@ GAMES = {
     'motorsport': 'games/sw/motorsport.html',
 }
 
-# Every car the garage must offer from a clean save. RLG-070 made the ladder: a fresh install holds
-# the SPORTS class and nothing else, and each gold opens the class above it. This list was the two
+# Every car the garage must offer from a clean save. RLG-070 made the ladder: a fresh install held
+# the SPORTS class and nothing else, and each gold opened the class above it. This list was the two
 # classes together, from when the supercars were free - so it started failing the moment the ladder
 # landed, which is the check doing its job.
-EXPECTED_CARS = ['ROADSTER', 'TUNER', 'MUSCLE']
-# and the ones that must NOT be there until they are earned
-LOCKED_CARS = ['STALLION', 'MATADOR', 'CREST', 'VECTOR', 'APEX', 'COMET', 'CAB', 'VAN', 'SEMI']
+#
+# AND RLG-213 PUT A CLASS UNDERNEATH SPORTS, so it failed again for the same reason and the same way:
+# a fresh save now holds PRODUCTION, and the sports cars are won by taking a production tournament.
+# The list follows the bottom of the ladder wherever it goes.
+EXPECTED_CARS = ['SALOON', 'COUPE']
+# and the ones that must NOT be there until they are earned - the sports cars among them now
+LOCKED_CARS = ['ROADSTER', 'TUNER', 'MUSCLE',
+               'STALLION', 'MATADOR', 'CREST', 'VECTOR', 'APEX', 'COMET', 'CAB', 'VAN', 'SEMI']
+# ---- AND THE DRIVING CHECKS NEED A CAR WITH A BOTTLE IN IT (RLG-213) ---------
+# The default body is a SALOON now, and a production car has no nitrous - so five checks about the
+# bottle went FAIL and BLKD the moment the ladder landed, describing the harness's car rather than
+# the engine. This drives a TUNER, which is what the default was before the ladder, and it has to be
+# UNLOCKED for that to be possible: the save is seeded exactly as a player who won a production
+# tournament would hold it.
+DRIVE_CAR = 'TUNER'
+SEED = ("try { localStorage.setItem('effigyarcade.save.v1.interstate-opts',"
+        " JSON.stringify({ sports: true }));"
+        " localStorage.setItem('effigyarcade.save.v1.motorsport-opts',"
+        " JSON.stringify({ sports: true })); } catch (e) {}")
 
 
 # --- capture the engine before it runs ---------------------------------------
@@ -669,10 +685,24 @@ def run_game(browser, base, game, seconds, res):
     try:
         errors = boot(page, f'{base}/{GAMES[game]}', res)
 
+        # THE CLEAN-SAVE EXPECTATION IS ASKED FIRST, before anything is seeded -
+        # seeding and then asking what a new player holds proves nothing. A locked
+        # car reads `???` here rather than by name, so LOCKED_CARS is documentation
+        # of the ladder and is deliberately NOT asserted against this list: it
+        # would pass whatever the gate did. `resort-test` asks that question
+        # properly, through `playableBodies`.
         cars = garage_cars(page)
         missing = [c for c in EXPECTED_CARS if c not in cars]
         res.check(not missing, 'the garage lists the expected cars',
                   ', '.join(cars) if not missing else 'missing ' + ', '.join(missing))
+
+        # ---- AND NOW A CAR WITH A BOTTLE IN IT (RLG-213) --------------------
+        # The default is a SALOON since the ladder gained a production rung, and a
+        # production car has no nitrous - so every check below about the bottle
+        # was describing the harness's car. The save is seeded as a player who has
+        # won a production tournament would hold it, and a TUNER is selected.
+        page.evaluate(SEED)
+        page.evaluate("(k) => window.__road.setBody(k)", DRIVE_CAR)
 
         drive(page, res, seconds, game == 'motorsport')
 

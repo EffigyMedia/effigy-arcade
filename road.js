@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.88';
+window.ROAD_BUILD = '0.13.89';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3513,6 +3513,18 @@ const CRATE_SECS = 10;
 
    The list is unchanged. `B.nos` still overrides it per body, which is how a
    car can be given or denied a bottle without touching the classes.
+
+   ---- AND PRODUCTION HAS NO BOTTLE, BY RULING RATHER THAN BY OMISSION -----
+   Owner, 2026-09-12: "production cars will not have nitrous bottles." It was
+   already true and it was true ACCIDENTALLY - production was not a racing class
+   when this list was written, so it was never a candidate for it. [[RLG-213]]
+   made production a league, and the next reader of this list will see three
+   racing classes in it and a fourth racing class missing, and will reasonably
+   add it for symmetry.
+
+   SO THE ABSENCE IS THE RULE AND IT IS WRITTEN DOWN HERE. The low end of the
+   ladder is the class with no bottle, which is what makes the first gold worth
+   winning. `resort-test` asserts it, so the rule cannot be undone quietly.
    ------------------------------------------------------------------------ */
 function hasNosFor(k){
   const B = BODY[k];
@@ -3547,9 +3559,22 @@ function bodyHp(){
 
 /* `brake` defaults to 1 so any body without the stat behaves exactly as before */
 function bodyStat(k){ return (BODY[optBody] || BODY['MATADOR'])[k]; }
-/* the first car of the first class. It was a MATADOR, from when the supercars
-   were what a fresh install held - see the ladder in `cycleBody`. */
-let optBody = 'ROADSTER';
+/* ---- THE FIRST CAR OF THE FIRST CLASS ------------------------------------
+   It was a MATADOR, from when the supercars were what a fresh install held,
+   then a ROADSTER when the ladder started at sports. [[RLG-213]] puts
+   production underneath both, so it is a SALOON: on a fresh save the sports
+   cars are locked and a ROADSTER default would open the garage on a car the
+   player does not own.
+
+   `enforceCarRules` would move them off it anyway - it does not let a car the
+   garage will not list stay selected - but being moved on the first frame of a
+   new game is a fault repaired rather than a default that was right.
+
+   THIS IS NOT A MIGRATION RISK. The chosen car is persisted BY KEY and a save
+   carries its own; this is only what the game holds before a save says
+   otherwise ([[RLG-197]]).
+   ------------------------------------------------------------------------- */
+let optBody = 'SALOON';
 
 
 /* ===========================================================================
@@ -6263,6 +6288,27 @@ let optPaint = 'WHITE', optEasy = true;   /* no cops unless HOT PURSUIT is on */
    grid is sports cars; take a supercar and it is supercars. That is what makes
    the sports league a league rather than a handicap.
    -------------------------------------------------------------------------- */
+/* ---- AND THE LOW END IS A LEAGUE NOW (RLG-213) --------------------------
+   Owner, 2026-09-12: the ladder starts in production. So production is a RACE
+   class with a grid of its own, and it is the first one the player ever sees.
+
+   TWO BODIES, NOT THREE, AND THAT IS A KNOWN GAP. The owner named "sedan,
+   coupe, and hatchback" and the HATCHBACK does not exist - no record, no rig
+   and no sprites at either end. A grid repeats bodies to fill eleven places
+   whatever the class holds, so two works and reads as less varied than the
+   classes above it. The third car is its own piece of work and drops in here
+   with no other edit.
+   --------------------------------------------------------------------- */
+const PRODUCTION_BODIES = ['SALOON','COUPE'];
+/* ---- WHAT A GOLD PAYS, AS ONE TABLE (RLG-213) --------------------------
+   The rungs of the ladder, in one place because three readers ask: the finish
+   that grants it, the garage caption that promises it, and a harness that
+   checks the first rung exists at all. The paints sit above the last class
+   because they are the only prize that is not a car, so nothing is made
+   obsolete by winning them.
+   --------------------------------------------------------------------- */
+const GOLD_PAYS = { production:'sports', sports:'super',
+                    super:'formula', formula:'iridescent' };
 const SPORTS_BODIES = ['ROADSTER','TUNER','MUSCLE'];
 const SUPER_BODIES  = ['STALLION','MATADOR','CREST'];
 /* ---- AND THE OPEN-WHEELERS ARE A CLASS OF THEIR OWN ----------------------
@@ -6313,14 +6359,25 @@ function classOf(k){
   if(isFormula(k)) return 'formula';
   const B = BODY[k];
   if(B && B.raceClass) return B.raceClass;
+  /* PRODUCTION IS ASKED BEFORE SPORTS and both are asked before the fall-
+     through, which still lands on `super`. The order matters only in that a
+     body must appear in exactly one of these lists; `class-test` is what says
+     so, rather than this comment. */
+  if(PRODUCTION_BODIES.indexOf(k) >= 0) return 'production';
   return SPORTS_BODIES.indexOf(k) >= 0 ? 'sports' : 'super';
 }
 function racerBodies(){
   const c = classOf(optBody);
-  return c === 'sports' ? SPORTS_BODIES : c === 'formula' ? FORMULA_BODIES : SUPER_BODIES;
+  return c === 'production' ? PRODUCTION_BODIES
+       : c === 'sports' ? SPORTS_BODIES
+       : c === 'formula' ? FORMULA_BODIES : SUPER_BODIES;
 }
 /* kept for the sprite pre-build, which needs every body a rival might use */
-const RACER_BODIES = SPORTS_BODIES.concat(SUPER_BODIES).concat(FORMULA_BODIES);
+/* kept for the sprite pre-build, which needs every body a rival might use -
+   and PRODUCTION is one of those now, so a saloon on a grid gets a built sprite
+   rather than the simplified block (RLG-213) */
+const RACER_BODIES = PRODUCTION_BODIES.concat(SPORTS_BODIES)
+                       .concat(SUPER_BODIES).concat(FORMULA_BODIES);
 const RACER_SP = {};
 let TRAFFIC_SP = {}, FRONT_SP = {};
 /* ---- A RIVAL'S FACE, BUILT WHEN IT IS FIRST WANTED -----------------------
@@ -14817,12 +14874,18 @@ function stepRacers(dt){
              is not a car, so it is the one that can sit above the last class
              without making anything obsolete.
              --------------------------------------------------------- */
-          if(st === 1 && classOf(optBody) === 'sports')
-            AR.save.merge((GAME_ID + '-opts'), { super:true });
-          if(st === 1 && classOf(optBody) === 'super')
-            AR.save.merge((GAME_ID + '-opts'), { formula:true });
-          if(st === 1 && classOf(optBody) === 'formula')
-            AR.save.merge((GAME_ID + '-opts'), { iridescent:true });
+          /* ---- THE LADDER IS A TABLE, NOT FOUR BRANCHES (RLG-213) ------
+             Owner, 2026-09-12: production gold unlocks sports. That made the
+             rungs production -> sports -> super -> formula, and adding a
+             fourth `if` to a stack of three is how a ladder ends up stated in
+             two places - the reward screen and a harness both have to ask the
+             same question, and each of them was about to get its own copy.
+
+             `GOLD_PAYS` above is the ladder. This looks a class up in it. */
+          if(st === 1){
+            const pays = GOLD_PAYS[classOf(optBody)];
+            if(pays) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
+          }
           /* ---- AND THE POLICE CAR OF YOUR OWN CLASS, IF YOU RAN IT HOT ----
              Owner's ruling: a gold with HOT PURSUIT on also hands you the
              force's version of what you were driving. The sports ladder pays
@@ -26057,6 +26120,22 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                   keeps every car, with no migration table to write and none
                   to maintain forever after ([[RLG-197]]).
                   -------------------------------------------------------- */
+               /* ---- AND SPORTS IS A CLASS YOU WIN NOW (RLG-213) --------
+                  Owner, 2026-09-12: "it also means the sports cars are not
+                  available on a fresh save file."
+
+                  THE TABLE'S RULE THAT A MISSING ROW MEANS OPEN-FROM-THE-
+                  START WAS WRITTEN FOR THESE THREE, and it stops being true
+                  of them here - so they get rows, and `OPEN_FROM_THE_START`
+                  carries the meaning instead. The rule now reads: a body with
+                  no row is open and race-legal, and there are none left.
+
+                  IT CANNOT SHIP BEFORE THE PRODUCTION TOURNAMENT. A locked
+                  sports class with no production league to win it from is a
+                  fresh save holding two cars and no road out, so these three
+                  rows and the production gold below land together.
+                  -------------------------------------------------------- */
+               'ROADSTER':'sports', 'TUNER':'sports', 'MUSCLE':'sports',
                'SALOON':'production', 'COUPE':'production',
                'CAB':'traffic', 'PICKUP':'traffic',
                'VAN':'traffic', 'SEMI':'traffic', 'AMBULANCE':'traffic' };
@@ -26099,18 +26178,16 @@ const TRAFFIC_MILES = 100;
    you already had. These two rows and `dutyLegal` below land in the same
    release, and there is no order in which only one of them is true.
    ------------------------------------------------------------------------- */
-/* ---- AND PRODUCTION IS STILL BANNED, FOR NOW (RLG-213) ------------------
-   The resort and the LADDER are two pieces of work and this is the seam. Under
-   the ladder a production car races production cars - but `classOf` has no
-   production league to put it in yet, so lifting the ban here would put a
-   SALOON on a grid of sports cars, which is the one thing this game has never
-   done ([[RLG-202]]).
+/* ---- AND PRODUCTION RACES NOW (RLG-213) ---------------------------------
+   The row came out in the same unit that gave `classOf` a production league,
+   which was the condition set when the resort landed: lifting it before the
+   league existed would have put a SALOON on a grid of supercars, the one thing
+   this game has never done ([[RLG-202]]).
 
-   So the row stays until the league exists, and every commit in between is a
-   build that can be shipped. It comes out in the same unit that gives
-   `classOf` a production answer, and not before.
+   WHAT IS LEFT HERE IS EVERY CAR THAT IS NOT A RACER plus the two force cars,
+   which have INTERCEPT instead ([[RLG-203]]).
    --------------------------------------------------------------------- */
-const RACE_BANNED = { production:1, traffic:1, cruiser:1, supercruiser:1 };
+const RACE_BANNED = { traffic:1, cruiser:1, supercruiser:1 };
 function bodyClass(k){ return BODY_CLASS[k] || 'sport'; }
 function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
 /* ---- WHICH CARS CAN GO ON SHIFT ------------------------------------------
@@ -26217,6 +26294,7 @@ function enforceModeRules(){
    are not listed here at all.
    ---------------------------------------------------------------------- */
 const UNLOCK_HOW = {
+  sports:       'WIN A PRODUCTION TOURNAMENT',
   super:        'WIN A SPORTS TOURNAMENT',
   formula:      'WIN A SUPERCAR TOURNAMENT',
   cruiser:      'WIN A SPORTS TOURNAMENT \u00B7 HOT PURSUIT ON',
@@ -28339,6 +28417,14 @@ requestAnimationFrame(frameLoop);
      -------------------------------------------------------------------- */
   API.raceClass = function(k){ return classOf(k || optBody); };
   API.garageBodies = function(){ return garageBodies().slice(); };
+  /* ---- AND THE ONES THAT CAN ACTUALLY BE DRIVEN ------------------------
+     `garageBodies` is what the garage LISTS, which includes the silhouettes of
+     cars still to be won - so it is the wrong question to ask about ownership,
+     and a check that asked it read a locked sports car as owned. The two
+     answers only part company for a class that is locked and NOT secret, which
+     is exactly what [[RLG-213]] made the sports class.
+     ------------------------------------------------------------------- */
+  API.playableBodies = function(){ return playableBodies().slice(); };
   /* the round and the points are kept when a mode is dropped - this is how a
      check proves the tournament was switched OFF rather than erased */
   API.tourState = function(){ return { on:!!tourOn, round:tourRound, pts:tourPts }; };
@@ -28528,6 +28614,20 @@ requestAnimationFrame(frameLoop);
      alone, because "the mode did not engage" and "this car cannot go on shift"
      are different failures and a bare boolean cannot tell them apart.
      ------------------------------------------------------------------- */
+  /* ---- A TEST CAN ASK WHAT A GOLD WOULD PAY (RLG-213) -------------------
+     The ladder's first rung is the one that matters most: a locked sports class
+     with no production tournament to win it from is a fresh save holding two
+     cars and no road out. Proving it by DRIVING a tournament to first place is
+     minutes of harness for one boolean, and the thing under test is the reward
+     branch rather than the racing.
+
+     AND IT READS THE SAME TABLE THE FINISH READS. The first version of this
+     was a copy of the four-way branch, written and deleted in the same minute:
+     a second copy of the ladder is a second thing to keep right, and the one
+     that is not exercised is the one that goes stale. `GOLD_PAYS` is the
+     ladder, the finish looks a class up in it, and so does this.
+     ------------------------------------------------------------------- */
+  API.goldPays = function(){ return GOLD_PAYS[classOf(optBody)] || ''; };
   API.duty = function(){
     return { on: playerIsPolice(), chosen: duty, legal: dutyLegal(optBody), body: optBody,
              mode: mode, tour: tourOn, pursuit: !optEasy,

@@ -19,6 +19,25 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-89"></a>
+## [0.13.89] - 2026-09-12
+- Added: **the ladder starts in production.** RLG-213's second piece. A production gold now unlocks
+  the sports class, and the rungs run production, sports, super, formula, with the iridescent paints
+  above the last class. `classOf` has a production league to put a saloon in, so production comes out
+  of `RACE_BANNED` in the same change - the condition set when the resort landed.
+- Changed: **a fresh save holds production and nothing else.** Owner: "it also means the sports cars
+  are not available on a fresh save file." The three sports cars gain rows in `BODY_CLASS`, which
+  retires that table's oldest convention - a body with no row meant open-from-the-start, and the rule
+  was written for exactly those three. The default car is a SALOON rather than a ROADSTER.
+- Changed: **what a gold pays is one table rather than four branches.** The finish, the garage caption
+  and the checks all ask the same question, and each was about to get its own copy of the answer.
+- Fixed: **a production car carries no nitrous bottle, by ruling rather than by accident.** Owner:
+  "production cars will not have nitrous bottles." It was already true because production was not a
+  racing class when the bottle list was written. It is a league now, so the absence is stated and
+  asserted - the obvious tidy-up is to add the fourth racing class for symmetry, and the low end
+  having no bottle is what makes the first gold worth winning.
+  [RLG-213](../fragments/RLG-213.md)
+
 <a id="v0-13-88"></a>
 ## [0.13.88] - 2026-09-12
 - Changed: **the fleet resorts into three groups, and everything that is not a racer is one class.**
