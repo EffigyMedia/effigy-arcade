@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.96';
+window.ROAD_BUILD = '0.13.97';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2985,8 +2985,33 @@ function rigFurniture(g, w, h, kind, L, P){
   if(kind === 'van'){
     /* a van's door mirrors stand outboard of the body and you see them from
        behind as well as from in front */
-    for(const mx of [0.020, 0.950]){
-      g.fillStyle = P.lo; g.fillRect(w*mx, L.top + h*0.075, w*0.030, h*0.105);
+    /* ---- ON STALKS (RLG-219) ---------------------------------------------
+       Owner, 2026-09-12, from the Savana reference: "mirrors on stalks". They
+       were two loose rectangles floating beside the body with a gap between,
+       attached to nothing - which at this size reads as a pair of marks rather
+       than as mirrors.
+
+       THE ARM IS DRAWN FIRST AND UNDER THE HEAD, so the head is a solid block
+       standing off the body on a thin bracket. A van's arms are long and that
+       is what the reference shows.
+
+       IT IS HERE RATHER THAN IN EITHER PAINTER BECAUSE BOTH CALL IT. A mirror
+       is outline, not furniture - the note above `carMirrors` says so - and a
+       stalk drawn on the face alone would give the van two silhouettes
+       (RLG-184). Drawn once, it reads from behind as well, which is correct:
+       you can see the arms of a van's mirrors from either end. */
+    for(const sx of [-1, 1]){
+      const headX = sx < 0 ? 0.020 : 0.950;      /* the head, outboard */
+      const bodyX = sx < 0 ? 0.055 : 0.945;      /* where the arm meets the van */
+      const armY = L.top + h*0.118, armH = h*0.020;
+      g.fillStyle = P.lo;
+      g.fillRect(w*Math.min(headX + 0.030, bodyX), armY,
+                 w*Math.abs(bodyX - (headX + (sx < 0 ? 0.030 : 0))) + w*0.004, armH);
+      g.fillRect(w*headX, L.top + h*0.075, w*0.030, h*0.105);
+      /* a little light down the outboard edge of the head, so it is a glass in
+         a housing rather than a block of the body colour */
+      g.fillStyle = 'rgba(255,255,255,.16)';
+      g.fillRect(w*headX, L.top + h*0.075, w*0.010, h*0.105);
     }
     return;
   }
@@ -3799,31 +3824,108 @@ function paintRigFront(kind, o){
         parts.wipers = wiperPair(w*0.11, w*0.89, top+h*0.055, top+h*0.200,
                                  P.body, P.hi);
       rigFurniture(g, w, h, 'van', { top:top, bot:bot }, P);
-      /* a van's face is a big flat panel: the grille takes most of it, not a
-         letterbox slot */
-      g.fillStyle='rgba(12,14,18,.86)';
-      rr(g, w*0.145, bot-h*0.215, w*0.71, h*0.135, 4); g.fill();
-      g.strokeStyle='rgba(170,182,196,.20)'; g.lineWidth=1.2;
-      for(let k=1;k<4;k++){
-        const yy = bot-h*0.215 + k*h*0.034;
-        g.beginPath(); g.moveTo(w*0.165, yy); g.lineTo(w*0.835, yy); g.stroke();
-      }
-      /* the same corners as the tail, and the same stack the owner ruled for
-         it: one amber above, one lamp below, on each side */
-      decl(g, lamps, 'head', (gg, on) => {
-        for(const lx of [0.07, 0.855]){
-          gg.fillStyle = headOf(on);
-          rr(gg, w*lx, bot-h*0.092, w*0.075, h*0.072, 2); gg.fill();
+      /* ---- THE VAN'S FACE, FROM THE SAVANA REFERENCE (RLG-219) ----------
+         Owner, 2026-09-12, with a photograph of a GMC Savana: a tall upright
+         grille with horizontal slats and a badge in the middle of it,
+         headlights either side of it, AMBER TURN SIGNALS BELOW THE HEADLIGHTS
+         rather than beside them, a chrome bumper across the bottom, and mirrors
+         on stalks.
+
+         WHAT WAS THERE READ AS A BLANK PANEL. The grille was a letterbox 0.71
+         wide and 0.135 tall lying along the bottom of the face, the badge was a
+         4-pixel disc floating alone in the middle of the empty white above it,
+         and the lamps were stacked in the corners OUTBOARD of the grille rather
+         than beside it - so the whole middle of the van, which is most of what
+         you see of one, carried nothing at all.
+
+         THE GRILLE IS THE FACE NOW. It stands up in the centre, the headlights
+         flank it at its own height instead of sitting under the corners, and
+         the ambers drop below them. The badge goes ON the grille, which is where
+         a van wears it and is also the only place on this vehicle where a badge
+         has anything to sit against.
+
+         EVERY NUMBER HERE IS INSIDE THE OUTLINE (RLG-184). The slab, the
+         windscreen and the body edges are untouched, so the tail is unaffected
+         and the two ends still trace the same silhouette. The bumper is the one
+         to watch: it stays within 0.055 to 0.945 rather than standing proud,
+         because the widest ink on this vehicle is what the invariant measures.
+
+         AND IT IS GATED OFF THE AMBULANCE. `paintRigFront` remaps 'ambulance'
+         to 'van', so everything written here reaches the ambulance unless it is
+         held back - and the owner's ambulance reference is a different face
+         again, with a red light bar, roof markers, a taller screen and a black
+         bumper. It keeps the old face until that is built, deliberately, rather
+         than being given half of a van's. */
+      const isAmb = !!o.bar;
+      if(isAmb){
+        /* the ambulance's face, unchanged, until its own reference is built */
+        g.fillStyle='rgba(12,14,18,.86)';
+        rr(g, w*0.145, bot-h*0.215, w*0.71, h*0.135, 4); g.fill();
+        g.strokeStyle='rgba(170,182,196,.20)'; g.lineWidth=1.2;
+        for(let k=1;k<4;k++){
+          const yy = bot-h*0.215 + k*h*0.034;
+          g.beginPath(); g.moveTo(w*0.165, yy); g.lineTo(w*0.835, yy); g.stroke();
         }
-      });
-      decl(g, lamps, 'turn.l', (gg, on) => {
-        gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
-        rr(gg, w*0.07, bot-h*0.150, w*0.075, h*0.042, 2); gg.fill();
-      });
-      decl(g, lamps, 'turn.r', (gg, on) => {
-        gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
-        rr(gg, w*0.855, bot-h*0.150, w*0.075, h*0.042, 2); gg.fill();
-      });
+        decl(g, lamps, 'head', (gg, on) => {
+          for(const lx of [0.07, 0.855]){
+            gg.fillStyle = headOf(on);
+            rr(gg, w*lx, bot-h*0.092, w*0.075, h*0.072, 2); gg.fill();
+          }
+        });
+        decl(g, lamps, 'turn.l', (gg, on) => {
+          gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+          rr(gg, w*0.07, bot-h*0.150, w*0.075, h*0.042, 2); gg.fill();
+        });
+        decl(g, lamps, 'turn.r', (gg, on) => {
+          gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+          rr(gg, w*0.855, bot-h*0.150, w*0.075, h*0.042, 2); gg.fill();
+        });
+      } else {
+        /* the grille: upright, centred, and the tallest thing on the face */
+        const gT = bot - h*0.480, gH = h*0.375, gX = 0.285, gW = 0.430;
+        g.fillStyle = 'rgba(10,12,16,.90)';
+        rr(g, w*gX, gT, w*gW, gH, 5); g.fill();
+        /* a rim, so it reads as a recess in the panel rather than a sticker */
+        g.strokeStyle = 'rgba(190,200,212,.22)'; g.lineWidth = Math.max(1, w*0.006);
+        rr(g, w*gX, gT, w*gW, gH, 5); g.stroke();
+        /* the slats, drawn from the grille's own box so they follow it. THE
+           MIDDLE ONE IS BROKEN FOR THE BADGE: drawn whole, the centre slat runs
+           straight through the marque and the badge reads as a lump on a bar
+           rather than as a badge. A real grille parts around its badge. */
+        g.strokeStyle = 'rgba(170,182,196,.22)'; g.lineWidth = Math.max(1, h*0.010);
+        const bR = h*0.055, bGap = bR*1.5/w;
+        for(let k=1;k<6;k++){
+          const yy = gT + gH*k/6;
+          g.beginPath();
+          if(k === 3){
+            g.moveTo(w*(gX+0.020), yy); g.lineTo(w*(0.5-bGap), yy);
+            g.moveTo(w*(0.5+bGap), yy); g.lineTo(w*(gX+gW-0.020), yy);
+          } else {
+            g.moveTo(w*(gX+0.020), yy); g.lineTo(w*(gX+gW-0.020), yy);
+          }
+          g.stroke();
+        }
+        /* the badge, in the middle of the grille - see the note above */
+        drawMarque(g, 'GENERIC', w*0.5, gT + gH*0.5, bR);
+        /* the headlights, EITHER SIDE of the grille and at its height, with the
+           ambers directly below them. Placed off the grille's own edges, so a
+           grille that is ever retuned takes its lamps with it. */
+        const LW = 0.175, lL = gX - 0.030 - LW, lR = gX + gW + 0.030;
+        const hT = gT + h*0.030, hH = h*0.130;
+        const aT = hT + hH + h*0.030, aH = h*0.080;
+        decl(g, lamps, 'head', (gg, on) => {
+          for(const lx of [lL, lR]){
+            gg.fillStyle = headOf(on);
+            rr(gg, w*lx, hT, w*LW, hH, 3); gg.fill();
+          }
+        });
+        const amber = (lx) => (gg, on) => {
+          gg.fillStyle = on ? AMBER_ON : AMBER_OFF;
+          rr(gg, w*lx, aT, w*LW, aH, 2); gg.fill();
+        };
+        decl(g, lamps, 'turn.l', amber(lL));
+        decl(g, lamps, 'turn.r', amber(lR));
+      }
       /* the van wears it on the NOSE only - and an ambulance wears a red cross
          there instead of the badge, as PAINT rather than as a marque.
 
@@ -3837,8 +3939,43 @@ function paintRigFront(kind, o){
         const winB = top + h*0.200, grillT = bot - h*0.215;
         drawCross(g, w*0.5, (winB + grillT) * 0.5, w*0.15, 0.34);
       }
-      else                    drawMarque(g, 'GENERIC', w*0.5, bot-h*0.285, h*0.030);
-      g.fillStyle='#1b1f26'; g.fillRect(w*0.055, bot-h*0.055, w*0.89, h*0.055);
+      /* THE VAN'S BADGE IS ON THE GRILLE NOW (RLG-219) and is drawn up there
+         with it. It used to be here, at `bot-0.285`, which is the middle of the
+         blank panel - a disc four pixels across with nothing around it. */
+      /* ---- AND THE BUMPER IS CHROME (RLG-219) ---------------------------
+         Owner: "a chrome bumper across the bottom". It was flat `#1b1f26`,
+         which on a white van is a black bar. Chrome is the pickup's own bumper
+         colour and highlight, because two answers to what chrome looks like is
+         how a fleet stops agreeing with itself.
+
+         IT STAYS INSIDE 0.055 TO 0.945. A real bumper stands proud of the body
+         and this one must not: the widest ink is what `car-ends-test` measures,
+         and a front bumper wider than the tail's is a silhouette that disagrees
+         with itself (RLG-184).
+
+         THE AMBULANCE KEEPS THE BLACK ONE - its own reference asks for "a black
+         bumper with a white plate", so this is one of the places the two faces
+         are meant to differ rather than one waiting to be unified. */
+      if(isAmb){
+        g.fillStyle='#1b1f26'; g.fillRect(w*0.055, bot-h*0.055, w*0.89, h*0.055);
+      } else {
+        /* CHROME ON A WHITE VAN NEEDS AN EDGE, NOT JUST A TONE. The first build
+           was the pickup's flat `#7d838c` with a white highlight, and on a white
+           body the highlight ran straight into the paint - the bumper stopped
+           having a top. A dark seam where it meets the panel is what separates
+           them, and the bar itself is a gradient rather than a fill so it reads
+           as metal rather than as grey plastic. */
+        const buT = bot - h*0.078;
+        g.fillStyle = 'rgba(28,32,38,.55)';
+        g.fillRect(w*0.055, buT - h*0.012, w*0.89, h*0.012);
+        const cg = g.createLinearGradient(0, buT, 0, bot);
+        cg.addColorStop(0, '#b9c0c9'); cg.addColorStop(0.34, '#868d96');
+        cg.addColorStop(0.62, '#5d636c'); cg.addColorStop(1, '#3a3f47');
+        g.fillStyle = cg;
+        rr(g, w*0.055, buT, w*0.89, h*0.078, 3); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.40)';
+        g.fillRect(w*0.065, buT + h*0.008, w*0.87, h*0.010);
+      }
       /* the front half of the van's bar - this branch returns too, so the
          shared block at the foot of the painter never sees it either. Same
          roof line and same span as the rear, and the lenses MIRROR: this end's

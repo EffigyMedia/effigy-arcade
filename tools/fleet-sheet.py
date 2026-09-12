@@ -37,7 +37,11 @@ ROOT = Path(__file__).resolve().parent.parent
 # ONE SHEET PER CLASS. A single picture of everything came out unreadable at any
 # size that fits on a screen - the owner asked for them split, and a class is the
 # grouping the fleet actually has rather than one invented for the page.
-CLASSES = ['formula', 'super', 'sport', 'police', 'production', 'utility']
+# THE LAST NAME HERE WAS `utility` AND NO SUCH CLASS EXISTS. The fleet resort made the non-racing
+# vehicles one class called `traffic`, and this list was never moved with it - so every run printed
+# "utility no vehicles in this class" and the VAN, the SEMI, the CAB, the PICKUP and the AMBULANCE
+# have had no sheet at all since. A name that silently matches nothing is the worst kind of stale.
+CLASSES = ['formula', 'super', 'sport', 'police', 'production', 'traffic']
 
 
 def _handover():

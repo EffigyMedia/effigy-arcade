@@ -19,6 +19,26 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-97"></a>
+## [0.13.97] - 2026-09-12
+- Changed: **the van has a face.** Owner, with a GMC Savana reference: a tall upright grille with
+  horizontal slats and a badge in the middle of it, headlights either side, amber turn signals below
+  the headlights rather than beside them, a chrome bumper, and mirrors on stalks. What was there was
+  a letterbox grille lying along the bottom, a four-pixel badge floating alone in the blank white
+  above it, and the lamps stacked in the outboard corners - so the whole middle of the van carried
+  nothing. The grille now stands up in the centre with the lamps flanking it, the middle slat parts
+  around the badge, and the mirrors are drawn on arms in the shared rig so they read from behind too.
+  [RLG-219](../fragments/RLG-219.md)
+- Unchanged on purpose: **the ambulance keeps its old face.** It is drawn as a van, so everything
+  above would have reached it; its own reference is a different face again - red light bar, roof
+  markers, a taller screen, a grille with red in it and a black bumper - and half of each would look
+  like neither. [RLG-219](../fragments/RLG-219.md)
+- Fixed: **`fleet-sheet.py` had not drawn the van, the semi, the cab, the pickup or the ambulance in
+  weeks.** Its class list ended in `utility` and no such class exists - the fleet resort renamed it
+  `traffic` - so every run printed "no vehicles in this class" and carried on. A name that silently
+  matches nothing reports an absence as a fact about the fleet.
+  [RLG-219](../fragments/RLG-219.md)
+
 <a id="v0-13-96"></a>
 ## [0.13.96] - 2026-09-12
 - Fixed: **you could see vehicles through the scenery on a bend.** Owner, from the device. The
