@@ -829,7 +829,27 @@ h1 u{text-decoration:none;display:block;font-size:.34em;letter-spacing:.26em;col
 .tip{margin-top:16px;font-size:10px;line-height:1.8;color:var(--dim)}
 .tip b{color:var(--pale)}
 
-.gwrap{margin:2px auto 10px}
+.gwrap{margin:2px auto 10px;position:relative}
+/* ---- THE FLIP BUTTON SITS IN THE CORNER OF THE VIEW PANE (RLG-210) -------
+   Owner, 2026-09-12: "a little button in the corner of the view pane". So it
+   is positioned against `.gwrap` rather than placed in the flow, and `.gwrap`
+   is given `position:relative` for it - the canvas itself cannot be the anchor
+   because it is replaced wholesale on every redraw.
+
+   THE TOUCH TARGET IS BIGGER THAN THE BUTTON LOOKS, and that is the whole
+   trick. The owner asked for "a little button", and a little button is under
+   the 44px a thumb needs - so the CHIP is small and `::after` lays a 44px
+   square over its centre to be pressed. Padding it to 44px instead was tried
+   and it reads as a panel rather than a corner control. */
+.gflip{position:absolute;top:6px;right:8px;z-index:2;
+  padding:4px 8px;
+  background:rgba(12,10,18,.62);border:1px solid rgba(255,255,255,.14);
+  border-radius:8px;color:#c8cede;
+  font-family:inherit;font-size:9px;letter-spacing:.14em;
+  -webkit-tap-highlight-color:transparent;cursor:pointer}
+.gflip:active{background:rgba(32,28,44,.86);color:#fff3e2}
+.gflip::after{content:'';position:absolute;left:50%;top:50%;
+  width:44px;height:44px;transform:translate(-50%,-50%)}
 #gcar{display:block;margin:0 auto}
 .gname{font-family:var(--disp);font-size:20px;letter-spacing:.10em;color:#fff3e2;margin-top:2px}
 .gnote{font-size:9px;letter-spacing:.14em;color:#8a7f92;margin:4px 0 10px}

@@ -256,7 +256,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.13.85';
+window.ROAD_BUILD = '0.13.86';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -25404,16 +25404,38 @@ function garageCard(){
      entry you happen to be locked out of, while `???` is a question. The shape
      still says what CLASS it is, which is all the invitation needs.
      ------------------------------------------------------------------- */
+  /* ---- THE BUTTON THAT TURNS THE CAR ROUND (RLG-210) -------------------
+     Owner, 2026-09-12: "a little button in the corner of the view pane that
+     toggles between front and rear view."
+
+     IT SAYS WHERE IT WILL TAKE YOU rather than where you are. A toggle
+     labelled with its current state is the oldest ambiguity in an interface,
+     and there is no room here for both - the button is a corner of a card.
+
+     IT IS ON THE LOCKED CARD TOO. A silhouette has two ends like any other
+     car, and the shape is the whole invitation, so refusing to turn it round
+     would withhold half of what the card is for.
+
+     NO LABEL FOR A CAR WITH ONE END. Nothing in the fleet is in that state,
+     and if one ever is, a button that cannot change what you see is worse
+     than no button.
+     ------------------------------------------------------------------- */
+  function flipButton(){
+    if(!SP.playerFront) return '';
+    return '<button class="gflip" data-act="flip" aria-label="' +
+      (garageEnd === 'front' ? 'show the rear' : 'show the front') + '">' +
+      (garageEnd === 'front' ? 'REAR' : 'FRONT') + '</button>';
+  }
   if(carLocked(optBody)){
     return '<div class="gwrap locked">' +
-      '<canvas id="gcar" width="300" height="180"></canvas>' +
+      '<canvas id="gcar" width="300" height="180"></canvas>' + flipButton() +
       '<div class="gname">???</div>' +
       '<div class="gnote lock">LOCKED</div>' +
       '<div class="gnote">' + unlockHow(optBody) + '</div>' +
     '</div>';
   }
   return '<div class="gwrap">' +
-    '<canvas id="gcar" width="300" height="180"></canvas>' +
+    '<canvas id="gcar" width="300" height="180"></canvas>' + flipButton() +
     '<div class="gname">' + optBody + '</div>' +
     '<div class="gnote">' + B.note + '</div>' +
     '<div class="gstat"><span>TOP SPEED</span><b>' + top + ' MPH</b></div>' +
@@ -25486,15 +25508,40 @@ function spriteInk(img){
 /* the card's own geometry, in one place, because the height is now decided by
    a car that is not the one on screen */
 const GARAGE_TOP = 6, GARAGE_HALF = 150, GARAGE_PAD = 12, GARAGE_DEEP = 150;
+/* ---- ONE END, AND THE CARD IS THE WHOLE WIDTH NOW (RLG-210) --------------
+   Owner, 2026-09-11: "I only want the front of a vehicle shown in the garage.
+   That way it can be larger and centered."
+
+   `GARAGE_HALF` is what the two-end card was fitted into, and one end gets the
+   lot: 300 wide against 150, so a car is drawn at twice the width it had. The
+   half is kept rather than deleted because `garageCardHeight` still walks the
+   whole fleet through `garageFit`, and a constant that two functions read is
+   the wrong thing to inline at the point of use.
+   --------------------------------------------------------------------- */
+const GARAGE_WIDE = 300;
+/* WHICH END IS SHOWN. The owner asked for a button in the corner of the view
+   pane rather than the flip being deferred, and for FRONT to be the default
+   "restored every time the garage opens" - so this is deliberately NOT
+   persisted and NOT a setting. `showGarage` writes it back to 'front' on the
+   way in, which is the whole of that rule. */
+let garageEnd = 'front';
 /* how tall the pair of pictures is for whichever car is loaded right now */
 function garageFit(){
   const back = SP.player, front = SP.playerFront;
   if(!back) return null;
+  /* ---- BOTH ENDS ARE STILL MEASURED, AND ONLY ONE IS DRAWN (RLG-210) ----
+     The card shows one end now, and the fit is still taken across BOTH. That
+     is deliberate: if the scale followed whichever end is on screen, flipping
+     the card would resize the car, and a car that changes size when you look
+     at its other end is the thing RLG-182 spent a whole ruling fixing. The
+     drawn height comes from the pair, so the two ends stay the same size as
+     each other exactly as they did side by side.
+     ------------------------------------------------------------------- */
   const pair = front ? [back, front] : [back];
   const boxes = pair.map(spriteInk);
   const maxW = Math.max.apply(null, boxes.map(b => b.w));
   const maxH = Math.max.apply(null, boxes.map(b => b.h));
-  const sc = Math.min((GARAGE_HALF - GARAGE_PAD*2) / maxW,
+  const sc = Math.min((GARAGE_WIDE - GARAGE_PAD*2) / maxW,
                       (GARAGE_DEEP - GARAGE_TOP) / maxH);
   /* ---- EACH END TO THE SAME HEIGHT (owner, 2026-09-09, RLG-182) ---------
      Owner, from the garage: "the height of the vehicles aren't the same. Every
@@ -25532,8 +25579,8 @@ function garageFit(){
      amount of arithmetic on this card can make two different shapes the same.
      ------------------------------------------------------------------- */
   const drawnH = maxH * sc;
-  const halfW = GARAGE_HALF - GARAGE_PAD*2;
-  const scales = boxes.map(b => Math.min(drawnH / b.h, halfW / b.w));
+  const wide = GARAGE_WIDE - GARAGE_PAD*2;
+  const scales = boxes.map(b => Math.min(drawnH / b.h, wide / b.w));
   return { boxes: boxes, sc: sc, scales: scales,
            drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
 }
@@ -25665,8 +25712,24 @@ function drawGarageCar(){
     const dy = FLOOR - (box.y + box.h)*k;
     g2.drawImage(img, dx, dy, img.width*k, img.height*k);
   };
-  if(!front){ put(back, boxes[0], 150, scales[0]); }
-  else { put(back,  boxes[0],  75, scales[0]); put(front, boxes[1], 225, scales[1]); }
+  /* ---- ONE END, CENTRED (RLG-210) --------------------------------------
+     Owner, 2026-09-11: "I only want the front of a vehicle shown in the
+     garage. That way it can be larger and centered."
+
+     THE COST IS REAL AND IT IS PAID KNOWINGLY. The rear is where every lamp,
+     every stripe and the number live, and RLG-053's lamp declaration is
+     finished for every REAR sprite in the game and explicitly NOT for the
+     fronts - so the half the player now looks at is the less complete one.
+     The flip button below is what buys the rear back without giving the
+     width away, which is why the owner asked for it in the same breath.
+
+     A CAR WITH NO FRONT SPRITE STILL SHOWS ITS BACK rather than an empty
+     card. Nothing in the fleet is in that state today and the fallback costs
+     one expression.
+     ------------------------------------------------------------------- */
+  const showFront = garageEnd === 'front' && !!front;
+  if(showFront) put(front, boxes[1], 150, scales[1]);
+  else put(back, boxes[0], 150, scales[0]);
   /* ---- AND A CAR YOU HAVE NOT WON IS A SHAPE (owner, 2026-09-08) --------
      Flattened rather than redrawn. `source-atop` fills only where the sprites
      already painted, so the silhouette is the car's own outline at its own
@@ -25706,7 +25769,26 @@ function showGarage(){
   document.body.classList.remove('titling');
   /* the garage is reachable from the end card, so it has to tear down too —
      but it keeps the menu music rather than restarting it */
-  if(state !== 'garage'){ endRun(true); state = 'garage'; menuMusic(); }
+  /* ---- AND THE FRONT COMES BACK EVERY TIME IT OPENS (RLG-210) ----------
+     Owner, 2026-09-12: "I just want front to be the default and the default is
+     restored every time the garage opens."
+
+     IT IS RESET ON ENTRY AND NOT ON EVERY REDRAW, and the difference is the
+     whole of it. `showGarage` is what EVERY garage control calls to redraw
+     itself - the paint swatches, the gearbox, the mode, the clock - so a
+     reset at the top of this function would flip the card back to the front
+     the moment you touched a paint swatch while looking at the rear. This
+     block already asks the only question that means "the garage opened",
+     because it is what tears down a finished run.
+
+     AND IT IS NOT PERSISTED. A flip is a look at the car in front of you
+     rather than a preference, so it does not belong in the save beside the
+     paint and the gearbox.
+     ------------------------------------------------------------------- */
+  if(state !== 'garage'){
+    endRun(true); state = 'garage'; menuMusic();
+    garageEnd = 'front';
+  }
   state = 'garage';
   openVeil(
     '<div class="eyebrow">CHOOSE YOUR CAR</div>' +
@@ -25864,6 +25946,13 @@ function showGarage(){
          same reason the mode action has one - a stale veil or a hardware press
          must not be able to drive a car that has not been won (RLG-180). */
       drive: () => { if(carLocked(optBody)) return; start(); },
+      /* ---- TURN THE CAR ROUND (RLG-210) --------------------------------
+         Nothing is saved and nothing else changes. `showGarage` redraws the
+         card and the button's own label together, which is what keeps the
+         two from disagreeing - and it no longer resets the end, because the
+         reset moved onto the entry branch above. */
+      flip: () => { garageEnd = (garageEnd === 'front') ? 'rear' : 'front';
+                    showGarage(); },
       back: showTitle
     }));
   drawGarageCar();

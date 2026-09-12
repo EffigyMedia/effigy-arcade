@@ -19,6 +19,23 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-13-86"></a>
+## [0.13.86] - 2026-09-12
+- Changed: **the garage card shows one end of the car, large and centred, with a button to turn it
+  round.** Owner, 2026-09-11: "I only want the front of a vehicle shown in the garage. That way it
+  can be larger and centered", anchored at the bottom, in one box grown only for the odd sizes. The
+  card fitted two ends into half the width each; one end gets the whole 300, so a MUSCLE is drawn
+  224 pixels wide against a ceiling of 126. The floor anchor and the two-tier box were already
+  right and are now asserted rather than assumed.
+- Added: **a chip in the corner of the view pane that flips between the front and the rear.** Owner,
+  2026-09-12, bringing it forward from "after the menu refactor": front is the default and the
+  default returns every time the garage opens. It is reset on ENTRY rather than on every redraw,
+  because `showGarage` is what every control in that screen calls - a reset at the top of it flips
+  the card back the moment you touch a paint swatch. The button says where it will take you rather
+  than where you are, it is on the locked card too, and the visible chip is small with a 44-pixel
+  touch target laid over it.
+  [RLG-210](../fragments/RLG-210.md)
+
 <a id="v0-13-85"></a>
 ## [0.13.85] - 2026-09-12
 - Fixed: **a cruiser takes damage from the traffic it weaves past wherever it is.** The collision ran
