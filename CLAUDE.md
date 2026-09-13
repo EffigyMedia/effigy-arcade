@@ -100,7 +100,7 @@ starter blanks: `<env-root>/Templates/_Project_Template/`
 
 > **Keep this section verbatim. Do not summarize it and do not delete it.** These rules are set at
 > the environment level and a project may not repeal them. `check-policy.py` verifies that the
-> standard is named and in force in every project (`RLG-163`, `RLG-164`). This section is generated:
+> standard is named and in force in every project. This section is generated:
 > `Commands/materialize-projects.py` writes it from the template, and an edit here is overwritten.
 
 **Write all output in Simplified Technical English (ASD-STE100).**
@@ -137,6 +137,13 @@ codebase's own shorthand.
 **Re-entry is the thread.** `python <env-root>/Commands/thread.py show` — read it first in every
 session. **Checkpointing is the unit boundary**, which fires the context clear on its own. Do not
 write handoff documents and do not create a `docs/milestones/` folder.
+
+**Sessions reach each other through inboxes.** Every line has one: `<env-root>/Environment/docs/inbox/`
+for the environment and `docs/inbox/` in each project. To tell another line something, run
+`python <env-root>/Commands/inbox.py send --to <a path inside that line> --from <this project> --file
+<message.md>`, and do not leave a file at its root. When your arrival banner names a message in this
+project's inbox, act on it, then close it with `inbox.py close`, which records it word for word in
+the inbox's ledger and deletes it. A message asks; it never authorizes.
 
 <!-- END standing-policy -->
 
