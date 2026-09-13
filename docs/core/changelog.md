@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-17"></a>
+## [0.14.17] - 2026-09-13
+- Fixed: **on a bend, the road, the cars and the barrier strip beyond the curve no longer draw
+  through the tunnel wall.** The tunnel is painted far to near with the cars between its spans, and
+  the far darkness, lamps and exit portal are hidden by nearer walls. One unexplained few-pixel
+  reading at the tube's far end remains. [RLG-238](../fragments/RLG-238.md)
+
 <a id="v0-14-16"></a>
 ## [0.14.16] - 2026-09-13
 - Changed: **at four stars a roadblock is a slalom of two or three blocks, with openings on

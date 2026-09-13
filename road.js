@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.16';
+window.ROAD_BUILD = '0.14.17';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -21478,37 +21478,23 @@ const crownOf = (q) => q.top - (q.xr - q.xl) * BORE.arch;
    the far end over both. The fade and the lamps keep the order they had with
    respect to each other, because that order is what the owner has seen.
    ------------------------------------------------------------------------ */
-let borePts = null, boreRing = null, borePaths = null;
-/* ---- A SURFACE OF THE TUBE IS DRAWN SPAN BY SPAN (RLG-238) ---------------
+let borePts = null, boreRing = null;
+/* ---- A SURFACE OF THE TUBE IS PAINTED SPAN BY SPAN (RLG-238) ---------------
    Owner, 2026-09-13: "The future roadway is shown through the tunnel wall."
 
    EACH SURFACE WAS ONE POLYGON: along the lower edge from near to far, and back
    along the upper edge. On a bend the wall's screen x runs one way and then the
    other, so that polygon FOLDS over itself - and canvas fills with the nonzero
    rule, under which the two layers of a fold have opposite winding and cancel.
-   The fold is exactly where a nearer stretch of wall stands between the eye
-   and the road beyond the bend, so that stretch was a hole, and the road showed
-   through it.
+   The fold is exactly where a nearer stretch of wall stands between the eye and
+   the road beyond the bend, so that stretch was a hole.
 
-   SO EACH SPAN BETWEEN TWO SAMPLES IS ITS OWN QUAD, and every quad is wound the
-   same way before it goes into the path. Overlapping quads then add rather than
-   cancel, and the whole surface still fills in one call. `lo` and `hi` give a
-   sample's point on the surface's two edges. */
-function boreStrip(pts, lo, hi){
-  const path = new Path2D();
-  for(let i = 1; i < pts.length; i++){
-    const c = [lo(pts[i-1]), lo(pts[i]), hi(pts[i]), hi(pts[i-1])];
-    let s = 0;
-    for(let k = 0; k < 4; k++){ const u = c[k], v = c[(k+1) % 4]; s += u[0]*v[1] - v[0]*u[1]; }
-    if(s < 0) c.reverse();
-    path.moveTo(c[0][0], c[0][1]);
-    for(let k = 1; k < 4; k++) path.lineTo(c[k][0], c[k][1]);
-    path.closePath();
-  }
-  return path;
-}
+   The first repair built each surface from quads wound the same way, which
+   closed the hole and left the ORDER wrong: see `drawBore`. Every span is now
+   its own fill, painted far to near, so neither the winding nor the order can
+   open the wall again. */
 function drawBore(){
-  borePts = null; boreRing = null; borePaths = null;
+  borePts = null; boreRing = null; boreDraw = null;
   /* the tube exists where the TUNNEL is, not where the light is (RLG-153) */
   if(!boreSpan()) return;
   const pts = borePoints();
@@ -21525,8 +21511,6 @@ function drawBore(){
   const sp0 = boreSpan();
   boreRing = boreRings(z0, Math.min(BORE.far,
                                     sp0 ? Math.max(600, sp0.z1 - z0) : BORE.far));
-  ctx.save();
-  /* SOLID. The walls are not a matter of degree - see `borePoints` (RLG-144). */
 
   /* ---- A ROAD TUNNEL IS BRIGHTLY LIT, NOT DARK (RLG-105) --------------
      Owner, 2026-09-01, with two photographs of real bores. They settle it: the
@@ -21540,49 +21524,79 @@ function drawBore(){
      proportions stay where the previous correction put them.
      ---------------------------------------------------------------- */
 
-  /* the vault: a shallow arch springing from the wall tops, ribbed across */
+  /* the vault's backdrop, and up over the frame so the roof closes above the
+     camera. These stand behind every span and are painted first. */
+  ctx.save();
   ctx.fillStyle = '#8d8577';
   ctx.fillRect(0, 0, W, horizon + 2);
   const vault = ctx.createLinearGradient(0, crownOf(ref), 0, wallTop(ref));
   vault.addColorStop(0, '#7c7466');
   vault.addColorStop(1, '#a49b89');
   ctx.fillStyle = vault;
-  const mid = (q) => (q.xl + q.xr) / 2;
-  const vaultL = boreStrip(pts, q => [q.xl, wallTop(q)], q => [mid(q), crownOf(q)]);
-  const vaultR = boreStrip(pts, q => [mid(q), crownOf(q)], q => [q.xr, wallTop(q)]);
-  ctx.fill(vaultL); ctx.fill(vaultR);
-  borePaths = [vaultL, vaultR];
-  /* and up over the frame, so the roof closes above the camera */
   ctx.fillRect(0, 0, W, Math.max(0, crownOf(ref)));
+  ctx.restore();
 
-  /* ---- THE TRANSVERSE JOINTS, AND THEY ARE WHAT MOVES (RLG-153) -----
-     These give a roof its distance, and anchored to the camera they gave it
-     none: the same arch at the same place on the glass, frame after frame.
-     They walk the RINGS now, so each one is a fixed point on the road that
-     comes at you and passes overhead. */
-  ctx.strokeStyle = 'rgba(60,55,46,.45)';
-  for(let i2 = 0; i2 < boreRing.length; i2++){
-    const q = boreRing[i2];
-    if(q.xr - q.xl < 8) continue;
-    ctx.lineWidth = Math.max(0.6, (q.xr - q.xl) * 0.008);
-    ctx.beginPath();
-    ctx.moveTo(q.xl, wallTop(q));
-    ctx.quadraticCurveTo((q.xl + q.xr) / 2, crownOf(q) - (q.xr - q.xl) * 0.04,
-                         q.xr, wallTop(q));
-    ctx.stroke();
-  }
-
-  /* ---- THE WALLS, PALE AND PANELLED --------------------------------- */
-  for(const sideL of [true, false]){
-    const get = (q) => sideL ? q.xl : q.xr;
+  const walls = [true, false].map(sideL => {
     const wall = ctx.createLinearGradient(0, wallTop(ref), 0, ref.y);
     wall.addColorStop(0,    sideL ? '#c6bfa9' : '#bdb6a1');
     wall.addColorStop(0.62, sideL ? '#ada592' : '#a49d8a');
     wall.addColorStop(1,    '#6d675b');
-    ctx.fillStyle = wall;
-    const face = boreStrip(pts, q => [get(q), q.y], q => [get(q), wallTop(q)]);
-    ctx.fill(face);
-    borePaths.push(face);
+    return wall;
+  });
+  /* ---- THE SPANS ARE PAINTED LATER, FAR TO NEAR, WITH THE CARS (RLG-238) ---
+     Owner, 2026-09-13, with a capture: "You can clearly see the road and the
+     vehicles on it beyond the curve being drawn through the wall."
+
+     THE TUBE WAS PAINTED IN PASSES, and a pass has no depth. All the vault, then
+     all the joints, then each wall's faces, outside and barrier - so on a bend
+     the FAR barrier strip was laid over the NEAR wall face, the far joints over
+     it, one wall's far faces over the other wall's near ones, and every car held
+     back for the bore (RLG-145) went over the lot. On a straight none of those
+     overlap, which is why it only ever showed on a curve.
+
+     SO THE TUBE IS PAINTED THE WAY THE ROAD IS: FAR TO NEAR. `paintBoreSpans`
+     walks the spans from the far end, and between one span and the next paints
+     the held-back car buckets that stand beyond it. A nearer span is then
+     painted after everything behind it, which is what hides it. This function
+     only prepares the frame. */
+  boreDraw = { pts: pts, vault: vault, walls: walls };
+}
+let boreDraw = null;
+/* one span of the tube: vault, both wall faces, their outsides, the joints of
+   the rings that stand in it, and the barrier at the foot */
+function paintBoreSpan(i){
+  const pts = boreDraw.pts, a = pts[i - 1], q = pts[i];
+  const quad = (c) => {
+    ctx.beginPath(); ctx.moveTo(c[0][0], c[0][1]);
+    for(let k = 1; k < 4; k++) ctx.lineTo(c[k][0], c[k][1]);
+    ctx.closePath(); ctx.fill();
+  };
+  const mid = (p) => (p.xl + p.xr) / 2;
+  ctx.fillStyle = boreDraw.vault;
+  quad([[a.xl, wallTop(a)], [q.xl, wallTop(q)], [mid(q), crownOf(q)], [mid(a), crownOf(a)]]);
+  quad([[mid(a), crownOf(a)], [mid(q), crownOf(q)], [q.xr, wallTop(q)], [a.xr, wallTop(a)]]);
+  /* ---- THE TRANSVERSE JOINTS, AND THEY ARE WHAT MOVES (RLG-153) -----
+     These give a roof its distance, and anchored to the camera they gave it
+     none: the same arch at the same place on the glass, frame after frame.
+     They walk the RINGS now, so each one is a fixed point on the road that
+     comes at you and passes overhead. A ring is painted with the span it
+     stands in, so a nearer span covers it (RLG-238). */
+  const rings = (boreRing || []).filter(r => r.z >= a.z && r.z < q.z);
+  ctx.strokeStyle = 'rgba(60,55,46,.45)';
+  for(const r of rings){
+    if(r.xr - r.xl < 8) continue;
+    ctx.lineWidth = Math.max(0.6, (r.xr - r.xl) * 0.008);
+    ctx.beginPath();
+    ctx.moveTo(r.xl, wallTop(r));
+    ctx.quadraticCurveTo((r.xl + r.xr) / 2, crownOf(r) - (r.xr - r.xl) * 0.04,
+                         r.xr, wallTop(r));
+    ctx.stroke();
+  }
+  /* ---- THE WALLS, PALE AND PANELLED --------------------------------- */
+  for(const sideL of [true, false]){
+    const get = (p) => sideL ? p.xl : p.xr;
+    ctx.fillStyle = boreDraw.walls[sideL ? 0 : 1];
+    quad([[get(a), a.y], [get(q), q.y], [get(q), wallTop(q)], [get(a), wallTop(a)]]);
     /* ---- AND OUTWARD AS A SURFACE, NOT AS A RECTANGLE (RLG-105) -----
        A blanket rect from the near wall point to the frame edge is fine on a
        straight and catastrophic on a bend: the near point swings across the
@@ -21593,30 +21607,61 @@ function drawBore(){
        way further out, receding to the same vanishing point. It leaves the
        frame at the near end all by itself, and it follows the bend because
        every point on it is projected. */
-    const outer = boreStrip(pts, q => [get(q), q.y], q => [
-      q.mid + (sideL ? -1 : 1) * (Math.abs(get(q) - q.mid) + W * 1.6 * q.s * 400), q.y]);
-    ctx.fill(outer);
-    borePaths.push(outer);
+    const far = (p) => p.mid + (sideL ? -1 : 1) * (Math.abs(get(p) - p.mid) + W * 1.6 * p.s * 400);
+    quad([[get(a), a.y], [get(q), q.y], [far(q), q.y], [far(a), a.y]]);
     /* the panel joints, receding - on the RINGS, so a wall panel is a place on
        the road rather than a mark on the glass (RLG-153). They land on the same
        joints the ceiling does, which is how a cast bore is actually built. */
     ctx.strokeStyle = 'rgba(80,74,62,.40)';
-    for(let i2 = 0; i2 < boreRing.length; i2++){
-      const q = boreRing[i2];
-      if(Math.abs(q.xr - q.xl) < 8) continue;
-      ctx.lineWidth = Math.max(0.5, (q.xr - q.xl) * 0.005);
-      ctx.beginPath(); ctx.moveTo(get(q), q.y); ctx.lineTo(get(q), wallTop(q)); ctx.stroke();
+    for(const r of rings){
+      if(Math.abs(r.xr - r.xl) < 8) continue;
+      ctx.lineWidth = Math.max(0.5, (r.xr - r.xl) * 0.005);
+      ctx.beginPath(); ctx.moveTo(get(r), r.y); ctx.lineTo(get(r), wallTop(r)); ctx.stroke();
     }
     /* the barrier at the foot of the wall, which is in both photographs */
     ctx.fillStyle = '#8f887a';
-    ctx.fill(boreStrip(pts, q => [get(q), q.y], q => [get(q), q.y - (q.y - wallTop(q)) * 0.16]));
+    quad([[get(a), a.y], [get(q), q.y],
+          [get(q), q.y - (q.y - wallTop(q)) * 0.16], [get(a), a.y - (a.y - wallTop(a)) * 0.16]]);
   }
-
+}
+/* the tube and the held-back cars, far to near. `buckets` is the deferred list
+   in the road pass's own far-to-near order, and `zOf` gives a bucket's depth. */
+function paintBoreSpans(buckets, zOf, paint){
+  const pts = boreDraw.pts;
+  let k = 0;
+  const upTo = (z) => { while(k < buckets.length && zOf(buckets[k]) >= z) paint(buckets[k++]); };
+  ctx.save();
+  upTo(pts[pts.length - 1].z);
+  for(let i = pts.length - 1; i >= 1; i--){
+    paintBoreSpan(i);
+    upTo(pts[i - 1].z);
+  }
   ctx.restore();
+  while(k < buckets.length) paint(buckets[k++]);
 }
 
 /* the far end going black, and the lamps in it - drawn after the traffic so a
    car deep in the bore is swallowed by the same darkness the road is (RLG-145) */
+/* ---- CUT ONE WALL SPAN OUT OF THE CLIP (RLG-238) --------------------------
+   Anything painted AFTER the tube - its far darkness, its lamps, the portal -
+   has to be hidden by the wall spans nearer than it. This narrows the current
+   clip to the screen less span `i`'s two wall faces. Clips only ever narrow, so
+   a caller walking outward adds each span once. */
+function boreClipOut(pts, i){
+  const a = pts[i - 1], q = pts[i];
+  for(const k of ['xl', 'xr']){
+    const c = [[a[k], a.y], [q[k], q.y], [q[k], wallTop(q)], [a[k], wallTop(a)]];
+    let s = 0;
+    for(let j = 0; j < 4; j++){ const u = c[j], v = c[(j+1) % 4]; s += u[0]*v[1] - v[0]*u[1]; }
+    if(s > 0) c.reverse();          /* against the screen rectangle's winding */
+    const p = new Path2D();
+    p.rect(-W, -H, W * 3, H * 3);
+    p.moveTo(c[0][0], c[0][1]);
+    for(let j = 1; j < 4; j++) p.lineTo(c[j][0], c[j][1]);
+    p.closePath();
+    ctx.clip(p);
+  }
+}
 function drawBoreDepth(){
   const pts = borePts;
   if(!pts) return;
@@ -21669,21 +21714,7 @@ function drawBoreDepth(){
      NEARER than it. Clips only ever narrow, so they are added as the loop walks
      outward and each span is clipped once a frame. */
   ctx.save();
-  const clipOut = (i) => {
-    const a = pts[i - 1], q = pts[i];
-    for(const k of ['xl', 'xr']){
-      const c = [[a[k], a.y], [q[k], q.y], [q[k], wallTop(q)], [a[k], wallTop(a)]];
-      let s = 0;
-      for(let j = 0; j < 4; j++){ const u = c[j], v = c[(j+1) % 4]; s += u[0]*v[1] - v[0]*u[1]; }
-      if(s > 0) c.reverse();          /* against the screen rectangle's winding */
-      const p = new Path2D();
-      p.rect(-W, -H, W * 3, H * 3);
-      p.moveTo(c[0][0], c[0][1]);
-      for(let j = 1; j < 4; j++) p.lineTo(c[j][0], c[j][1]);
-      p.closePath();
-      ctx.clip(p);
-    }
-  };
+  const clipOut = (i) => boreClipOut(pts, i);
   for(let i2 = 1; i2 < fadeFrom - 1; i2++) clipOut(i2);
   for(let i2 = fadeFrom; i2 < pts.length; i2++){
     if(i2 >= 2) clipOut(i2 - 1);
@@ -21724,10 +21755,16 @@ function drawBoreDepth(){
        of the camera, so they sat still on the glass and the cue was never
        delivered. Every second ring, at a world position, is what makes them
        count. */
+    /* AND A NEARER WALL HIDES A LAMP TOO (RLG-238). The lamps are walked near to
+       far and the wall spans nearer than each one are clipped out of it, the
+       same way the darkness is above. */
+    ctx.save();
     const rings = boreRing || [];
+    let clipped = 0;
     for(let i2 = 0; i2 < rings.length; i2++){
       if(i2 % Math.max(1, BORE.lampEvery|0)) continue;
       const q = rings[i2];
+      while(clipped + 1 < pts.length && pts[clipped + 1].z <= q.z){ clipped++; clipOut(clipped); }
       const wide = q.xr - q.xl;
       if(wide < 5) continue;
       const mid = (q.xl + q.xr) / 2;
@@ -21745,6 +21782,7 @@ function drawBoreDepth(){
       ctx.fillRect(mid + wide * 0.26 - lw, y - lh * 0.6, lw * 2, lh * 2.4);
       ctx.globalAlpha = 1;
     }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -21798,6 +21836,12 @@ function drawPortal(){
      stable dimension and it is what a hill should be proportioned against. */
   const crown = half * BORE.crown;             /* and how far it rises */
   ctx.save();
+  /* ---- AND A NEARER WALL HIDES THE MOUTH (RLG-238) ------------------------
+     Leaving a tunnel, the exit stands at the far end of the tube and is painted
+     after it, so on a bend the daylight through the far portal was laid over
+     the nearer wall that stands in front of it. Every wall span nearer than the
+     portal is cut out of the clip first. */
+  if(borePts) for(let i = 1; i < borePts.length && borePts[i].z < z; i++) boreClipOut(borePts, i);
   ctx.beginPath();
   /* the hill: a broad mound sitting on the road's own ground line */
   ctx.moveTo(p.x - mass, p.y + hgt * 0.10);
@@ -23262,6 +23306,7 @@ function drawWorld(){
      answer, not a test.
      -------------------------------------------------------------------- */
   const base = Math.floor(pos/SEG);
+  spriteBase = base;
   spriteBuckets = {};
   if(drawWatch){ drawFrameNo++; drawSeen = []; }
   for(const it of items){
@@ -23320,6 +23365,8 @@ function sweepUnemitted(){
    its draw order at all.
    ------------------------------------------------------------------------ */
 let spriteDefer = null;
+/* the segment the buckets were counted from, so a bucket's depth can be recovered */
+let spriteBase = 0;
 /* ---- AND ONLY WHAT IS STANDING ON THE ROAD (RLG-145) -------------------
    THE FIRST BUILD HELD BACK EVERY SPRITE AND THE CAPTURE SHOWED WHY THAT IS
    WRONG: a bridge tower came up through the tunnel ceiling in red lattice. A
@@ -23345,9 +23392,21 @@ function emitBucket(n){
 }
 /* the buckets the road pass held back, in the order it would have painted them */
 function flushSprites(){
-  if(!spriteDefer) return;
+  /* the tube's spans are painted here even with no car held back (RLG-238) */
+  if(!spriteDefer){
+    if(boreDraw) paintBoreSpans([], n => 0, () => {});
+    return;
+  }
   const q = spriteDefer;
   spriteDefer = null;
+  /* with a tube to paint, the buckets go in between its spans (RLG-238) */
+  if(boreDraw){
+    /* a bucket is one segment and a car can stand anywhere in it, so it is placed by
+       the segment's FAR end: a car just past a span boundary is painted before
+       the nearer span rather than after it */
+    paintBoreSpans(q, n => (spriteBase + n + 1) * SEG, n => paintBucket(spriteBuckets[n], true));
+    return;
+  }
   for(const n of q) paintBucket(spriteBuckets[n], true);
 }
 /* `onRoad` selects half a bucket: true for what stands on the carriageway,
@@ -24834,8 +24893,13 @@ function draw(){
      painted after the walls, because the walls have to be over the verge and
      under the cars and one pass cannot be both. See `emitBucket`. The test is
      the same one `drawBore` makes, so the two can never disagree about whether
-     a bore is on the screen this frame. */
-  spriteDefer = placeDark() > 0.01 ? [] : null;
+     a bore is on the screen this frame.
+
+     IT HAD DRIFTED (RLG-238). This read `placeDark() > 0.01`, and RLG-153 moved
+     `drawBore` to `boreSpan()` - a tunnel exists where it is, not where it is
+     dark. Approaching a mouth the darkness is still zero, so the cars painted
+     in the road pass, under a tube that was already on the screen. */
+  spriteDefer = boreSpan() ? [] : null;
   drawRoad();           /* paints the road AND emits them, far to near */
   /* A COAST'S BOATS ARE SCENERY and are drawn by the road pass itself - see
      `drawScenery`. A distance-placed fleet was tried here first and the owner
@@ -30275,17 +30339,21 @@ requestAnimationFrame(frameLoop);
      cannot tell the difference. */
   /* the bore's own numbers, live, because four rebuilds were spent guessing at
      them from captures and the owner can dial them in one sitting (RLG-105) */
-  /* ---- ROAD THAT A NEARER WALL HIDES, AND WHETHER IT WAS PAINTED OVER (RLG-238)
-     For every road segment inside the tube, its two edges and its centre are
-     tested against every NEARER span of either wall face, with this probe's own
-     point-in-quad sum. A point inside one is hidden by the wall in the geometry.
-     Each hidden point is then put to the CANVAS: `isPointInPath` against the
-     paths the last frame actually filled, under the fill rule the browser really
-     uses. A hidden point that no filled path covers is road showing through the
-     wall. It reads the last frame's samples and paths. */
+  /* ---- WHAT A NEARER WALL HIDES, READ OFF THE PIXELS (RLG-238) -------------
+     For every road segment inside the tube, points across the carriageway at the
+     road and at a car's height are tested against every NEARER span of either
+     wall face, with this probe's own point-in-quad sum. A point inside one is
+     hidden by the wall in the geometry, and is read back off the canvas the last
+     frame left. The wall is pale grey concrete, so a hidden point must read
+     pale and grey: tarmac is dark, the far end is black, and a car is coloured.
+
+     ONLY SPANS SHORT OF THE FAR DARKNESS COUNT AS HIDERS. From `fadeFrom` on,
+     the darkness is painted over a span's own wall, which is correct and would
+     read black. Nor can it see a pale grey car, and it is said so here. */
   API.boreOcclusion = function(){
-    const pts = borePts, paths = borePaths;
-    if(!pts || pts.length < 3 || !paths) return null;
+    const pts = borePts;
+    if(!pts || pts.length < 3) return null;
+    const fadeFrom = Math.max(1, Math.floor(pts.length * 0.55));
     const inQuad = (c, x, y) => {
       let inside = false;
       for(let i = 0, j = 3; i < 4; j = i++){
@@ -30295,30 +30363,40 @@ requestAnimationFrame(frameLoop);
       return inside;
     };
     const m = ctx.getTransform();
-    let hidden = 0, through = 0, at = null;
+    /* one readback of the whole canvas per call: a readback per point stalls the GPU */
+    const img = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let hidden = 0, through = 0, at = null, worst = null, hideAt = null;
     for(let z = pts[1].z; z <= pts[pts.length - 1].z; z += SEG){
       const p = proj(0, z);
       if(!p || !p.ok) continue;
-      for(const x of [p.x - p.w, p.x, p.x + p.w]){
+      for(const fx of [-1, -0.75, -0.25, 0.25, 0.75, 1]) for(const up of [0, 0.3]){
+        const x = p.x + fx * p.w, y = p.y - up * p.w;
         let occluded = false;
-        for(let i = 1; i < pts.length && pts[i].z < z && !occluded; i++){
+        for(let i = 1; i < fadeFrom && i < pts.length && pts[i].z < z && !occluded; i++){
           const a = pts[i-1], q = pts[i];
           for(const k of ['xl', 'xr']){
-            if(inQuad([[a[k], a.y], [q[k], q.y], [q[k], wallTop(q)], [a[k], wallTop(a)]], x, p.y)){
+            if(inQuad([[a[k], a.y], [q[k], q.y], [q[k], wallTop(q)], [a[k], wallTop(a)]], x, y)){
               occluded = true; break;
             }
           }
         }
         if(!occluded) continue;
+        const d = m.transformPoint({ x: x, y: y });
+        if(d.x < 0 || d.y < 0 || d.x >= cv.width || d.y >= cv.height) continue;
         hidden++;
-        const d = m.transformPoint({ x: x, y: p.y });
-        if(!paths.some(path => ctx.isPointInPath(path, d.x, d.y))){
+        /* where a car could stand and be hidden, for a harness to put one there */
+        if(hideAt === null && up === 0 && Math.abs(fx) < 1) hideAt = { dz: Math.round(z - pos - PLAYER_Z), x: fx };
+        const o = (Math.floor(d.y) * cv.width + Math.floor(d.x)) * 4;
+        const px = [img[o], img[o+1], img[o+2]];
+        const lum = 0.299*px[0] + 0.587*px[1] + 0.114*px[2];
+        const sat = Math.max(px[0], px[1], px[2]) - Math.min(px[0], px[1], px[2]);
+        if(lum < 60 || sat > 45){
           through++;
-          if(at === null) at = Math.round(z - pos);
+          if(at === null){ at = Math.round(z - pos); worst = [px[0], px[1], px[2]]; }
         }
       }
     }
-    return { hidden: hidden, through: through, firstAt: at, samples: pts.length };
+    return { hidden: hidden, through: through, firstAt: at, pixel: worst, hideAt: hideAt, samples: pts.length };
   };
   /* ---- FAR DARKNESS BEHIND A NEARER WALL, READ OFF THE PIXELS (RLG-238) ---
      The last few dark quads are the ones painted nearly opaque. Points inside
@@ -30337,6 +30415,12 @@ requestAnimationFrame(frameLoop);
       return inside;
     };
     const m = ctx.getTransform();
+    const img = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    /* A SPAN DEEP IN THE DARKNESS IS DIMMED BY ITS OWN DARK QUAD, which is fog at
+       the wall's own depth and correct, so a point it hides reads black without
+       anything showing through. Only spans at the start of the darkness, where it
+       is still nearly clear, count as hiders. */
+    const fadeFrom = Math.max(1, Math.floor(pts.length * 0.55));
     let hidden = 0, dark = 0;
     for(let i = pts.length - 3; i < pts.length; i++){
       const a = pts[i - 1], q = pts[i];
@@ -30347,7 +30431,7 @@ requestAnimationFrame(frameLoop);
         const yBot = lerp2(a.y, q.y), yTop = lerp2(crownOf(a), crownOf(q));
         const y = yBot + (yTop - yBot) * 0.3;
         let occluded = false;
-        for(let j = 1; j < i && !occluded; j++){
+        for(let j = 1; j < i && j <= fadeFrom + 1 && !occluded; j++){
           const b = pts[j - 1], r = pts[j];
           for(const k of ['xl', 'xr']){
             if(inQuad([[b[k], b.y], [r[k], r.y], [r[k], wallTop(r)], [b[k], wallTop(b)]], x, y)){
@@ -30359,8 +30443,8 @@ requestAnimationFrame(frameLoop);
         const d = m.transformPoint({ x: x, y: y });
         if(d.x < 0 || d.y < 0 || d.x >= cv.width || d.y >= cv.height) continue;
         hidden++;
-        const px = ctx.getImageData(Math.floor(d.x), Math.floor(d.y), 1, 1).data;
-        if(0.299*px[0] + 0.587*px[1] + 0.114*px[2] < 35) dark++;
+        const o = (Math.floor(d.y) * cv.width + Math.floor(d.x)) * 4;
+        if(0.299*img[o] + 0.587*img[o+1] + 0.114*img[o+2] < 35) dark++;
       }
     }
     return { hidden: hidden, dark: dark, reach: Math.round(pts[pts.length - 1].z - pos) };

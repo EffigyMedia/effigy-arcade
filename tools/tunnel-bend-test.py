@@ -2,23 +2,25 @@
 """TUNNEL BEND TEST - a nearer wall hides the road beyond a bend.
 
     .venv/Scripts/python tools/tunnel-bend-test.py
-    .venv/Scripts/python tools/tunnel-bend-test.py --falsify winding
+    .venv/Scripts/python tools/tunnel-bend-test.py --falsify cars
     .venv/Scripts/python tools/tunnel-bend-test.py --falsify dark
 
 RLG-238. Owner, 2026-09-13: "The future roadway is shown through the tunnel wall." Every capture of
 a winding tunnel showed it: the road round the bend was drawn over the wall that stands between it
 and the eye.
 
-THE CAUSE WAS THE FILL RULE. Each tube surface was one polygon that folded over itself on a bend,
-and canvas fills with the nonzero rule, under which the two layers of a fold cancel. The surfaces
-are now built span by span with every quad wound the same way.
+TWO CAUSES, FOUND ONE AFTER THE OTHER. Each tube surface was one polygon that folded over itself
+on a bend, and the nonzero fill rule cancelled the fold. Repaired, the owner's next capture still
+showed cars and the barrier strip beyond the bend through the wall: the tube was painted in
+PASSES with no depth, and the held-back cars went over all of it. The spans are now painted far
+to near with the cars between them.
 
-WHAT IS MEASURED. `API.boreOcclusion` takes every road segment inside the tube, finds the road
-points that a NEARER wall span hides in the geometry, and asks the canvas, with `isPointInPath`
-against the paths the last frame filled, whether each one is covered. A hidden point that is not
-covered is road showing through the wall.
+WHAT IS MEASURED. `API.boreOcclusion` takes every road segment inside the tube, finds the points
+across the carriageway, at the road and at a car's height, that a NEARER wall span hides in the
+geometry, and reads each one off the canvas pixels. The wall is pale grey, so a hidden point that
+reads dark (tarmac) or coloured (a car) is showing through. Traffic is left ON for exactly that.
 
-  1. ENOUGH ROAD IS HIDDEN BEHIND A WALL for the answer to mean something. A straight tunnel hides
+  1. ENOUGH IS HIDDEN BEHIND A WALL for the answer to mean something. A straight tunnel hides
      nothing, and "none showed through" is then true of any build.
   2. NONE OF IT SHOWS THROUGH.
   3. ENOUGH FAR DARKNESS LIES BEHIND A NEARER WALL to test, and 4. NONE OF THAT PAINTS BLACK OVER THE
@@ -26,9 +28,13 @@ covered is road showing through the wall.
      painted after the walls, and it is now clipped by every nearer wall span. This is read off the
      canvas pixels: the wall is pale, so a hidden point that reads near-black is the darkness.
 
-`--falsify winding` serves the engine without the winding step, so overlapping quads of opposite
-winding cancel again: only check 2 must fail. `--falsify dark` serves it without the clip on the dark
-far end: only check 4 must fail.
+`--falsify cars` serves the engine with the held-back cars painted after every span, which is the
+order the owner's capture showed: only check 2 must fail. `--falsify dark` serves it without the clip
+on the dark far end: checks 2 and 4 must fail, because the darkness then also shows where road was hidden.
+
+WHAT IT CANNOT SEE: a far span of pale wall painted over a near span of pale wall reads the same as
+the near one, and so does a pale grey car. The span order is proven for cars and not for the tube's
+own surfaces, which were checked by eye in the captures.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -48,8 +54,8 @@ from playwright.sync_api import sync_playwright            # noqa: E402
 
 GAME = 'games/sw/interstate.html'
 FALSIFY = {
-    'winding': ('    if(s < 0) c.reverse();\n', ''),
-    'dark': ('      ctx.clip(p);\n', ''),
+    'cars': ('    upTo(pts[i - 1].z);\n', ''),
+    'dark': ('    ctx.clip(p);\n', ''),
 }
 ENOUGH = 60
 
@@ -113,14 +119,11 @@ def main():
               R.setBiomePair('FARMLAND','FARMLAND'); R.setPhase(0.5);
               R.setBiomeShape('TUNNEL', null, 1.0); R.startBiomeChange('TUNNEL'); }""")
 
-            hidden = through = frames = dhidden = dthrough = 0
+            hidden = through = frames = dhidden = dthrough = parked = 0
             first = None
             for _ in range(900):
                 c = pg.evaluate("""() => { const R = window.__probe.road;
                   R.setSpd(R.MAX_SPD * 0.45); R.steerOver(0, 0.05);
-                  /* no traffic: a car is drawn over the walls, and its dark glass reads
-                     as black to the pixel check without being the darkness */
-                  R.clearTraffic();
                   const b = R.boreClearance();
                   return { inside: b.camInside, occ: R.boreOcclusion(), dark: R.boreDarkThrough() }; }""")
                 pg.wait_for_timeout(60)
@@ -129,6 +132,14 @@ def main():
                         break   # driven out of the far end
                     continue
                 frames += 1
+                # A CAR WHERE THE WALL HIDES ONE. Random traffic is not always behind a
+                # wall, and a falsifier run with none there proved nothing (EVD-771). A
+                # police car, dark-bodied, is parked on the next frame where the probe
+                # found a hidden stretch of road.
+                h = c['occ'].get('hideAt')
+                if h:
+                    pg.evaluate("(h) => window.__probe.road.placeCop(h.dz, h.x * 0.9)", h)
+                    parked += 1
                 hidden += c['occ']['hidden']
                 through += c['occ']['through']
                 if c['dark']:
@@ -136,11 +147,12 @@ def main():
                     dthrough += c['dark']['dark']
                 if c['occ']['through'] and first is None:
                     first = c['occ']['firstAt']
-                if frames >= 60 and hidden >= ENOUGH * 3 and dhidden >= ENOUGH:
+                if frames >= 60 and hidden >= ENOUGH * 3 and dhidden >= ENOUGH and parked >= 20:
                     break
 
-            ok(hidden >= ENOUGH, 'enough road is hidden behind a nearer wall to test',
-               '%d hidden road points over %d frames' % (hidden, frames))
+            ok(hidden >= ENOUGH and parked >= 10, 'enough road is hidden behind a nearer wall to test',
+               '%d hidden road points over %d frames, a car parked in hiding on %d'
+               % (hidden, frames, parked))
             ok(through == 0, 'none of it shows through the wall',
                '%d of %d hidden points were not painted over%s'
                % (through, hidden, '' if first is None else ', first %d units ahead' % first))
