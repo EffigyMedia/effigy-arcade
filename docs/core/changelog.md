@@ -19,6 +19,24 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-5"></a>
+## [0.14.5] - 2026-09-12
+- Changed: **the non-racing class is UTILITY.** Owner, asked for one name covering the cab, the
+  pickup, the van, the lorry and the ambulance. It was called `traffic`, which was chosen because it
+  was already the flag in the save and so needed no migration - but traffic is something a vehicle
+  DOES on the road, and the production cars fill it too. The name moved through the code with the
+  class: the miles constant, the debug switch, the debug button and the API with it. The garage note
+  needed no edit at all - it is built from the class, so it read TRAFFIC and reads UTILITY.
+  [RLG-229](../fragments/RLG-229.md)
+- Confirmed: **production keeps the working wheel and the working knob.** Which settles that the
+  wheel and the knob answer what KIND of vehicle this is, not which class it is in - they cover
+  production and utility both, so a class cannot be the thing that decides them.
+  [RLG-229](../fragments/RLG-229.md)
+- The class has had three names and every one still opens it. `production` and `utility` before the
+  resort, `traffic` after it, `utility` now - and because the new name is one of the oldest, a save
+  from either era is answered without a migration table at all. `resort-test.py` boots a save holding
+  each in turn. [RLG-197](../fragments/RLG-197.md)
+
 <a id="v0-14-4"></a>
 ## [0.14.4] - 2026-09-12
 - Fixed: **the ambulance has a face in the rearview mirror.** Owner, from the device: it was showing

@@ -58,7 +58,9 @@ GAMES = [('interstate', 'games/sw/interstate.html'),
 
 # the classes whose cars are driven rather than raced. Named here because this is the ORACLE - the
 # owner's ruling in the test's own words - and not because the engine keeps a list of the same shape.
-WORK_CLASSES = ('production', 'traffic')
+# PRODUCTION IS IN IT ON PURPOSE (owner, 2026-09-12, confirmed): the working wheel and the working
+# knob cover production as well as utility, so this pair is not the same set as the `utility` class.
+WORK_CLASSES = ('production', 'utility')
 
 PROBE = r"""() => {
   const R = window.__road;

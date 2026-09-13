@@ -145,6 +145,10 @@ def main():
         ctx.close()
 
         # ---- A SAVE THAT EARNED THE OLD HUNDRED-MILE FLAG ----------------------
+        # THE CLASS HAS HAD THREE NAMES (RLG-229): `production`+`utility` before the
+        # resort, `traffic` after it, and `utility` since the owner renamed it. Every
+        # one of them must still open the whole class, and each is checked below - a
+        # migration is never removed, so neither is its test.
         ctx, page = boot_with(b, port, '{"traffic":true}')
         have = listed(page)
         shut = [k for k in MERGED if k not in have]
@@ -153,11 +157,21 @@ def main():
                'still missing: %s' % ', '.join(shut))
         ctx.close()
 
+        # ---- AND THE NAME IT CARRIES NOW --------------------------------------
+        ctx, page = boot_with(b, port, '{"utility":true}')
+        have = listed(page)
+        shut = [k for k in MERGED if k not in have]
+        res.ok(not shut, 'the utility flag opens the whole class',
+               'still missing: %s' % ', '.join(shut))
+        ctx.close()
+
         # ---- AND THE TWO FLAGS A REAL SAVE ACTUALLY HOLDS ---------------------
         # These were granted separately at 25 and 50 miles. A player who earned
         # UTILITY alone owned the van, the lorry and the ambulance and had not won
         # the cab or the pickup - so this says what happens to them, rather than
         # leaving it to be discovered by whoever still has that save.
+        # `utility` is checked above as the CURRENT name; here it stands for the
+        # pre-resort flag of the same spelling, which is the same test either way.
         for flag, had in (('utility', ['VAN', 'SEMI', 'AMBULANCE']),
                           ('production', ['CAB', 'PICKUP'])):
             ctx, page = boot_with(b, port, '{"%s":true}' % flag)
@@ -172,7 +186,7 @@ def main():
         # `API.fleet` keeps its own copy for the fleet sheet, and its own comment
         # records what happens when the two drift: the sheet prints a class the
         # garage disagrees with. Asked of the sheet's own output.
-        ctx, page = boot_with(b, port, '{"traffic":true}')
+        ctx, page = boot_with(b, port, '{"utility":true}')
         rows = page.evaluate(
             "() => window.__road.fleet ? window.__road.fleet()"
             " .map(r => [r.key, r.cls]) : null")
@@ -187,7 +201,7 @@ def main():
                    '; '.join('%s is %s' % (k, '/'.join(sorted(v)))
                              for k, v in split.items()))
             wrong = [k for k in MERGED
-                     if k in seen and seen[k] != {'traffic'}]
+                     if k in seen and seen[k] != {'utility'}]
             res.ok(not wrong,
                    'the sheet agrees with the garage about the merged class',
                    '; '.join('%s is %s' % (k, '/'.join(sorted(seen[k])))
@@ -275,7 +289,7 @@ def main():
         # IT IS ASKED OF THE FIELD, not of the setting. A control that cycles a
         # variable while the grid stays formula is the exact failure here.
         ctx, page = boot_with(b, port, '{"sports":true,"super":true,'
-                                       '"formula":true,"traffic":true}')
+                                       '"formula":true,"utility":true}')
         seen = {}
         for want in ('production', 'sports', 'super'):
             g = page.evaluate(

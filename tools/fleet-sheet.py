@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # vehicles one class called `traffic`, and this list was never moved with it - so every run printed
 # "utility no vehicles in this class" and the VAN, the SEMI, the CAB, the PICKUP and the AMBULANCE
 # have had no sheet at all since. A name that silently matches nothing is the worst kind of stale.
-CLASSES = ['formula', 'super', 'sport', 'police', 'production', 'traffic']
+CLASSES = ['formula', 'super', 'sport', 'police', 'production', 'utility']
 
 
 def _handover():

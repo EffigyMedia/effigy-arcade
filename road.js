@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.4';
+window.ROAD_BUILD = '0.14.5';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -646,7 +646,7 @@ let optTime = 0;
 /* three switches, one per locked group: the racing ladder, the police, and the
    road cars. They were two, and the patrol car rode on the racers' switch -
    which meant testing a pursuit opened every class on the ladder with it. */
-let dbgRacers = false, dbgTraffic = false, dbgPolice = false;
+let dbgRacers = false, dbgUtility = false, dbgPolice = false;
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -727,12 +727,20 @@ function tourStanding(){
   for(const r of tourField) if(r.pts > tourPts) ahead++;
   return ahead + 1;
 }
-/* ---- WHAT AN OLD SAVE CALLED THE SAME THING (RLG-213, RLG-197) ---------
-   The merged class is `traffic`, which was already the flag from the
-   hundred-mile rule - but a save written between 2026-08-29 and the resort
-   holds `production` and `utility` instead, granted at 50 and 25 miles, and
-   neither name means anything now. Read literally, such a save LOSES every car
-   it had won: measured at 0 of 3 for a `utility` save before this existed.
+/* ---- WHAT AN OLD SAVE CALLED THE SAME THING (RLG-213, RLG-197, RLG-229) ---
+   THE MERGED CLASS IS `utility` AND IT HAS HAD THREE NAMES. A save written
+   between 2026-08-29 and the resort holds `production` and `utility`, granted
+   at 50 and 25 miles; the resort merged both into `traffic`, which was the flag
+   the old hundred-mile rule already used; and the owner renamed that to
+   `utility` on 2026-09-12, because `traffic` is a thing a vehicle DOES on the
+   road rather than a kind of vehicle - a production car fills the traffic too.
+   Read literally, such a save LOSES every car it had won: measured at 0 of 3
+   for a `utility` save before this existed.
+
+   THE NEW NAME IS AN OLD NAME, AND THAT COSTS NOTHING. `utility` was one of the
+   two pre-resort flags, so a save from that era is read by the first line of
+   `unlocked` without reaching this table at all - and it grants the whole
+   merged class, which is what the `traffic` mapping already did for it.
 
    SO THE OLD NAMES ARE READ AS THE NEW ONE. Either of them means the player
    earned part of what is now one class, and the class cannot be given out in
@@ -744,7 +752,7 @@ function tourStanding(){
    IT IS NEVER REMOVED. RLG-197 states the rule and the reason: the save it
    repairs may not be opened for a year.
    --------------------------------------------------------------------- */
-const OLD_UNLOCK_NAMES = { traffic: ['production', 'utility'] };
+const OLD_UNLOCK_NAMES = { utility: ['traffic', 'production'] };
 function unlocked(key){
   const sv = (AR && AR.save) ? AR.save.get((GAME_ID + '-opts')) : null;
   if(!sv) return false;
@@ -10944,7 +10952,7 @@ function reset(){
   ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
-  barOn = false; wonTraffic = false; coasting = false;
+  barOn = false; wonUtility = false; coasting = false;
   if(hornBtn) hornBtn.classList.remove('on');
   /* RLG-181: this named ONE body, so the interceptor could never be the car
      the force matched itself to. `inForce` asks the BODY record, which is the
@@ -15753,7 +15761,7 @@ function ordinal(n){
    interceptor has.
    ------------------------------------------------------------------------- */
 let barOn = false;
-let wonTraffic = false;
+let wonUtility = false;
 /* ---- ANY FORCE CAR, NOT JUST THE CRUISER ------------------------------
    This named one body, so the SUPER CRUISER had lights on its sprite and no
    way to switch them on: no latch, no siren, no wash, no scatter. `force` is
@@ -17588,7 +17596,7 @@ function step(dt){
      with it, distance is something you have to keep earning at checkpoints,
      which is what makes it a reward rather than an errand.
 
-       TRAFFIC_MILES in ONE timed run   the whole non-racing fleet:
+       UTILITY_MILES in ONE timed run   the whole non-racing fleet:
                                         cab, pickup, van, lorry, ambulance
 
      ONE TRIGGER FOR ONE CLASS, by the owner's own words: "those just get
@@ -17602,9 +17610,9 @@ function step(dt){
      way and nothing else in the resort depends on it.
      ------------------------------------------------------------------- */
   if(mode !== 'race' && timedRun){
-    if(dist >= TRAFFIC_MILES && !unlocked('traffic')){
-      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { traffic:true });
-      wonTraffic = true;
+    if(dist >= UTILITY_MILES && !unlocked('utility')){
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { utility:true });
+      wonUtility = true;
       snd.checkpoint();
       flashWarn('VEHICLES UNLOCKED');
     }
@@ -27019,8 +27027,8 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
                   -------------------------------------------------------- */
                'ROADSTER':'sports', 'TUNER':'sports', 'MUSCLE':'sports',
                'SALOON':'production', 'COUPE':'production', 'HATCH':'production',
-               'CAB':'traffic', 'PICKUP':'traffic',
-               'VAN':'traffic', 'SEMI':'traffic', 'AMBULANCE':'traffic' };
+               'CAB':'utility', 'PICKUP':'utility',
+               'VAN':'utility', 'SEMI':'utility', 'AMBULANCE':'utility' };
 /* ---- A CLASS YOU DO NOT HAVE TO WIN (RLG-213) ---------------------------
    The player STARTS in production, so the class names a car without gating
    it. Everything that asks "is this unlocked" asks here first.
@@ -27034,7 +27042,7 @@ const OPEN_FROM_THE_START = { production:1 };
 /* HOW FAR THE MERGED CLASS COSTS, in miles of ONE timed test drive. A tunable
    with a committed default rather than a number written into the branch that
    reads it - and the owner has not settled between 50 and 100. See RLG-213. */
-const TRAFFIC_MILES = 100;
+const UTILITY_MILES = 100;
 
 /* ---- THE CARS THE EVENTS ARE FOR (RLG-115) --------------------------------
    Owner, 2026-08-31: "if you have a production or utility vehicle selected, the
@@ -27069,7 +27077,7 @@ const TRAFFIC_MILES = 100;
    WHAT IS LEFT HERE IS EVERY CAR THAT IS NOT A RACER plus the two force cars,
    which have INTERCEPT instead ([[RLG-203]]).
    --------------------------------------------------------------------- */
-const RACE_BANNED = { traffic:1, cruiser:1, supercruiser:1 };
+const RACE_BANNED = { utility:1, cruiser:1, supercruiser:1 };
 function bodyClass(k){ return BODY_CLASS[k] || 'sport'; }
 function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
 /* ---- WHICH CARS CAN GO ON SHIFT ------------------------------------------
@@ -27202,7 +27210,7 @@ const UNLOCK_HOW = {
    two: one trigger, found once, paying the whole of the fleet that is not a
    racer.
    ---------------------------------------------------------------------- */
-const SECRET_UNLOCK = { traffic:1 };
+const SECRET_UNLOCK = { utility:1 };
 
 /* whether this car is still to be won, ignoring the debug overrides - those
    open a car WITHOUT writing the flag, and a car opened for testing should
@@ -27259,7 +27267,7 @@ function garageBodies(){
     /* a class the player starts in costs nothing (RLG-213) */
     if(OPEN_FROM_THE_START[need]) return true;
     if(unlocked(need)) return true;
-    if(need === 'traffic') return !!dbgTraffic;
+    if(need === 'utility') return !!dbgUtility;
     /* the police car has its own switch: a patrol car is not a racer, and
        testing pursuit should not require opening the whole ladder */
     if(need === 'cruiser' || need === 'supercruiser') return !!dbgPolice;
@@ -27805,13 +27813,13 @@ function showDebug(){
         state(dbgRacers) + '</b></button>' +
       '<button class="go ghost" data-act="dp">UNLOCK POLICE \u00b7 <b>' +
         state(dbgPolice) + '</b></button>' +
-      '<button class="go ghost" data-act="dt">UNLOCK ALL TRAFFIC \u00b7 <b>' +
-        state(dbgTraffic) + '</b></button>' +
+      '<button class="go ghost" data-act="dt">UNLOCK ALL UTILITY \u00b7 <b>' +
+        state(dbgUtility) + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
       dp:   () => { dbgPolice  = !dbgPolice;  showDebug(); },
-      dt:   () => { dbgTraffic = !dbgTraffic; showDebug(); },
+      dt:   () => { dbgUtility = !dbgUtility; showDebug(); },
       back: () => showOptions() });
 }
 
@@ -29345,7 +29353,7 @@ requestAnimationFrame(frameLoop);
   };
   /* opens the traffic classes in the garage WITHOUT writing an unlock flag,
      which is what the DEBUG menu's own switch does */
-  API.dbgTraffic = function(v){ dbgTraffic = !!v; return dbgTraffic; };
+  API.dbgUtility = function(v){ dbgUtility = !!v; return dbgUtility; };
   API.showGarage = function(){ showGarage(); };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
@@ -30381,7 +30389,7 @@ requestAnimationFrame(frameLoop);
                      and the three utility vehicles - the same move, in the
                      sheet's own copy of the map, for the reason the note below
                      gives. */
-                  CAB:'traffic', taxi:'traffic',
+                  CAB:'utility', taxi:'utility',
                   /* ---- A PICKUP IS A PICKUP (RLG-114) ---------------------
                      The fleet sheet's own copy of the class map, and it has to
                      move with the unlock map above or the sheet prints a class
@@ -30404,14 +30412,14 @@ requestAnimationFrame(frameLoop);
                      The owner's ruling is one class, so this table has one
                      name where it had two - and both halves of the pickup
                      move together, which is the lesson above. */
-                  PICKUP:'traffic', pickup:'traffic',
-                  VAN:'traffic', SEMI:'traffic',
+                  PICKUP:'utility', pickup:'utility',
+                  VAN:'utility', SEMI:'utility',
                   /* an AMBULANCE is one of them too, and this copy of the class
                      map has to say so. RLG-114's lesson: the sheet keeps its own
                      copy and a class that moves in one and not the other makes
                      the sheet print something the garage disagrees with. */
-                  AMBULANCE:'traffic',
-                  van:'traffic', truck:'traffic' };
+                  AMBULANCE:'utility',
+                  van:'utility', truck:'utility' };
     /* `key` is the body this row was built from, and `name` is what a reader
        prints. They part company where one body has two liveries: the name says
        CRUISER . BLACK and the key is still CRUISER, which is what the class

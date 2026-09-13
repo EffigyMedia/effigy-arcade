@@ -103,7 +103,7 @@ with sync_playwright() as p:
         # ---- open the traffic classes, or guard 1 makes the whole run vacuous -----
         # OPTIONS -> DEBUG -> UNLOCK ALL TRAFFIC. It widens the garage gate without
         # writing an unlock flag, which is exactly what a test wants.
-        pg.evaluate("() => window.__road && window.__road.dbgTraffic && window.__road.dbgTraffic(true)")
+        pg.evaluate("() => window.__road && window.__road.dbgUtility && window.__road.dbgUtility(true)")
         pg.evaluate("() => window.__road && window.__road.showGarage && window.__road.showGarage()")
         pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
 

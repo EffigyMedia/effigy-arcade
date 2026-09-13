@@ -59,7 +59,7 @@ A RUN THAT NEVER STARTED IS BLKD AND NOT A ZERO. The first version of this harne
 reported "SALOON 0.00 miles" and "STALLION 0.00 miles", which reads as a finding and
 was a defect: both cars are LOCKED, the garage would not hand them over, and the run
 never began. A car whose peak speed is zero did not drive, so it is blocked and its
-distance is not printed at all. `API.dbgTraffic` opens the production and utility
+distance is not printed at all. `API.dbgUtility` opens the production and utility
 classes without writing an unlock flag, which is what lets the SALOON be measured;
 there is no equivalent for the racing classes, so the supercars are out of reach from
 here and are not asked for.
@@ -227,7 +227,7 @@ def driver_limits(r, mph, declared):
     return out
 
 
-# THE UNLOCK FLAGS, WRITTEN BEFORE THE GAME BOOTS. `API.dbgTraffic` is NOT enough, and
+# THE UNLOCK FLAGS, WRITTEN BEFORE THE GAME BOOTS. `API.dbgUtility` is NOT enough, and
 # that is a defect in the debug switch rather than in this harness: it widens `openBy`,
 # which decides what the garage LISTS, and `carLocked` - which is what the DRIVE button
 # guards on - never consults it. So a SALOON appeared in the garage, could be selected,
