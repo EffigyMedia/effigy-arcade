@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-12"></a>
+## [0.14.12] - 2026-09-13
+- Fixed: **a tunnel no longer shows the outside world past its wall, and its wall is solid.** The
+  tube was drawn from the car rather than the camera, so near a wall the road between the two had no
+  wall and the world outside showed past a hard edge. It now starts just ahead of the camera. The
+  car's side could also pass through the wall; inside a tunnel the car now stops against it, as at
+  the road edge. The open road is unchanged. [RLG-237](../fragments/RLG-237.md)
+
 <a id="v0-14-11"></a>
 ## [0.14.11] - 2026-09-13
 - Fixed: **a five-speed's gate has no slot below fifth, and the knob is drawn over the rails.** A

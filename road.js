@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.11';
+window.ROAD_BUILD = '0.14.12';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -17299,14 +17299,16 @@ function step(dt){
   slideX = clamp(slideX, -hold, hold);
   /* the mark the car is actually chasing: where you asked, plus how far past it
      the road is going to carry you */
-  const aim = clamp(targetX + slideX, -1.18, 1.18);
+  /* the edge is the road's, or a bore's wall when you are in one (RLG-237) */
+  const edge = edgeX();
+  const aim = clamp(targetX + slideX, -edge, edge);
   const grip = 1 - Math.exp(-STEER.snap*dt);
   /* the ceiling is this car's, not the fleet's (RLG-119) */
   const lim  = steerRate() * dt;
   playerX += clamp((aim - playerX)*grip, -lim, lim);
   /* a wall does not care how slippery it is */
-  if(playerX < -1.18 || playerX > 1.18) slideX = 0;
-  playerX = clamp(playerX, -1.18, 1.18);
+  if(playerX < -edge || playerX > edge) slideX = 0;
+  playerX = clamp(playerX, -edge, edge);
   camX = lerp(camX, playerX, 1-Math.exp(-14*dt));
   camX = clamp(camX, playerX-0.10, playerX+0.10);
 
@@ -17890,7 +17892,11 @@ function step(dt){
        ------------------------------------------------------------------ */
     const roughness = clamp(spd / (MAX_SPD * 0.10), 0, 1);
     shake = Math.max(shake, 0.22 * roughness);
-    targetX = clamp(targetX, -1.18, 1.18);
+    /* the pin sits the same distance inside the edge as it always has - 1.15
+       and 1.13 against 1.18 - so a bore's wall scrapes exactly as the road's
+       does, only further in (RLG-237) */
+    const wallEdge = edgeX();
+    targetX = clamp(targetX, -wallEdge, wallEdge);
     /* ---- THE VERGE COSTS TIME, NOT HEALTH ---------------------------------
        Scraping the barrier used to take 9 health, which made the edge of the
        road as dangerous as a car. It is not. Running wide is a mistake you pay
@@ -17901,8 +17907,8 @@ function step(dt){
        Damage is reserved for hitting something. A wall you are sliding along
        is not something you hit; it is somewhere you should not be.
        ---------------------------------------------------------------------- */
-    if(Math.abs(playerX) > 1.15){
-      playerX = Math.sign(playerX)*1.13;
+    if(Math.abs(playerX) > wallEdge - 0.03){
+      playerX = Math.sign(playerX)*(wallEdge - 0.05);
       /* ---- THE WALL HOLDS YOU, IT DOES NOT STEER YOU BACK ---------------
          Owner, 2026-09-07: "I don't want the player car to bounce back into
          the roadway. If you hit the playable edge right now it pushes you back
@@ -21170,8 +21176,26 @@ let BORE = {
      THIS IS THE ONE PLACE THE OWNER'S TWO REQUESTS PULL APART: "tight to the
      road edge" and "do not clip the car" cannot both be taken to the limit, and
      the drivable shoulder is what decides it.
+
+     ---- AND "CLEAR OF THE 1.18 CLAMP" WAS NOT CLEAR (RLG-237) ------------
+     Owner, 2026-09-13, from the device: "The tunnel walls can be clipped
+     through by the camera." The screenshot showed the whole bore to the left
+     of the camera.
+
+     THE SUM ABOVE COMPARED THE WALL WITH THE CAR'S CENTRE ONLY. The car is
+     about 0.24 wide, so at the edge pin of 1.13 its side already reached the
+     wall. And the camera may sit 0.10 further out than the car, so it reached
+     1.28 against a wall at 1.248. The wall stays where it is. In a bore the
+     car's limit is the wall less half the car and `skin`. See `edgeX`.
+
+     THAT WAS HALF OF IT, AND NOT THE HALF THE OWNER SAW. Measured, a car held
+     at the old limit put its side 9.8 pixels through the wall, but the camera
+     stayed well inside. What the owner saw was a tube that began at the car
+     rather than the camera - see `boreMouth`.
      ---------------------------------------------------------------- */
   out:  0.30,   /* the wall, in ROADSIDE units past the tarmac                */
+  skin: 0.02,   /* the gap left between the car's side and the wall, in road half-widths */
+  near: 60,     /* how far ahead of the camera the tube begins, in world units  */
   /* ---- AND `high` IS A FRACTION OF THE FULL WIDTH, WHICH IS WHY IT WAS
      STILL WRONG AFTER THE FIRST TIGHTENING ------------------------------
      The wall height is `p.w * 2 * high`, and `p.w * 2` is the WHOLE road - so
@@ -21283,10 +21307,44 @@ function boreSpan(){
   if(pos >= z1) return null;                     /* driven out the far end */
   return { z0: eventZ0, z1: z1 };
 }
+/* ---- HOW FAR OUT THE CAR MAY GO (RLG-237) --------------------------------
+   Owner, 2026-09-13: the tunnel wall is SOLID - the car scrapes to a stop
+   against it, as it does at the road edge.
+
+   OUTSIDE A BORE THIS IS THE OLD EDGE, 1.18, and nothing about the open road
+   changes. INSIDE ONE, the wall stands at 1 + SCENE_UNIT*out/ROAD road
+   half-widths - the same sum `roadsideAt` draws it with - and the car's centre
+   stops at that wall less half the car and `BORE.skin`. It is read off the car
+   and the road rather than written down, so a wider car or a wider road keeps
+   its gap. It never lets the car further out than the open-road edge.
+
+   A BORE BEGINS FOR THE CAR AT ITS MOUTH. The camera is PLAYER_Z behind the
+   car, so it follows the car in and is already inside the limit when it
+   arrives. Crates in a bore sit at 0.86 to 1.02 and stay in reach. */
+function boreWallX(){ return 1 + SCENE_UNIT * BORE.out / ROAD; }
+function inBore(){
+  const s = boreSpan();
+  return !!s && pos + PLAYER_Z >= s.z0;
+}
+function edgeX(){
+  if(!inBore()) return 1.18;
+  return Math.min(1.18, boreWallX() - playerW() / 2 - BORE.skin);
+}
 function boreMouth(){
   /* the near end of what exists: the tunnel's own start, or the camera once it
      is behind you. `eventZ0` is armed when the place is placed (RLG-112). */
-  const own = pos + PLAYER_Z + 40;
+  /* ---- THE CAMERA, NOT THE CAR (RLG-237) --------------------------------
+     This read `pos + PLAYER_Z + 40`, which is the CAR, while the comment above
+     said the camera. So no wall was drawn over the PLAYER_Z of road between the
+     eye and the car. With the car in the middle, the edge of that gap is off
+     the screen. With the car near a wall it is not, and the owner saw the world
+     outside the tunnel past a hard vertical edge: "The tunnel walls can be
+     clipped through by the camera."
+
+     It now starts BORE.near ahead of the camera. `proj` refuses anything 30
+     units or closer, and the walls are painted before the cars, so the car is
+     still drawn over them. */
+  const own = pos + BORE.near;
   const sp = boreSpan();
   if(!sp) return own;
   return Math.max(own, sp.z0);
@@ -21391,6 +21449,12 @@ function drawBore(){
   const pts = borePoints();
   if(pts.length < 3) return;
   borePts = pts;
+  /* THE SHADING KEEPS THE ANCHOR IT HAD (RLG-237). The tube now begins just
+     ahead of the camera, where a cross-section projects thousands of pixels off
+     the glass, and a gradient laid between two points up there paints the whole
+     visible wall one colour. So the gradients take the first section at the car,
+     which is where `pts[0]` stood before, and the colours are unchanged. */
+  const ref = pts.find(q => q.z >= pos + PLAYER_Z + 40) || pts[0];
   /* the rings, at world positions, which are what actually go past (RLG-153) */
   const z0 = boreMouth();
   const sp0 = boreSpan();
@@ -21414,7 +21478,7 @@ function drawBore(){
   /* the vault: a shallow arch springing from the wall tops, ribbed across */
   ctx.fillStyle = '#8d8577';
   ctx.fillRect(0, 0, W, horizon + 2);
-  const vault = ctx.createLinearGradient(0, crownOf(pts[0]), 0, wallTop(pts[0]));
+  const vault = ctx.createLinearGradient(0, crownOf(ref), 0, wallTop(ref));
   vault.addColorStop(0, '#7c7466');
   vault.addColorStop(1, '#a49b89');
   ctx.fillStyle = vault;
@@ -21429,7 +21493,7 @@ function drawBore(){
   ctx.closePath();
   ctx.fill();
   /* and up over the frame, so the roof closes above the camera */
-  ctx.fillRect(0, 0, W, Math.max(0, crownOf(pts[0])));
+  ctx.fillRect(0, 0, W, Math.max(0, crownOf(ref)));
 
   /* ---- THE TRANSVERSE JOINTS, AND THEY ARE WHAT MOVES (RLG-153) -----
      These give a roof its distance, and anchored to the camera they gave it
@@ -21451,7 +21515,7 @@ function drawBore(){
   /* ---- THE WALLS, PALE AND PANELLED --------------------------------- */
   for(const sideL of [true, false]){
     const get = (q) => sideL ? q.xl : q.xr;
-    const wall = ctx.createLinearGradient(0, wallTop(pts[0]), 0, pts[0].y);
+    const wall = ctx.createLinearGradient(0, wallTop(ref), 0, ref.y);
     wall.addColorStop(0,    sideL ? '#c6bfa9' : '#bdb6a1');
     wall.addColorStop(0.62, sideL ? '#ada592' : '#a49d8a');
     wall.addColorStop(1,    '#6d675b');
@@ -29166,7 +29230,7 @@ requestAnimationFrame(frameLoop);
   API.boreTrace = function(){
     return { alpha: 1, dark: +placeDark().toFixed(3),
              mouth: Math.round(boreMouth()),
-             ahead: Math.round(boreMouth() - (pos + PLAYER_Z + 40)),
+             ahead: Math.round(boreMouth() - (pos + BORE.near)),
              eventZ0: eventLen ? Math.round(eventZ0) : null };
   };
   API.riseProfile = function(k, n){
@@ -30049,6 +30113,29 @@ requestAnimationFrame(frameLoop);
   API.boreModel = function(o){
     if(o) for(const k in o) if(k in BORE) BORE[k] = o[k];
     return Object.assign({}, BORE);
+  };
+  /* ---- WHAT THE PICTURE SHOWS OF THE WALL (RLG-237) ----------------------
+     Measured in PIXELS off what was painted, not off `edgeX` or `BORE.near`, so
+     a harness checks the picture rather than the numbers written to fix it.
+
+       nearXl, nearXr  the wall at the NEAREST section the last frame drew. If
+                       the wall on either side lands inside the glass there, the
+                       world outside the tunnel shows past its edge - which is
+                       what the owner photographed.
+       carGap          how far the car's sides are inside the wall at the car,
+                       off `borePointAt`. Below zero is through the wall. */
+  API.boreClearance = function(){
+    const zk = pos + PLAYER_Z, kb = borePointAt(zk), half = playerW() / 2;
+    const kl = proj((playerX - half) * ROAD, zk), kr = proj((playerX + half) * ROAD, zk);
+    const n = borePts && borePts.length ? borePts[0] : null, sp = boreSpan();
+    /* `camInside` because the car passes the mouth PLAYER_Z before the camera,
+       and in between the tube rightly begins at the mouth, ahead of the eye */
+    return { inBore: inBore(), camInside: !!sp && pos >= sp.z0,
+             playerX: +playerX.toFixed(4), camX: +camX.toFixed(4),
+             edge: +edgeX().toFixed(4), W: W,
+             nearDz: n ? Math.round(n.z - pos) : null,
+             nearXl: n ? Math.round(n.xl) : null, nearXr: n ? Math.round(n.xr) : null,
+             carGap: kb ? +Math.min(kl.x - kb.xl, kb.xr - kr.x).toFixed(1) : null };
   };
   /* force a place's relief and sinuosity, so a capture can show a bore on a
      hard climb or a hard bend without waiting for the generator to roll one */
