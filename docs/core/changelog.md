@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-2"></a>
+## [0.14.2] - 2026-09-12
+- Fixed: **the ambulance puts down the supercar's steering wheel.** Owner, from the device.
+  `PLAIN_WHEEL` is the list of bodies driven with a working vehicle's wheel, and the AMBULANCE was
+  never in it - so it alone took the carbon weave, the chrome spoke inserts, the silver bezel and the
+  racing tick at twelve o'clock. The RIM was already right, which is why it lasted: a plain round rim
+  wearing a supercar's jewellery is harder to see than a flat-bottomed wheel in an ambulance would
+  have been. It takes the van's wheel now, which is what it is underneath. `tools/wheel-test.py` is
+  new and compares the two wheels pixel by pixel - identical outside the boss, the red cross on it.
+  [RLG-225](../fragments/RLG-225.md)
+
 <a id="v0-14-1"></a>
 ## [0.14.1] - 2026-09-12
 - Fixed: **from behind, the body now stands in front of the mirror.** Owner: "the rearview mirrors

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.1';
+window.ROAD_BUILD = '0.14.2';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16342,10 +16342,18 @@ function drawWheel(){
 
      The patrol cars are not in this list. They are pursuit vehicles, and the
      owner named production and utility.
+
+     THE AMBULANCE WAS MISSING FROM THIS LIST UNTIL 2026-09-12, and the reason
+     it was hard to see is that the RIM was already right. `roundRim` names
+     MEDICAL, so the wheel was round rather than flat-bottomed - it was the
+     jewellery that was wrong, and a plain rim wearing carbon weave, chrome
+     spoke inserts and a racing tick reads as a borrowed wheel rather than as a
+     sports one. An ambulance is a van underneath, and it takes the van's wheel.
      ------------------------------------------------------------------- */
   const PLAIN_WHEEL = { SALOON:1, COUPE:1, HATCH:1, CAB:1, PICKUP:1, VAN:1, SEMI:1,
+                        AMBULANCE:1,
                         sedan:1, sedan2:1, hatch:1, coupe:1, taxi:1, pickup:1,
-                        van:1, truck:1 };
+                        van:1, truck:1, ambulance:1 };
   const plain = !!PLAIN_WHEEL[optBody];
   /* a lorry's wheel is big and THIN - it is turned with the whole arm rather
      than gripped, and a fat sports rim on one reads as the wrong vehicle */
