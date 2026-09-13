@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-14"></a>
+## [0.14.14] - 2026-09-13
+- Fixed: **on a bend, neither the road ahead nor the tunnel's dark far end shows through the wall.**
+  Each tunnel surface was one polygon that folded over itself on a bend, and the fold cancelled
+  under the canvas fill rule, leaving a hole in the nearer wall. Surfaces are now built span by
+  span. The far darkness, painted after the walls, is now clipped by every nearer wall.
+  [RLG-238](../fragments/RLG-238.md)
+
 <a id="v0-14-13"></a>
 ## [0.14.13] - 2026-09-13
 - Added: **the run clock is shown as a fuel gauge, in two designs for the owner to choose between**
