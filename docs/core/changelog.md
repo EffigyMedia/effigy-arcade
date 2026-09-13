@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-10"></a>
+## [0.14.10] - 2026-09-13
+- Changed: **the checkpoint clock pays per group — utility 30 seconds, production 20, sports 15,
+  super 15 — and a run starts with 120 seconds instead of 60.** Owner's numbers. One number for each
+  group, because a different reward for each car would confuse players. At 60 a slow car could not
+  reach the first gantry without a crate. All three formula cars take the super reward; the police
+  still take the reward of the class they declare. Crates are unchanged. Replaces the numbers of
+  RLG-233. [RLG-235](../fragments/RLG-235.md)
+
 <a id="v0-14-9"></a>
 ## [0.14.9] - 2026-09-13
 - Changed: **a checkpoint pays by class — production 30 seconds, sports 20, super 10.** Owner's own

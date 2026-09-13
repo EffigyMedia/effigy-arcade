@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.9';
+window.ROAD_BUILD = '0.14.10';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -561,15 +561,20 @@ const TRAPS_MAX  = 8;          /* and the most the road ever holds */
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
-   buys more is distance. Sixty seconds to start, twenty at every checkpoint,
-   and a gantry every two miles so you always know where the next one is.
+   buys more is distance. A start allowance, the class's seconds at every
+   checkpoint, and a gantry every two miles so you always know where the next
+   one is.
 
    At zero the throttle simply stops answering — you keep whatever speed you
    had and coast. That is a far better ending than a hard cut: you can see the
    next gantry coming and know whether you will roll under it, and sometimes
-   you do. Coasting past one buys the twenty seconds and the run continues.
+   you do. Coasting past one buys its seconds and the run continues.
    -------------------------------------------------------------------------- */
-const CLOCK_START = 60, CLOCK_BONUS = 20, CP_MILES = 2;
+/* ---- THE START IS 120 SECONDS (RLG-235) ----------------------------------
+   It was 60. At 60 a slow car cannot reach the first gantry at top speed
+   unless it takes a crate, so the run could end before its first checkpoint.
+   ------------------------------------------------------------------------ */
+const CLOCK_START = 120, CLOCK_BONUS = 20, CP_MILES = 2;
 /* ---- AND A CHECKPOINT PAYS BY CLASS (RLG-233) ---------------------------
    Owner, 2026-09-12: "production class is awarded 30 seconds per checkpoint.
    Sports class is awarded 20 seconds per checkpoint. Super class is awarded 10
@@ -581,24 +586,31 @@ const CLOCK_START = 60, CLOCK_BONUS = 20, CP_MILES = 2;
    got EASIER as the ladder went up. Ten seconds in a super and thirty in a
    production turns that the right way round.
 
-   `CLOCK_BONUS` STAYS AND IS THE DEFAULT rather than a fourth number. A class
-   with no row here is paid the twenty it has always been paid, which is what
-   makes the three rows a change to three classes rather than a rewrite of the
-   rule for every vehicle in the game.
+   ---- REPLACED BY PER-GROUP ROUND NUMBERS (RLG-235) --------------------
+   Owner, 2026-09-13: utility 30, production 20, sports 15, super 15. One
+   number for each group and not one for each car, because "unique rewards
+   per car will read as confusing to players". The numbers are round, and not
+   the 29/21/16/12 that 70 per cent of each group's slowest car gave.
 
-   TWO CLASSES ARE DELIBERATELY NOT IN THIS TABLE AND THE OWNER HAS NOT RULED
-   ON THEM. FORMULA is a novelty with no league of its own ([[RLG-213]]) and is
-   quicker than a super; UTILITY and the two police cars only ever go on TEST
-   DRIVE, which is exactly the mode a checkpoint clock belongs to. Guessing a
-   number for either is inventing a balance decision, so both hold the default
-   and both are asked about rather than assumed.
+   TWO SETS WERE REJECTED. Do not propose them again. 30/20/15/10 made the
+   four supercars lose up to 1.1 seconds at each gantry when driven perfectly.
+   40/30/20/15 let nine of the nineteen cars run forever without a crate. A
+   timed run must end, with distance as the score, unless the driver is good.
+
+   `CLOCK_BONUS` STAYS AND IS THE DEFAULT. A class with no row and no
+   inheritance is paid twenty. No class reaches it now, and it stays so that a
+   new class cannot be paid nothing.
 
    THE POLICE ARE DERIVED AND NOT LISTED, which is this project's standing
-   rule. `classOf` already answers `sports` for a CRUISER and `super` for a
-   SUPERCRUISER, off the `raceClass` each one declares - so they take 20 and 10
-   through the record rather than through two rows that could drift from it.
+   rule. A CRUISER declares `raceClass: 'sports'` and a SUPERCRUISER declares
+   `'super'`, so they take their seconds through the record.
    ---------------------------------------------------------------------- */
-const CP_SECONDS = { production: 30, sports: 20, super: 10 };
+const CP_SECONDS = { utility: 30, production: 20, sports: 15, super: 15 };
+/* A CLASS WITH NO LEAGUE OF ITS OWN IS PAID AS THE CLASS IT INHERITS FROM.
+   Owner, 2026-09-12: all three FORMULA cars take the super reward. That
+   reward is sized for slower cars, so a formula car can keep a run going
+   without crates. The owner was told this and it is the novelty ([[RLG-213]]). */
+const CP_INHERITS = { formula: 'super' };
 function cpSeconds(){
   const B = BODY[optBody];
   /* THE RECORD DECLARES IT. `raceClass` is on the two police cars and on nothing
@@ -613,7 +625,7 @@ function cpSeconds(){
      would have been given the supercar's reward. That fall-through is one of the
      things [[RLG-227]] exists to remove. */
   const cls = (B && B.raceClass) ? B.raceClass : bodyClass(optBody);
-  const secs = CP_SECONDS[cls];
+  const secs = CP_SECONDS[CP_INHERITS[cls] || cls];
   return secs === undefined ? CLOCK_BONUS : secs;
 }
 /* ---- AND THE UNIT THE CLOCK IS COUNTED IN (RLG-106) ---------------------

@@ -2,29 +2,31 @@
 """CHECKPOINT PAY TEST - a gantry pays what the car's class is worth.
 
     .venv/Scripts/python tools/checkpoint-pay-test.py
-    .venv/Scripts/python tools/checkpoint-pay-test.py --falsify
+    .venv/Scripts/python tools/checkpoint-pay-test.py --falsify table
+    .venv/Scripts/python tools/checkpoint-pay-test.py --falsify inherit
+    .venv/Scripts/python tools/checkpoint-pay-test.py --falsify start
 
-RLG-233. Owner, 2026-09-12: *"production class is awarded 30 seconds per checkpoint. Sports class is
-awarded 20 seconds per checkpoint. Super class is awarded 10 seconds per checkpoint."*
+RLG-235, which replaces the numbers of RLG-233. Owner, 2026-09-13: utility 30 seconds a gantry,
+production 20, sports 15, super 15, from a 120-second start.
 
-WHAT IS MEASURED IS THE CLOCK, not the table. Reading `CP_SECONDS` back and asserting it holds 30,
-20 and 10 would test the change against a copy of itself. So this drives each car to a real gantry
-and measures the seconds that actually land on the run clock.
+WHAT IS MEASURED IS THE CLOCK, not the table. Reading `CP_SECONDS` back and asserting it holds the
+four numbers would test the change against a copy of itself. So this drives each car to a real
+gantry and measures the seconds that actually land on the run clock.
 
-  1. EACH CLASS IS PAID ITS OWN NUMBER. A production car gains 30, a sports car 20, a super 10,
-     measured across a checkpoint on the road.
+  1. EACH GROUP IS PAID ITS OWN NUMBER, measured across a checkpoint on the road.
   2. THE POLICE ARE PAID AS THE CARS THEY ARE BUILT FROM. A CRUISER declares `raceClass: sports` and
-     a SUPERCRUISER declares `super`, so they take 20 and 10 through the record rather than through
-     rows of their own. Without this, a pair of hand-written rows could drift from the declaration
-     and nothing would say so.
-  3. AND AN UNRULED CLASS KEEPS THE OLD TWENTY. Formula and utility are deliberately not in the
-     table - the owner has not ruled on them - so they must be paid exactly what they were paid
-     before, and not the supercar's ten. This is the check that would have caught the first build:
-     it asked `classOf`, which falls through to `super` for anything outside its three lists, so a
-     VAN was being handed a supercar's reward.
+     a SUPERCRUISER declares `super`, so they take their seconds through the record rather than
+     through rows of their own.
+  3. A FORMULA CAR IS PAID AS A SUPER. Formula has no league and no row; `CP_INHERITS` maps it.
+  4. A RUN STARTS WITH 120 SECONDS. It is read just after the run starts, so the clock has already
+     run down a little.
 
-`--falsify` serves the engine with the table emptied, so every class is paid the flat twenty again.
-Checks 1 and 2 must fail and check 3 must still pass - which is what tells the three apart.
+`--falsify` serves the engine with one part of the change put back, and says which rows must fail:
+  table    the table is emptied, so every car is paid the default twenty. Every row fails except the
+           production cars, whose ruled number IS twenty - this falsifier cannot see them.
+  inherit  the formula mapping is removed. Only VECTOR fails, because formula falls to the default.
+  start    the start is 60 again. Only the start check fails.
+A falsifier that fails the wrong rows is as much a failure of this harness as one that fails none.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -47,15 +49,29 @@ VEIL = '#veil:not(.hidden) '
 
 # body, what the owner ruled it is worth, and why this row is in the list
 CARS = [
-    ('SALOON',       30, 'production'),
-    ('COUPE',        30, 'production'),
-    ('TUNER',        20, 'sports'),
-    ('STALLION',     10, 'super'),
-    ('CRUISER',      20, 'a sports saloon underneath - declared, not listed'),
-    ('SUPERCRUISER', 10, 'a MATADOR underneath - declared, not listed'),
-    ('VECTOR',       20, 'formula: NOT RULED, so it keeps the old twenty'),
-    ('VAN',          20, 'utility: NOT RULED, so it keeps the old twenty'),
+    ('SALOON',       20, 'production'),
+    ('COUPE',        20, 'production'),
+    ('TUNER',        15, 'sports'),
+    ('STALLION',     15, 'super'),
+    ('CRUISER',      15, 'a sports saloon underneath - declared, not listed'),
+    ('SUPERCRUISER', 15, 'a MATADOR underneath - declared, not listed'),
+    ('VECTOR',       15, 'formula: no league, paid as a super'),
+    ('VAN',          30, 'utility'),
 ]
+
+START = 120
+
+# What each falsifier replaces in road.js, and the checks it must fail. 'start' is the
+# name of the start check; every other name is a body in CARS.
+TABLE = 'const CP_SECONDS = { utility: 30, production: 20, sports: 15, super: 15 };'
+FALSIFY = {
+    'table':   (TABLE, 'const CP_SECONDS = {};',
+                {'TUNER', 'STALLION', 'CRUISER', 'SUPERCRUISER', 'VECTOR', 'VAN'}),
+    'inherit': ("const CP_INHERITS = { formula: 'super' };", 'const CP_INHERITS = {};',
+                {'VECTOR'}),
+    'start':   ('const CLOCK_START = 120,', 'const CLOCK_START = 60,',
+                {'start'}),
+}
 
 # Drive each car over a gantry and return the seconds the clock actually gained. The
 # checkpoints are laid two miles apart, so the player is put just short of one and walked
@@ -95,7 +111,7 @@ PAY = r"""async (a) => {
   R.jumpTo(cp + 800);
   await new Promise(r => setTimeout(r, 200));
   /* THE CLOCK IS ALSO RUNNING DOWN while this happens, so the difference is the award
-     minus a fraction of a second. The three awards are ten apart, so a second of slack
+     minus a fraction of a second. The awards are at least five apart, so a second of slack
      costs the check nothing, and claiming more precision than the instrument has would
      be the dishonest option. */
   return { gained: R.clock - before, at: cp };
@@ -104,8 +120,8 @@ PAY = r"""async (a) => {
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--falsify', action='store_true',
-                    help='serve the engine with the class table emptied; checks 1 and 2 must fail')
+    ap.add_argument('--falsify', choices=sorted(FALSIFY),
+                    help='serve the engine with one part of the change put back')
     args = ap.parse_args()
     console_utf8()
 
@@ -120,17 +136,22 @@ def main():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     bad = 0
+    failed = set()   # the names of the checks that failed, for the falsifier to compare
+    blocked = 0      # a check that could not run is never evidence, in either mode
 
-    def ok(cond, label, detail=''):
+    def ok(cond, label, detail='', name=None):
         nonlocal bad
         if not cond:
             bad += 1
+            if name:
+                failed.add(name)
         print('  %s  %s%s' % ('ok  ' if cond else 'FAIL', label,
                               ('   ' + detail) if (detail and not cond) else ''))
 
     print('checkpoint-pay  .  a gantry pays what the class is worth')
     if args.falsify:
-        print('  FALSIFY: the class table is emptied, so every car is paid a flat twenty.')
+        print('  FALSIFY %s: must fail exactly %s' % (
+            args.falsify, ', '.join(sorted(FALSIFY[args.falsify][2]))))
     try:
         with sync_playwright() as p:
             b = launch_chromium(p, headless=True, args=['--mute-audio'])
@@ -138,10 +159,10 @@ def main():
             ctx.add_init_script(dt.INIT)
             if args.falsify:
                 src = (ROOT / 'road.js').read_text(encoding='utf-8')
-                need = 'const CP_SECONDS = { production: 30, sports: 20, super: 10 };'
+                need, put, _ = FALSIFY[args.falsify]
                 if need not in src:
-                    raise SystemExit('[checkpoint-pay] --falsify cannot find the table it empties')
-                src = src.replace(need, 'const CP_SECONDS = {};', 1)
+                    raise SystemExit('[checkpoint-pay] --falsify cannot find %r' % need)
+                src = src.replace(need, put, 1)
                 ctx.route('**/road.js', lambda route: route.fulfill(
                     status=200, content_type='application/javascript', body=src))
             pg = ctx.new_page()
@@ -154,6 +175,13 @@ def main():
             pg.wait_for_timeout(400)
             pg.click(VEIL + '[data-act="drive"]')
             pg.wait_for_timeout(1800)
+
+            # The run is under two seconds of wall time old, and the engine's clock runs
+            # slower than wall time here, so a 120 start reads just under 120. The floor is
+            # far above the old 60, so the check cannot pass on the old start.
+            begun = pg.evaluate('() => window.__road.clock')
+            ok(START - 10 < begun <= START, 'a run starts with %d sec' % START,
+               'it read %.1f' % begun, name='start')
 
             # ---- A CROSSING THAT DID NOT HAPPEN IS NOT AN ANSWER -------------------
             # A gain of zero means the board was already hit, or the jump landed the wrong
@@ -187,19 +215,28 @@ def main():
                     # the probe walks forward on its own; this only ever nudges the
                     # start of that walk, and never behind where the road has got to
                 if got <= 0:
+                    blocked += 1
                     ok(False, '%-13s BLKD  no board was crossed in three tries' % body,
                        why_not)
                     continue
                 ok(abs(got - want) <= 1,
                    '%-13s pays %2d sec   (%s)' % (body, want, why),
-                   'it paid %.1f' % got)
+                   'it paid %.1f' % got, name=body)
 
             if errs:
+                blocked += 1
                 ok(False, 'page errors', errs[0][:140])
             b.close()
     finally:
         srv.shutdown()
 
+    if args.falsify:
+        want = FALSIFY[args.falsify][2]
+        good = failed == want and not blocked
+        print('  %s' % ('the falsifier failed exactly the rows it should' if good else
+                        'FALSIFIER WRONG: failed %s, expected %s, %d blocked'
+                        % (sorted(failed) or 'nothing', sorted(want), blocked)))
+        return 0 if good else 1
     print('  %s' % ('all checks passed' if not bad else '%d check(s) FAILED' % bad))
     return 1 if bad else 0
 
