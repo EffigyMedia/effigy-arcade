@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.7';
+window.ROAD_BUILD = '0.14.8';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -699,6 +699,33 @@ function clockRuns(){ return (mode === 'race') || timedRun; }
 const TOUR_MILES = [10, 12, 16, 24];
 const TOUR_PTS   = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1, 0, 0];   /* by place */
 let tourOn = false, tourRound = 0, tourPts = 0, tourField = [];
+/* ---- A FINISHED TOURNAMENT IS RETIRED ON THE WAY BACK IN (RLG-232) -------
+   Owner, 2026-09-12: "When I complete a tournament if I don't hit the new
+   tournament button and I just quit to the menu any tournament I go into starts
+   at race four with a position of one, and I can immediately place first and
+   win the new tournament."
+
+   THE TROPHY SCREEN HAD THREE WAYS OUT AND ONE OF THEM RESET. NEW TOURNAMENT
+   called `tourReset`; MAIN MENU and the two buttons on the unlock screen behind
+   SEE YOUR NEW CAR set `tourOn = false` and nothing else. `tourOn` is not the
+   state - it is recomputed from `raceTour` by `enforceModeRules` every time the
+   garage opens - so clearing it clears nothing, and `tourRound` stayed at four
+   with a winning point total behind it. One more race paid a whole ladder rung.
+
+   SO THE FLAG SAYS THE TOURNAMENT IS SPENT, AND ONE PLACE ACTS ON IT. It cannot
+   be reset when the trophy opens, because that screen READS `tourPts` and
+   `tourField` to show the final standings. And it must not be four fixes at
+   four buttons: naming every exit is the shape this codebase has paid for three
+   times. `enforceModeRules` is the single door back - `showGarage` calls it
+   through `enforceCarRules`, and a player has to pass the garage to drive - so
+   the retirement happens there and every way out of the trophy is covered by
+   construction, including one added tomorrow.
+
+   A PART-RUN TOURNAMENT IS NOT TOUCHED, and that is deliberate. RLG-115 keeps
+   `tourRound` alive when a car change drops the mode, so that a half-finished
+   ladder waits for you. Only a tournament that has PAID OUT is spent.
+   ---------------------------------------------------------------------- */
+let tourDone = false;
 /* what the last finish paid in police cars, read by the trophy screen only.
    `New` is a car won just now; `Had` is the same gold taken again in a car
    you already owned, which says nothing rather than announcing it twice. */
@@ -27183,6 +27210,10 @@ let raceMode = 'endless', raceTour = false;
 /* a harness's grip on the field's pace - see the note in `stepRacers` */
 let fieldHold = null;
 function enforceModeRules(){
+  /* ---- THE ONE DOOR BACK (RLG-232) ------------------------------------
+     Above every branch, because a police car takes an early return out of this
+     function and a player may well walk into one from the trophy screen. */
+  if(tourDone){ tourReset(); tourDone = false; }
   if(playerIsPolice()){
     /* on shift: the race machinery on, the tournament off, and the racing car's
        own choice left exactly where it was */
@@ -28136,6 +28167,11 @@ function showUnlock(key){
 }
 
 function showTrophy(st){
+  /* this tournament has paid out. `enforceModeRules` retires it the next time
+     the garage opens, whichever button got the player there (RLG-232). The
+     standings below still read `tourPts` and `tourField`, which is why the
+     reset cannot happen here. */
+  tourDone = true;
   trophyPlace = st; trophyT = performance.now();
   document.body.classList.remove('titling');
   document.body.classList.add('trophying');
@@ -28201,7 +28237,10 @@ function showTrophy(st){
       '<button class="go ghost" data-act="menu">MAIN MENU</button>' +
     '</div>',
     { again: () => { document.body.classList.remove('trophying');
-                     tourReset(); showGarage(); },
+                     /* `showGarage` retires the spent tournament through
+                        `enforceModeRules`, which is the one place that does it
+                        for every way out of this screen (RLG-232). */
+                     showGarage(); },
       unlock: () => { if(showCar) showUnlock(showCar); },
       menu:  () => { document.body.classList.remove('trophying');
                      tourOn = false; showTitle(); } });
@@ -29384,7 +29423,15 @@ requestAnimationFrame(frameLoop);
   };
   /* the round and the points are kept when a mode is dropped - this is how a
      check proves the tournament was switched OFF rather than erased */
-  API.tourState = function(){ return { on:!!tourOn, round:tourRound, pts:tourPts }; };
+  API.tourState = function(){ return { on:!!tourOn, round:tourRound, pts:tourPts,
+                                      done:!!tourDone }; };
+  /* ---- THE FALSIFIER'S HANDLE ON RLG-232 --------------------------------
+     `tour-exit-test --falsify` needs the OLD behaviour: a trophy left by the
+     menu that retires nothing. Clearing the flag from outside is exactly that
+     build, because the flag is the only thing the garage acts on. It is a seam
+     for putting the defect back rather than one the product uses - nothing in
+     the game calls it. */
+  API.tourClearDone = function(){ tourDone = false; return tourDone; };
   /* THE MODE ITSELF, not the label. The MODE button reads 'TEST DRIVE' for a
      car that cannot race whatever `mode` holds, so the label cannot tell a
      check whether a press got through - it is hardcoded on that branch. A

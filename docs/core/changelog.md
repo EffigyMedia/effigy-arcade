@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-8"></a>
+## [0.14.8] - 2026-09-13
+- Fixed: **a finished tournament followed you into the next one.** Owner: "when I complete a
+  tournament if I don't hit the new tournament button and I just quit to the menu any tournament I go
+  into starts at race four with a position of one." The trophy screen had three ways out and only NEW
+  TOURNAMENT reset anything; the other two cleared `tourOn`, which is not the state — it is
+  recomputed from the mode every time the garage opens. The round and the points stayed where the
+  finished tournament left them, so one race paid a whole ladder rung. A spent tournament is now
+  retired at the single door back into the garage, so every exit is covered by construction rather
+  than by naming the buttons. A part-run tournament still waits for you.
+  [RLG-232](../fragments/RLG-232.md)
+
 <a id="v0-14-7"></a>
 ## [0.14.7] - 2026-09-12
 - Fixed: **the garage gives a car a floor to stand on, so its tyres read.** Owner, 2026-09-09: "we
