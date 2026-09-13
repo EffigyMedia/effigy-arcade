@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.8';
+window.ROAD_BUILD = '0.14.9';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -570,6 +570,52 @@ const TRAPS_MAX  = 8;          /* and the most the road ever holds */
    you do. Coasting past one buys the twenty seconds and the run continues.
    -------------------------------------------------------------------------- */
 const CLOCK_START = 60, CLOCK_BONUS = 20, CP_MILES = 2;
+/* ---- AND A CHECKPOINT PAYS BY CLASS (RLG-233) ---------------------------
+   Owner, 2026-09-12: "production class is awarded 30 seconds per checkpoint.
+   Sports class is awarded 20 seconds per checkpoint. Super class is awarded 10
+   seconds per checkpoint."
+
+   THE REWARD SCALES AGAINST THE CAR. A supercar covers the two miles to the
+   next gantry in a fraction of the time a saloon needs, so a flat twenty
+   seconds was worth far more to the fast car than to the slow one - the run
+   got EASIER as the ladder went up. Ten seconds in a super and thirty in a
+   production turns that the right way round.
+
+   `CLOCK_BONUS` STAYS AND IS THE DEFAULT rather than a fourth number. A class
+   with no row here is paid the twenty it has always been paid, which is what
+   makes the three rows a change to three classes rather than a rewrite of the
+   rule for every vehicle in the game.
+
+   TWO CLASSES ARE DELIBERATELY NOT IN THIS TABLE AND THE OWNER HAS NOT RULED
+   ON THEM. FORMULA is a novelty with no league of its own ([[RLG-213]]) and is
+   quicker than a super; UTILITY and the two police cars only ever go on TEST
+   DRIVE, which is exactly the mode a checkpoint clock belongs to. Guessing a
+   number for either is inventing a balance decision, so both hold the default
+   and both are asked about rather than assumed.
+
+   THE POLICE ARE DERIVED AND NOT LISTED, which is this project's standing
+   rule. `classOf` already answers `sports` for a CRUISER and `super` for a
+   SUPERCRUISER, off the `raceClass` each one declares - so they take 20 and 10
+   through the record rather than through two rows that could drift from it.
+   ---------------------------------------------------------------------- */
+const CP_SECONDS = { production: 30, sports: 20, super: 10 };
+function cpSeconds(){
+  const B = BODY[optBody];
+  /* THE RECORD DECLARES IT. `raceClass` is on the two police cars and on nothing
+     else, and it already says which class of car each one IS - a CRUISER is a
+     sports saloon, a SUPERCRUISER is a MATADOR. Reading it here is why a third
+     force car would need no edit, and why this could not be a pair of rows for
+     `cruiser` and `supercruiser` that could drift from the declaration.
+
+     ASKING `classOf` INSTEAD WOULD HAVE PAID A VAN TEN SECONDS. It falls through
+     to `super` for every body that is not in one of its three lists, and the
+     utility vehicles are in none of them - so the slowest thing in the game
+     would have been given the supercar's reward. That fall-through is one of the
+     things [[RLG-227]] exists to remove. */
+  const cls = (B && B.raceClass) ? B.raceClass : bodyClass(optBody);
+  const secs = CP_SECONDS[cls];
+  return secs === undefined ? CLOCK_BONUS : secs;
+}
 /* ---- AND THE UNIT THE CLOCK IS COUNTED IN (RLG-106) ---------------------
    Owner, 2026-08-31: "when you're rewarded more time, it just has a number
    '+20', it should be '+20 sec'."
@@ -17581,10 +17627,14 @@ function step(dt){
   for(const cp of cpGantries){
     if(!cp.hit && pos + PLAYER_Z > cp.z){
       cp.hit = true;
-      clock += CLOCK_BONUS;
+      /* ONE CALL, READ ONCE. The award and the number on the flash have to be
+         the same thing - a gantry that pays ten and says twenty is worse than
+         either number being wrong on its own. */
+      const paid = cpSeconds();
+      clock += paid;
       lastBeep = -1;
       snd.checkpoint();
-      flashWarn(timeFlash('CHECKPOINT', CLOCK_BONUS));
+      flashWarn(timeFlash('CHECKPOINT', paid));
     }
   }
   /* ---- A BOARD LASTS AS LONG AS THE GLASS CAN SEE IT (RLG-133) --------
@@ -29658,6 +29708,18 @@ requestAnimationFrame(frameLoop);
     return { clock: cw ? cw.className : '', nos: nb ? nb.className : '' };
   };
   API.clockRuns = function(){ return clockRuns(); };
+  /* ---- WHERE THE NEXT GANTRY IS (RLG-233) -------------------------------
+     `checkpoint-pay-test` measures what a checkpoint actually pays, which means
+     driving a car over a real one. The gantries are laid two miles apart as the
+     road is built, so their positions are not arithmetic a harness can do from
+     outside - it has to ask. Returns the z of the next one still unhit, or null
+     if none has been laid yet. */
+  API.nextGantry = function(){
+    let best = null;
+    for(const cp of cpGantries)
+      if(!cp.hit && cp.z > pos + PLAYER_Z && (best === null || cp.z < best)) best = cp.z;
+    return best;
+  };
   API.parkCrate = function(dz){
     crates.length = 0;
     crates.push({ z: pos + PLAYER_Z + (dz === undefined ? 900 : dz),

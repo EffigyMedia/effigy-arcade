@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-9"></a>
+## [0.14.9] - 2026-09-13
+- Changed: **a checkpoint pays by class — production 30 seconds, sports 20, super 10.** Owner's own
+  numbers. A supercar covers the two miles to the next gantry in a fraction of the time a saloon
+  needs, so a flat twenty was worth far more to the fast car: the run got easier as the ladder went
+  up. The police are paid as the cars they are built from, through the class each one already
+  declares, rather than through rows of their own. Formula and utility are not in the table — the
+  owner has not ruled on them — and keep the twenty they have always been paid.
+  [RLG-233](../fragments/RLG-233.md)
+- Found, not fixed: **`verify-097-100.py` passes three cars that never moved.** Run after the change
+  above, it reported 0.00 miles and 0 mph for all three and printed three green marks — the check is
+  "does the clock reach zero", and a clock that never starts never reaches zero. RLG-100 is still
+  open and its last real readings are from 2026-09-08. [RLG-234](../fragments/RLG-234.md)
+
 <a id="v0-14-8"></a>
 ## [0.14.8] - 2026-09-13
 - Fixed: **a finished tournament followed you into the next one.** Owner: "when I complete a
