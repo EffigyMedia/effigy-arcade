@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-6"></a>
+## [0.14.6] - 2026-09-12
+- Changed: **one unlock rule - utility at a hundred miles, and no other.** Owner: "nothing should
+  unlock at 50 and 25 miles, traffic unlocking at 100 is incorrect and utility unlocking at 100 is the
+  only correct." The class had been earned three ways as the fleet was reorganised, and every old flag
+  was being read as the current one so that no save lost a car. The old names describe a fleet split
+  the game no longer has, and reading a 25-mile flag as the new one hands over five vehicles for a
+  quarter of the distance. A save holding only the old flag drives the hundred miles again.
+  [RLG-230](../fragments/RLG-230.md)
+
 <a id="v0-14-5"></a>
 ## [0.14.5] - 2026-09-12
 - Changed: **the non-racing class is UTILITY.** Owner, asked for one name covering the cab, the

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.5';
+window.ROAD_BUILD = '0.14.6';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -727,39 +727,43 @@ function tourStanding(){
   for(const r of tourField) if(r.pts > tourPts) ahead++;
   return ahead + 1;
 }
-/* ---- WHAT AN OLD SAVE CALLED THE SAME THING (RLG-213, RLG-197, RLG-229) ---
-   THE MERGED CLASS IS `utility` AND IT HAS HAD THREE NAMES. A save written
-   between 2026-08-29 and the resort holds `production` and `utility`, granted
-   at 50 and 25 miles; the resort merged both into `traffic`, which was the flag
-   the old hundred-mile rule already used; and the owner renamed that to
-   `utility` on 2026-09-12, because `traffic` is a thing a vehicle DOES on the
-   road rather than a kind of vehicle - a production car fills the traffic too.
-   Read literally, such a save LOSES every car it had won: measured at 0 of 3
-   for a `utility` save before this existed.
+/* ---- ONE UNLOCK RULE, AND NO OTHER (RLG-230) ---------------------------
+   Owner, 2026-09-12: "nothing should unlock at 50 and 25 miles, traffic
+   unlocking at 100 is incorrect and utility unlocking at 100 is the only
+   correct, because now all those vehicles only fall under utility."
 
-   THE NEW NAME IS AN OLD NAME, AND THAT COSTS NOTHING. `utility` was one of the
-   two pre-resort flags, so a save from that era is read by the first line of
-   `unlocked` without reaching this table at all - and it grants the whole
-   merged class, which is what the `traffic` mapping already did for it.
+   SO THE MIGRATION IS GONE AND THAT IS DELIBERATE. Until this ruling
+   `OLD_UNLOCK_NAMES` read three spellings as one: `production` and `utility`
+   granted separately at 50 and 25 miles before the resort, and `traffic`
+   granted at 100 after it. Each was honoured so that no save lost a car.
 
-   SO THE OLD NAMES ARE READ AS THE NEW ONE. Either of them means the player
-   earned part of what is now one class, and the class cannot be given out in
-   parts - so either grants it whole. A player who had only reached 25 miles
-   gains the cab and the pickup they had not won, which is the right way for
-   this to be wrong: a merge that takes cars away is a bug report, and one that
-   rounds up is a gift nobody notices.
+   THE OWNER'S REASON IS THAT THE OLD NAMES DESCRIBE A FLEET THAT NO LONGER
+   EXISTS. There is one non-racing class now, so a flag that says "this player
+   won the utility half at 25 miles" is a claim about a split the game does not
+   have - and honouring it hands somebody five vehicles for a quarter of the
+   distance the rule asks for. A migration is supposed to carry a save across a
+   rename; this one was carrying it across a CHANGE OF RULE, which is a
+   different thing wearing the same coat.
 
-   IT IS NEVER REMOVED. RLG-197 states the rule and the reason: the save it
-   repairs may not be opened for a year.
+   WHAT IT COSTS, STATED RATHER THAN DISCOVERED: a save holding only the old
+   `traffic` flag drives the hundred miles again. The owner was told that before
+   this was built and ruled anyway.
+
+   AND ONE THING CANNOT BE UNDONE. The pre-resort 25-mile flag was spelled
+   `utility`, which is the name the class carries now, so an old save and a new
+   one are THE SAME KEY and no code can tell them apart. "Nothing unlocks at 25
+   miles" therefore holds for every save written from here on and cannot be
+   enforced backwards for that one spelling.
+
+   THIS IS NOT A REPEAL OF [[RLG-197]]. That ruling is about the BODY keys in
+   `RENAMED`, where a rename would otherwise silently swap somebody's car for a
+   ROADSTER, and that table is untouched and still never removed. This was a
+   second table following the same principle, and the owner has ruled the
+   principle does not reach a rule change.
    --------------------------------------------------------------------- */
-const OLD_UNLOCK_NAMES = { utility: ['traffic', 'production'] };
 function unlocked(key){
   const sv = (AR && AR.save) ? AR.save.get((GAME_ID + '-opts')) : null;
-  if(!sv) return false;
-  if(sv[key]) return true;
-  const was = OLD_UNLOCK_NAMES[key];
-  if(was) for(const w of was) if(sv[w]) return true;
-  return false;
+  return !!(sv && sv[key]);
 }
 function zUnlocked(){ return unlocked('formula'); }
 let clock = CLOCK_START, nextCP = 0, cpGantries = [], lastBeep = -1, wreckWait = 0;

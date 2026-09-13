@@ -144,20 +144,16 @@ def main():
                'already offered: %s' % ', '.join(early))
         ctx.close()
 
-        # ---- A SAVE THAT EARNED THE OLD HUNDRED-MILE FLAG ----------------------
-        # THE CLASS HAS HAD THREE NAMES (RLG-229): `production`+`utility` before the
-        # resort, `traffic` after it, and `utility` since the owner renamed it. Every
-        # one of them must still open the whole class, and each is checked below - a
-        # migration is never removed, so neither is its test.
-        ctx, page = boot_with(b, port, '{"traffic":true}')
-        have = listed(page)
-        shut = [k for k in MERGED if k not in have]
-        res.ok(not shut,
-               'the old hundred-mile flag still opens the WHOLE merged class',
-               'still missing: %s' % ', '.join(shut))
-        ctx.close()
-
-        # ---- AND THE NAME IT CARRIES NOW --------------------------------------
+        # ---- ONE UNLOCK RULE, AND NO OTHER (RLG-230) ---------------------------
+        # The class has had three flag names - `production` and `utility` granted
+        # separately at 50 and 25 miles before the resort, `traffic` at 100 after it,
+        # and `utility` at 100 now. They used to be read as one. The owner ruled on
+        # 2026-09-12 that only the last is correct, because the old names describe a
+        # fleet split the game no longer has.
+        #
+        # THE TEST IS KEPT AND TURNED OVER rather than deleted. It asserted that each
+        # old name opened the class; it asserts that they do not. Deleting it would
+        # leave the rule with no check at all, and the rule is the whole ruling.
         ctx, page = boot_with(b, port, '{"utility":true}')
         have = listed(page)
         shut = [k for k in MERGED if k not in have]
@@ -165,22 +161,29 @@ def main():
                'still missing: %s' % ', '.join(shut))
         ctx.close()
 
-        # ---- AND THE TWO FLAGS A REAL SAVE ACTUALLY HOLDS ---------------------
-        # These were granted separately at 25 and 50 miles. A player who earned
-        # UTILITY alone owned the van, the lorry and the ambulance and had not won
-        # the cab or the pickup - so this says what happens to them, rather than
-        # leaving it to be discovered by whoever still has that save.
-        # `utility` is checked above as the CURRENT name; here it stands for the
-        # pre-resort flag of the same spelling, which is the same test either way.
-        for flag, had in (('utility', ['VAN', 'SEMI', 'AMBULANCE']),
-                          ('production', ['CAB', 'PICKUP'])):
-            ctx, page = boot_with(b, port, '{"%s":true}' % flag)
-            have = listed(page)
-            lost = [k for k in had if k not in have]
-            res.ok(not lost,
-                   'a save holding only %r keeps every car it had won' % flag,
-                   'lost: %s' % ', '.join(lost))
-            ctx.close()
+        ctx, page = boot_with(b, port, '{"traffic":true}')
+        have = listed(page)
+        got = [k for k in MERGED if k in have]
+        res.ok(not got,
+               'the old hundred-mile flag opens NOTHING now',
+               'still offered: %s' % ', '.join(got))
+        ctx.close()
+
+        # ---- AND THE PRE-RESORT FLAG THAT PAID AT FIFTY MILES ------------------
+        # `production` used to grant the cab and the pickup at 50 miles. Under one
+        # rule it grants nothing: half the distance cannot buy the whole class.
+        #
+        # THE 25-MILE FLAG IS NOT HERE AND CANNOT BE. It was spelled `utility`, which
+        # is the name the class carries now, so an old save and a new one are the same
+        # key and nothing can tell them apart. That is stated in the engine's own note
+        # rather than papered over with a check that would have to lie.
+        ctx, page = boot_with(b, port, '{"production":true}')
+        have = listed(page)
+        got = [k for k in MERGED if k in have]
+        res.ok(not got,
+               'the old fifty-mile flag opens NOTHING now',
+               'still offered: %s' % ', '.join(got))
+        ctx.close()
 
         # ---- THE TWO CLASS MAPS MUST AGREE ------------------------------------
         # `API.fleet` keeps its own copy for the fleet sheet, and its own comment
