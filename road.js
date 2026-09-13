@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.15';
+window.ROAD_BUILD = '0.14.16';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10892,16 +10892,51 @@ function spawnCop(){
   });
 }
 
+/* ---- AT FOUR STARS A ROADBLOCK IS A SLALOM (RLG-242) ---------------------
+   Owner, 2026-09-13: "I want the roadblocks to become more problematic at 4
+   stars. What I mean is I want roadblocks to then be 2-3 roadblocks that need
+   to be slalomed."
+
+   A SLALOM IS OPENINGS ON ALTERNATING SIDES. Each block in the chain is an
+   ordinary roadblock, and its opening is put hard to one side and the next one
+   hard to the other, so a car that threads the first is lined up wrong for the
+   second and has to cross the road between them. `gapZ` is how much road there
+   is to do that in, and it is a tunable because it IS the difficulty. */
+const SLALOM = {
+  stars: 4,       /* the wanted level at which a roadblock becomes a chain       */
+  min:   2,       /* blocks in a chain, at least                                  */
+  max:   3,       /* and at most                                                  */
+  gapZ:  9000,    /* world units between one block and the next                   */
+  side:  0.58     /* how far off the centre line each opening sits                */
+};
+/* roadblocks threaded clean and run into, counted where the game decides it, so
+   a harness reads the game's own verdict rather than inferring it from damage */
+let blocksThreaded = 0, blocksStruck = 0;
 function spawnRoadblock(){
+  const z0 = pos + Math.max(34000, OUT_OF_SIGHT);
+  if(heat < SLALOM.stars){
+    placeRoadblock(z0, clamp(LANE_X[rint(0,3)], -0.58, 0.58));
+  } else {
+    const n = rint(SLALOM.min, SLALOM.max);
+    let s = Math.random() < 0.5 ? -1 : 1;
+    for(let i = 0; i < n; i++, s = -s) placeRoadblock(z0 + i * SLALOM.gapZ, s * SLALOM.side);
+  }
+  flashWarn('ROADBLOCK AHEAD');
+}
+/* how far down the road the next roadblock event reaches, so the straightness
+   check covers every block in a chain and not only the first */
+function roadblockReach(){
+  return heat < SLALOM.stars ? 0 : (SLALOM.max - 1) * SLALOM.gapZ;
+}
+function placeRoadblock(z, gx){
   // Panels are tiled across the road with one deliberate opening. Spacing is
   // chosen so no two panels can be squeezed between, and the opening leaves
   // the car GAP_SLACK of room either side of dead centre.
   const SEG  = 0.34;                       // one barrier panel, world units
   const HIT  = (SEG + 0.26)/2;             // centre distance that blocks the car
   const SLACK = 0.15;                      // wiggle room inside the opening
-  const gx = clamp(LANE_X[rint(0,3)], -0.58, 0.58);
-  noteSpawn(pos + Math.max(34000, OUT_OF_SIGHT));
-  const b = { z: pos + Math.max(34000, OUT_OF_SIGHT), gapX: gx, hit:false, parts:[] };
+  noteSpawn(z);
+  const b = { z: z, gapX: gx, hit:false, parts:[] };
 
   for(let x = gx - (HIT + SLACK); x > -1.12; x -= SEG) b.parts.push({ x, w:SEG });
   for(let x = gx + (HIT + SLACK); x <  1.12; x += SEG) b.parts.push({ x, w:SEG });
@@ -10916,7 +10951,6 @@ function spawnRoadblock(){
   }
 
   blocks.push(b);
-  flashWarn('ROADBLOCK AHEAD');
 }
 
 // widest run of road the car's centre can occupy — used to prove passability
@@ -18262,7 +18296,8 @@ function step(dt){
   /* A roadblock across a bend is a wall you cannot see until you are in it,
      so they only go up on a stretch that is straight where it stands AND
      still straight a little further on. */
-  if(!optEasy && nextBlockT<=0 && heat>=2 && isStraight(pos + 26000)){
+  if(!optEasy && nextBlockT<=0 && heat>=2 && isStraight(pos + 26000) &&
+     isStraight(pos + 26000 + roadblockReach())){
     spawnRoadblock();
     nextBlockT = Math.max(8, rnd(30,44) - heat*2);
   }
@@ -19519,6 +19554,7 @@ function step(dt){
         /* a near miss is its own reward - and a car with no bottle is not
            handed one it cannot spend (RLG-107) */
         awardNos(25); dmg = Math.max(0, dmg-25);
+        blocksThreaded++;
         snd.threaded();
         /* ---- NO SCORE IN THIS GAME ---------------------------------------
            These labels advertised points that do not exist — there is no score
@@ -19529,6 +19565,7 @@ function step(dt){
         fx.push({txt:'THREADED THE GAP', x:W/2, y:msgY()+16, vy:-26, age:0, life:1.3});
       } else {
         hurt(28,'roadblock');
+        blocksStruck++;
         spd *= 0.3;
         burst({z:b.z, x:playerX}, '#ffd070');
       }
@@ -30462,6 +30499,31 @@ requestAnimationFrame(frameLoop);
   };
   /* put one where a check needs it, through the REAL spawner */
   API.forceRoadblock = function(){ const n = blocks.length; spawnRoadblock(); return blocks.length > n; };
+  /* ---- WHERE EACH OPENING REALLY IS, OFF THE PANELS (RLG-242) -------------
+     `gapX` is where the opening was MEANT to be. This walks the road the car's
+     centre can occupy, the same test the collision uses, and returns the middle
+     of the widest clear run for every block, nearest first. */
+  API.roadblockOpenings = function(){
+    return blocks.slice().sort((a, c) => a.z - c.z).map(b => {
+      let best = 0, run = 0, mid = null;
+      for(let x = -1.0; x <= 1.0001; x += 0.01){
+        let clear = true;
+        for(const p of b.parts){
+          if(p.cop) continue;
+          if(Math.abs(p.x - x) < (p.w + playerW())/2){ clear = false; break; }
+        }
+        run = clear ? run + 1 : 0;
+        if(run > best){ best = run; mid = x - (run - 1) * 0.005; }
+      }
+      return { dz: Math.round(b.z - (pos + PLAYER_Z)), hit: !!b.hit,
+               open: mid === null ? 0 : +mid.toFixed(3), width: +(best * 0.01).toFixed(2) };
+    });
+  };
+  /* the slalom's tunables, and the game's own count of blocks threaded and struck (RLG-242) */
+  API.slalom = function(o){
+    if(o) for(const k in o) if(k in SLALOM) SLALOM[k] = o[k];
+    return Object.assign({ threaded: blocksThreaded, struck: blocksStruck }, SLALOM);
+  };
   API.mergesMade = function(){ return mergesMade; };
   /* of those, the ones a car ANNOUNCED before making - see `signalledMerges` */
   API.signalledMerges = function(){ return signalledMerges; };

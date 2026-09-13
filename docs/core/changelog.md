@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-16"></a>
+## [0.14.16] - 2026-09-13
+- Changed: **at four stars a roadblock is a slalom of two or three blocks, with openings on
+  alternating sides.** Below four stars it is one block, as before. The spacing between blocks is a
+  single setting and is the difficulty. [RLG-242](../fragments/RLG-242.md)
+
 <a id="v0-14-15"></a>
 ## [0.14.15] - 2026-09-13
 - Changed: **the fuel gauge is a third dial above and between the tachometer and speedometer, and its
