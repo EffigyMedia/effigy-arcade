@@ -80,6 +80,86 @@ INK = """() => {
 }"""
 
 
+# `--falsify floor` only. Deletes the garage floor out of the live stylesheet, which is the
+# state the card was in before RLG-182's second half. Returns how many rules it removed, so a
+# falsifier that quietly matched nothing cannot be mistaken for a defect that failed to reproduce.
+DROP_FLOOR = """() => {
+  let n = 0;
+  for (const sh of Array.from(document.styleSheets)) {
+    let rules;
+    try { rules = sh.cssRules; } catch (e) { continue; }
+    if (!rules) continue;
+    for (let i = rules.length - 1; i >= 0; i--) {
+      const sel = rules[i].selectorText || '';
+      if (sel.indexOf('.gwrap') >= 0 && sel.indexOf('before') >= 0) { sh.deleteRule(i); n++; }
+    }
+  }
+  return n;
+}"""
+
+# where the floor line is, in the card's own pixels, and how wide the car is there
+WHERE = """() => {
+  const w = document.querySelector('.gwrap');
+  const cv = document.getElementById('gcar');
+  if (!w || !cv) return null;
+  const f = parseFloat(getComputedStyle(w).getPropertyValue('--gfloor'));
+  if (!isFinite(f)) return null;
+  const r = w.getBoundingClientRect();
+  return { floor: f, w: r.width, h: r.height };
+}"""
+
+
+def read_band(page):
+    """Photograph the composed card and measure the band just above the floor line.
+
+    Three numbers come back. `card_lum` is the plain card well above the car, which is the
+    control - it says what "unlit" looks like on this build. `floor_lum` is the lit floor
+    beside the car at the floor line. `spread` is that floor against the darkest pixel under
+    the car in the same rows, which is the tyre: it is the contrast a player actually sees.
+    """
+    import base64, io as _io
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    w = page.evaluate(WHERE)
+    if not w:
+        return None
+    png = page.locator('.gwrap').screenshot()
+    im = Image.open(_io.BytesIO(png)).convert('RGB')
+    k = im.width / w['w']                      # device pixels per CSS pixel
+    lum = lambda px: 0.2126*px[0] + 0.7152*px[1] + 0.0722*px[2]
+    row = lambda y, x0, x1: [lum(im.getpixel((x, int(y)))) for x in range(int(x0), int(x1))]
+    floor_y = w['floor'] * k
+    band = [floor_y - 6*k, floor_y - 2*k]
+    mid = im.width / 2
+    # the car occupies the middle of the card; the floor is lit either side of it and the
+    # tyres are the darkest thing inside it
+    inner = []
+    outer = []
+    y = band[0]
+    while y < band[1]:
+        inner += row(y, mid - 90*k, mid + 90*k)
+        outer += row(y, mid - 118*k, mid - 96*k) + row(y, mid + 96*k, mid + 118*k)
+        y += 1
+    if not inner or not outer:
+        return None
+    # THE CONTROL IS THE SAME COLUMNS, HIGHER UP, and the first version was not - it read the
+    # card's outer edges, which are dark whether a floor is drawn or not, so "there is a lit
+    # floor" passed with the floor deleted. Measuring the floor's own columns above its reach
+    # isolates the one thing being asked about: same x, same card, no floor.
+    ctrl = []
+    for yy in (floor_y - 74*k, floor_y - 68*k, floor_y - 62*k):
+        if yy > 0:
+            ctrl += row(yy, mid - 118*k, mid - 96*k) + row(yy, mid + 96*k, mid + 118*k)
+    outer.sort()
+    inner.sort()
+    floor_lum = outer[int(len(outer)*0.5)]
+    dark = inner[int(len(inner)*0.05)]
+    return { 'floor_lum': floor_lum, 'card_lum': (sum(ctrl)/len(ctrl)) if ctrl else 0.0,
+             'spread': floor_lum - dark }
+
+
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -114,7 +194,18 @@ def open_garage(page):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--headed', action='store_true')
-    ap.add_argument('--bodies', default='TUNER,MUSCLE,ROADSTER')
+    ap.add_argument('--falsify', choices=['floor'],
+                    help='delete the garage floor from the live stylesheet; the tyre check must fail')
+    # ---- THE CARS A FRESH SAVE ACTUALLY HAS (RLG-182) ----------------------
+    # This was TUNER, MUSCLE, ROADSTER and all three are SPORTS, which RLG-213 locked
+    # on a fresh save. So every card this walked was a LOCKED one: the width checks
+    # still passed, because a silhouette is fitted exactly like a car, and the three
+    # button checks failed on every run because RLG-210's amendment correctly takes
+    # the flip button OFF a locked card. The harness had been red for that reason
+    # alone, against a product that was right.
+    #
+    # Production is open from the start, so these three are owned by anybody.
+    ap.add_argument('--bodies', default='SALOON,COUPE,HATCH')
     args = ap.parse_args()
     console_utf8()
     httpd, port = serve(ROOT)
@@ -194,7 +285,7 @@ def main():
 
         # THE BUTTON. It must exist, and pressing it must change the PICTURE.
         page.evaluate("() => { const R = window.__road;"
-                      " R.setBody('TUNER'); R.showGarage(); }")
+                      " R.setBody('SALOON'); R.showGarage(); }")
         page.wait_for_timeout(200)
         before = page.evaluate(INK)
         has = page.locator('.gflip').count()
@@ -272,11 +363,54 @@ def main():
                    'and its card still paints the silhouette',
                    'nothing was drawn, so the check above proves nothing')
             page.evaluate("() => { const R = window.__road;"
-                          " R.setBody('TUNER'); R.showGarage(); }")
+                          " R.setBody('SALOON'); R.showGarage(); }")
             page.wait_for_timeout(200)
             res.ok(page.locator('.gflip').count() == 1,
                    'and an owned car gets it back',
                    'the button did not return, so it is gone for everyone')
+
+        # ---- THE TYRES READ, BECAUSE THE CAR STANDS ON SOMETHING (RLG-182) ----
+        # Owner: "we need to show a little bit of the tires on the bottom." The wheels
+        # were always in the sprite - a SALOON's are three rows of two 36-pixel blocks
+        # at luminance 16 to 22 - with `groundShadow`'s full-width black bar directly
+        # under them, on a near-black card. Three dark things that could not be told
+        # apart.
+        #
+        # THE FLOOR IS CSS AND IS NOT ON THE CANVAS, so this cannot read `#gcar` the
+        # way every check above does. It photographs the composed card and measures
+        # what a player's eye gets: in the band just above the floor line, the dark
+        # tyre must stand clear of the lit floor around it.
+        page.evaluate("() => { const R = window.__road;"
+                      " R.setBody('SALOON'); R.showGarage(); }")
+        page.wait_for_timeout(220)
+        if args.falsify == 'floor':
+            gone = page.evaluate(DROP_FLOOR)
+            if not gone:
+                raise SystemExit('[garage-card] --falsify floor found no floor rule to remove')
+            page.wait_for_timeout(120)
+        band = read_band(page)
+        if not band:
+            res.ok(False, 'the floor band could be measured', 'no card to photograph')
+        else:
+            # 1. there is a floor at all - the band is lighter than the card above it
+            print('      floor %.1f  card %.1f  spread %.1f'
+                  % (band['floor_lum'], band['card_lum'], band['spread']))
+            # THIRTY, AND THE NUMBER WAS MEASURED RATHER THAN CHOSEN. At six this check
+            # passed its own falsifier: the card's background is itself brighter at the
+            # bottom than 70 pixels higher - 20.2 against 11.6 - so a gradient that was
+            # always there cleared the bar with no floor drawn at all. With the floor the
+            # same reading is 71.9 against 11.6. Thirty sits between 8.6 and 60.3 with room
+            # on both sides.
+            res.ok(band['floor_lum'] - band['card_lum'] >= 30,
+                   'the card has a lit floor under the car',
+                   "floor %.1f against card %.1f - that is the card's own gradient, not a floor"
+                   % (band['floor_lum'], band['card_lum']))
+            # 2. and the tyre stands clear of it. Without the floor every pixel in
+            #    this band is near-black and the spread collapses.
+            res.ok(band['spread'] >= 18,
+                   'the tyres read against the floor',
+                   'only %.1f between the darkest and the lit floor - they are one smear'
+                   % band['spread'])
 
         if errs:
             res.ok(False, 'the page reported no errors', '; '.join(errs[:3]))

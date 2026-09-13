@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.6';
+window.ROAD_BUILD = '0.14.7';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26499,6 +26499,9 @@ const GARAGE_TOP = 6, GARAGE_HALF = 150, GARAGE_PAD = 12, GARAGE_DEEP = 150;
    the wrong thing to inline at the point of use.
    --------------------------------------------------------------------- */
 const GARAGE_WIDE = 300;
+/* how deep the garage floor reaches up behind the car. A tunable with a
+   committed default rather than a number written into the draw that reads it. */
+const GARAGE_FLOOR_H = 34;
 /* WHICH END IS SHOWN. The owner asked for a button in the corner of the view
    pane rather than the flip being deferred, and for FRONT to be the default
    "restored every time the garage opens" - so this is deliberately NOT
@@ -26685,6 +26688,52 @@ function drawGarageCar(){
      stand on one line whatever they are.
      ------------------------------------------------------------------- */
   const FLOOR = TOP + (fit.drawnH || 0);
+  /* ---- A CAR NEEDS SOMETHING TO STAND ON BEFORE ITS TYRES CAN SHOW -------
+     Owner, 2026-09-09 ([[RLG-182]]): "we need to show a little bit of the
+     tires on the bottom."
+
+     THE TYRES WERE ALWAYS THERE AND THE RECORD SAID THEY WERE NOT. Measured
+     off the front sprite: a SALOON's wheels are rows 152 to 154, two blocks of
+     36 pixels, at luminance 16 to 22 - and `groundShadow` lays a full-width bar
+     at `rgba(0,0,0,.5)` across rows 156 to 162 directly beneath them. So the
+     bottom of every car in this card was a near-black tyre above a black
+     shadow on a near-black card, and none of the three could be told from the
+     others. Nothing was missing; nothing was visible.
+
+     SO THE FIX IS THE CARD, NOT THE PAINTERS. A floor is drawn under the car
+     and the shadow falls on it. The tyres then read as the darkest thing in a
+     lit area rather than as one dark thing among three, and the shadow starts
+     doing the job it was drawn for - on the road it lands on tarmac, and this
+     is the tarmac it never had in here.
+
+     IT MUST NOT BE A PAINTER CHANGE, for two reasons that both bite. Lightening
+     a tyre would lighten it on the road as well, where it is correct; and the
+     silhouette invariant ([[RLG-184]]) declares the outline once for both ends,
+     so anything added below the body at one end is a change to both by
+     construction. The card is the only place this fault exists, so it is the
+     only place to fix it.
+
+     AND IT IS THE FLOOR [[RLG-210]] ALREADY ASKED FOR. "We should anchor all
+     the vehicles at the bottom instead of the top" was built as an alignment
+     rule with nothing drawn at the line. This is that line, made visible.
+
+     THE FLOOR IS NOT DRAWN ON THIS CANVAS, AND THAT IS NOT A STYLE CHOICE. It
+     was, for one build, and it broke `garage-card-test`: that harness asks how
+     wide the car is by counting non-transparent pixels, and a floor laid across
+     the card is non-transparent across the card. Three cars went from a 224 to
+     266 pixel answer to a flat 287 - the width of the floor.
+
+     A CHECK THAT CANNOT TELL THE CAR FROM THE SCENERY IS THE CHECK BEING RIGHT.
+     The canvas is the car; the floor is the room it stands in. So the floor is
+     a `.gwrap::before` in each cabinet's stylesheet and all this function does
+     is say where the line is. Nothing about the car's own pixels changed, every
+     existing measurement of them still means what it meant, and the fleet sheet
+     - which draws its own card from these sprites - is untouched.
+     ------------------------------------------------------------------- */
+  /* where the floor line falls for THIS car, handed to the stylesheet. The
+     wrap is the positioning context the flip button already uses. */
+  if(cv.parentNode && cv.parentNode.style)
+    cv.parentNode.style.setProperty('--gfloor', FLOOR + 'px');
   const put = (img, box, cx, sci) => {
     if(!img) return;
     const k = sci === undefined ? sc : sci;

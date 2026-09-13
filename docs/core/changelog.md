@@ -19,6 +19,22 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-7"></a>
+## [0.14.7] - 2026-09-12
+- Fixed: **the garage gives a car a floor to stand on, so its tyres read.** Owner, 2026-09-09: "we
+  need to show a little bit of the tires on the bottom." The record said there were no wheels in the
+  sprite; measured, there are — two 36-pixel blocks at luminance 16 to 22, with the ground shadow's
+  full-width black bar directly beneath them on a near-black card. Three dark things that could not
+  be told apart. The room is lit rather than the car repainted, because lightening a tyre would
+  lighten it on the road as well, where it is correct. It is CSS rather than paint on the card
+  canvas: that canvas is measured to answer how wide the car is, and a floor across it makes every
+  car 287 pixels wide. [RLG-182](../fragments/RLG-182.md)
+- Fixed: **the garage card harness had been red against a product that was right.** It walked three
+  sports cars, which are locked on a fresh save, so every card it measured was a silhouette and three
+  flip-button checks failed on every run — a locked card correctly has no flip button. It walks
+  production cars now, and four checks that had never been reached run for the first time.
+  [RLG-182](../fragments/RLG-182.md)
+
 <a id="v0-14-6"></a>
 ## [0.14.6] - 2026-09-12
 - Changed: **one unlock rule - utility at a hundred miles, and no other.** Owner: "nothing should
