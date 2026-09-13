@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.14';
+window.ROAD_BUILD = '0.14.15';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26076,48 +26076,56 @@ function drawMirror(){
    addition to the actual UI numbers countdown)." FULL is the start allowance,
    and the needle stays at full while the clock holds more than that.
 
-   TWO DESIGNS, AND THE OWNER CHOOSES. "I would prefer it to be inside the
-   speedometer, but if it's too cluttered, then I would rather it be its own
-   third dial so let's design both and then pick the best."
-     'speedo'  an arc in the empty sector at the bottom of the speedometer face,
-               between 7 and 5 o'clock, E on the left and F on the right.
-     'dial'    a third, smaller dial to the left of the tachometer.
-   Whichever is not chosen is to be deleted, with this switch.
+   A THIRD DIAL, ABOVE AND BETWEEN THE OTHER TWO. Two designs were built and
+   photographed - an arc inside the speedometer and a separate dial - and the
+   owner chose the dial: "I want the actual fuel gauge, but placed above and in
+   between the other two gauges so they form a triangle of gauges." The arc was
+   deleted with the switch that chose between them.
 
-   IT IS ONLY THERE WHILE THE CLOCK COUNTS (`clockRuns`). On a test drive with
-   the timer off, time is not a currency, so a gauge for it would be a reading
-   of nothing - the same reasoning RLG-125 applied to the crate. */
+   THE TRIANGLE GROWS THE CLUSTER UPWARD AND MOVES NOTHING ELSE. The right-hand
+   stack is pedals, bottle, shifter, dials, bottom-up, and every offset in it is
+   measured from below (`--bottle`, `body.manual`). The dials are the top of the
+   stack, so the canvas gains FUEL_H of height above the two faces and the
+   #dials box grows with it; the faces keep their place, and so does everything
+   under them.
+
+   IT IS ONLY THERE WHILE THE CLOCK COUNTS (`clockRuns`), and never on the
+   circuit. On a test drive with the timer off, time is not a currency - the
+   same reasoning RLG-125 applied to the crate. Motorsport has FUEL of its own,
+   burned by the throttle and refilled in the pit, so a gauge reading its race
+   clock would be a fuel gauge that is not about fuel; when the circuit wants
+   one it can feed this dial its own number rather than undo it. */
 const FUEL_GAUGE = {
-  style:   'speedo',  /* 'speedo' or 'dial' - see above                          */
-  reserve: 20         /* seconds; below this the gauge reads red                  */
+  low: 1/8   /* below this much of a tank the pump lamp lights YELLOW (owner) */
 };
+/* the two faces are 26 across the radius and 55 apart; the fuel dial is 19, and
+   it sits high enough to clear both with a 2px gap: 47 apart along the diagonal,
+   27.5 across, so 38.1 up - taken as 39 */
+const FUEL_R = 19, FUEL_UP = 39, FUEL_H = 28;
 function fuelFrac(){ return clamp(clock / CLOCK_START, 0, 1); }
-let dialDpr = 0, dialW = 0;
+function fuelShown(){ return clockRuns() && !CFG.circuitOnly; }
+let dialDpr = 0, dialH = 0;
 function drawDials(){
   if(!dialCx) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const fuel = clockRuns();
-  const third = fuel && FUEL_GAUGE.style === 'dial';
-  /* the third dial widens the canvas to the LEFT: the cluster is anchored by its
-     right edge, so the two dials it already had do not move */
-  const DW = third ? 160 : 115, off = third ? 45 : 0;
-  if(dpr !== dialDpr || DW !== dialW){
-    dialDpr = dpr; dialW = DW;
-    dialCv.width = DW*dpr; dialCv.height = 59*dpr;
-    /* the #dials box is 115 wide in the stylesheet and is right-anchored, so it
-       has to grow with the canvas or the canvas overflows off the right edge */
-    dialCv.style.width = DW + 'px';
-    if(dialCv.parentElement) dialCv.parentElement.style.width = DW + 'px';
+  const fuel = fuelShown();
+  const DH = fuel ? 59 + FUEL_H : 59, top = DH - 59;
+  if(dpr !== dialDpr || DH !== dialH){
+    dialDpr = dpr; dialH = DH;
+    dialCv.width = 115*dpr; dialCv.height = DH*dpr;
+    /* the #dials box is 59 tall in the stylesheet and anchored by its BOTTOM, so
+       it grows upward with the canvas */
+    dialCv.style.height = DH + 'px';
+    if(dialCv.parentElement) dialCv.parentElement.style.height = DH + 'px';
   }
   const g = dialCx;
   g.setTransform(dpr,0,0,dpr,0,0);
-  g.clearRect(0,0,DW,59);
-  if(third) fuelDial(g, 21, 37, 19, fuelFrac());
+  g.clearRect(0,0,115,DH);
 
   const rpm = engineRpm();
   /* the launch window is on the face while the start is live and gone after */
   const lw = (launchArmed || launchNoteT > 0) ? launchWindow() : undefined;
-  face(g, 30 + off, 30, 26, rpm / redline(), (rpm/1000).toFixed(1), 'x1000',
+  face(g, 30, 30 + top, 26, rpm / redline(), (rpm/1000).toFixed(1), 'x1000',
        0.86, '#5ff0d8', '#ff3b5c', undefined, gearLabel(), lw);
   /* ---- THE DIAL HAS TO REACH ------------------------------------------
      The needle was `spd / MAX_SPD`, so 200mph was full deflection and anything
@@ -26137,52 +26145,29 @@ function drawDials(){
      ------------------------------------------------------------------- */
   const DIAL_TOP = Math.ceil(FLEET_TOP * 200 / 20) * 20;
   const mph = clamp((spd / MAX_SPD * 200) / DIAL_TOP, 0, 1);
-  face(g, 85 + off, 30, 26, mph, Math.round(spd/MAX_SPD*200), 'MPH',
+  face(g, 85, 30 + top, 26, mph, Math.round(spd/MAX_SPD*200), 'MPH',
        (bodyStat('vmax') * 200) / DIAL_TOP, '#ffd98a', '#ff3b5c', dist);
-  if(fuel && !third) fuelArc(g, 85 + off, 30, 26, fuelFrac());
+  if(fuel) fuelDial(g, 57.5, 30 + top - FUEL_UP, FUEL_R, fuelFrac());
 }
-/* THE RESERVE, AS A FRACTION OF THE TANK, and the colour the gauge reads in it */
-function fuelLow(frac){ return frac * CLOCK_START <= FUEL_GAUGE.reserve; }
-const FUEL_INK = '#e6ecf6', FUEL_RED = '#ff3b5c';
-/* ---- DESIGN A: AN ARC IN THE SPEEDOMETER'S EMPTY SECTOR ------------------
-   The sweep runs 7 o'clock to 5 o'clock over the top, so the bottom quarter of
-   every face is empty. The arc lives there, in the same groove radius as the red
-   zone, and fills from E toward F. */
-function fuelArc(g, cx, cy, r, frac){
-  const E = Math.PI*0.75, F = Math.PI*0.25;       /* 7 o'clock and 5 o'clock   */
-  const rr = r - 4, low = fuelLow(frac);
-  g.save();
-  g.lineCap = 'round';
-  g.beginPath(); g.arc(cx, cy, rr, F, E);
-  g.strokeStyle = 'rgba(150,160,180,.18)'; g.lineWidth = 2.6; g.stroke();
-  /* the reserve, painted into the groove from E */
-  const resEnd = E - (E - F) * (FUEL_GAUGE.reserve / CLOCK_START);
-  g.beginPath(); g.arc(cx, cy, rr, resEnd, E);
-  g.strokeStyle = 'rgba(255,59,92,.30)'; g.lineWidth = 2.6; g.stroke();
-  if(frac > 0){
-    g.beginPath(); g.arc(cx, cy, rr, E - (E - F) * frac, E);
-    g.strokeStyle = low ? FUEL_RED : FUEL_INK; g.lineWidth = 2.0; g.stroke();
-  }
-  g.font = '700 3.4px ' + getComputedStyle(document.body).getPropertyValue('--disp');
-  g.textAlign = 'center';
-  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)';
-  g.fillText('E', cx + Math.cos(E)*(rr + 0.2) - 3.2, cy + Math.sin(E)*(rr + 0.2) + 2.6);
-  g.fillStyle = 'rgba(150,160,180,.72)';
-  g.fillText('F', cx + Math.cos(F)*(rr + 0.2) + 3.2, cy + Math.sin(F)*(rr + 0.2) + 2.6);
-  g.restore();
-}
-/* ---- DESIGN B: A THIRD, SMALLER DIAL --------------------------------------
+const FUEL_INK = '#e6ecf6', FUEL_DIM = 'rgba(150,160,180,.72)', FUEL_LAMP = '#ffd23c';
+/* where the pump lamp is, in the dial canvas's own units, for a harness to read */
+let fuelLampAt = null;
+/* ---- THE FUEL DIAL ---------------------------------------------------------
    A fuel gauge reads a half turn, E at 9 o'clock to F at 3 o'clock over the
-   top, which also tells it apart from the two instruments beside it at a
-   glance. A pump symbol sits under the pivot where the others carry a number. */
+   top, which tells it apart from the two sweeping instruments below it at a
+   glance. The last eighth of the groove is painted red.
+
+   THE PUMP IS THE WARNING LAMP. Owner: "I want the fuel gauge pump indicator
+   to turn YELLOW when under 1/8 tank." Yellow and not red because that is what
+   a low-fuel lamp is in a car: amber, a warning rather than a failure. The
+   needle does not change colour - one signal, in one place. */
 function fuelDial(g, cx, cy, r, frac){
-  const E = Math.PI, F = Math.PI*2, low = fuelLow(frac);
+  const E = Math.PI, F = Math.PI*2, low = frac < FUEL_GAUGE.low;
   g.save();
   g.beginPath(); g.arc(cx, cy, r, 0, 6.2832);
   g.fillStyle = 'rgba(10,12,16,.92)'; g.fill();
   g.strokeStyle = 'rgba(150,160,180,.30)'; g.lineWidth = 1.2; g.stroke();
-  const resEnd = E + (F - E) * (FUEL_GAUGE.reserve / CLOCK_START);
-  g.beginPath(); g.arc(cx, cy, r - 4, E, resEnd);
+  g.beginPath(); g.arc(cx, cy, r - 4, E, E + (F - E) * FUEL_GAUGE.low);
   g.strokeStyle = 'rgba(255,59,92,.30)'; g.lineWidth = 3.0; g.stroke();
   for(let i = 0; i <= 4; i++){
     const a = E + (F - E) * i / 4, inr = (i % 2 === 0) ? r - 7 : r - 4.5;
@@ -26194,24 +26179,27 @@ function fuelDial(g, cx, cy, r, frac){
   }
   g.font = '700 4.4px ' + getComputedStyle(document.body).getPropertyValue('--disp');
   g.textAlign = 'center';
-  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.8)';
-  g.fillText('E', cx - r + 7.5, cy + 5.5);
   g.fillStyle = 'rgba(150,160,180,.8)';
+  g.fillText('E', cx - r + 7.5, cy + 5.5);
   g.fillText('F', cx + r - 7.5, cy + 5.5);
-  /* the pump: a body, a window, and a hose */
-  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)';
+  /* the pump: a body, a window, and a hose. Lit yellow with a glow when low. */
+  const ink = low ? FUEL_LAMP : FUEL_DIM;
+  if(low){ g.shadowColor = 'rgba(255,210,60,.85)'; g.shadowBlur = 4; }
+  g.fillStyle = ink;
   g.fillRect(cx - 2.4, cy + 5.5, 3.6, 5.2);
+  g.shadowBlur = 0;
   g.fillStyle = 'rgba(10,12,16,.92)';
   g.fillRect(cx - 1.7, cy + 6.3, 2.2, 1.6);
-  g.strokeStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)'; g.lineWidth = 0.7;
+  g.strokeStyle = ink; g.lineWidth = 0.7;
   g.beginPath(); g.moveTo(cx + 1.2, cy + 6.4); g.lineTo(cx + 2.9, cy + 7.6);
   g.lineTo(cx + 2.9, cy + 10.2); g.stroke();
+  fuelLampAt = { x: cx - 1.2, y: cy + 9.6 };
   /* the needle, drawn last */
   const a = E + (F - E) * frac;
   g.beginPath();
   g.moveTo(cx - Math.cos(a)*3, cy - Math.sin(a)*3);
   g.lineTo(cx + Math.cos(a)*(r - 5), cy + Math.sin(a)*(r - 5));
-  g.strokeStyle = low ? FUEL_RED : FUEL_INK; g.lineWidth = 1.4; g.lineCap = 'round'; g.stroke();
+  g.strokeStyle = FUEL_INK; g.lineWidth = 1.4; g.lineCap = 'round'; g.stroke();
   g.beginPath(); g.arc(cx, cy, 2.2, 0, 6.2832);
   g.fillStyle = '#2a2f38'; g.fill();
   g.restore();
@@ -30340,10 +30328,11 @@ requestAnimationFrame(frameLoop);
     }
     return { hidden: hidden, dark: dark, reach: Math.round(pts[pts.length - 1].z - pos) };
   };
-  /* the fuel gauge's design switch, so both designs can be photographed (RLG-240) */
+  /* the fuel gauge's tunables and where its pump lamp is drawn (RLG-240) */
   API.fuelGauge = function(o){
     if(o) for(const k in o) if(k in FUEL_GAUGE) FUEL_GAUGE[k] = o[k];
-    return Object.assign({ frac: +fuelFrac().toFixed(3) }, FUEL_GAUGE);
+    return Object.assign({ frac: +fuelFrac().toFixed(3), shown: fuelShown(),
+                           lamp: fuelLampAt, dialH: dialH }, FUEL_GAUGE);
   };
   API.setClock = function(s){ clock = s; return clock; };
   API.boreModel = function(o){

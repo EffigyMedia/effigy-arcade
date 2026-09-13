@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-15"></a>
+## [0.14.15] - 2026-09-13
+- Changed: **the fuel gauge is a third dial above and between the tachometer and speedometer, and its
+  pump lights yellow under an eighth of a tank.** The owner's choice. The cluster grows upward, so
+  the shifter, the bottle and the pedals do not move. The speedometer-arc design is removed. Not
+  shown on the circuit, which has real fuel. [RLG-240](../fragments/RLG-240.md)
+
 <a id="v0-14-14"></a>
 ## [0.14.14] - 2026-09-13
 - Fixed: **on a bend, neither the road ahead nor the tunnel's dark far end shows through the wall.**
