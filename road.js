@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.2';
+window.ROAD_BUILD = '0.14.3';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16676,8 +16676,30 @@ function gateSlots(){ return SLOTS.filter(s => s.g <= gearCount()); }
    always treated the police as a class of their own, with their own liveries,
    their own siren and their own place in the ladder. If the owner wants them
    black too it is one entry.
+
+   IT WAS SIX AND IT IS EIGHT (owner, 2026-09-12). The AMBULANCE and the HATCH
+   were both missing, for two different reasons and with the same result - a
+   working vehicle holding a sports car's shifter.
+
+     . the AMBULANCE was added after this list was written and nobody came
+       back to it. It is the same omission [[RLG-225]] found in PLAIN_WHEEL an
+       hour earlier, in a second list, which is the whole reason the owner has
+       asked for the fleet to be classified properly.
+     . the HATCH is newer still. It is a production car beside the SALOON and
+       the COUPE, both of which are here, so there was never a reading of the
+       owner's ruling that left it out.
+
+   THIS LIST IS NOT DERIVED FROM `BODY_CLASS` AND THAT IS DELIBERATE FOR NOW.
+   Today the working cars are exactly the `production` and `traffic` classes,
+   so deriving it would be one line - but `BODY_CLASS` is the UNLOCK class, and
+   binding a steering column to it means a decision about what a car COSTS
+   silently changes what it is made of. [[RLG-213]] is the first place the two
+   questions had to be asked apart and the owner has now asked for the split to
+   be made properly. `tools/knob-test.py` holds the two in agreement in the
+   meantime: it reads `BODY_CLASS` as the oracle and fails the day a production
+   or traffic body is not in this list.
    ---------------------------------------------------------------------- */
-const WORK_BODIES = ['COUPE','SALOON','CAB','PICKUP','VAN','SEMI'];
+const WORK_BODIES = ['COUPE','SALOON','HATCH','CAB','PICKUP','VAN','SEMI','AMBULANCE'];
 function isWorkCar(k){ return WORK_BODIES.indexOf(k) >= 0; }
 /* where the knob physically sits — a position in the gate, not a gear */
 let knobRail = 0, knobY = TOP_Y;

@@ -19,6 +19,22 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-3"></a>
+## [0.14.3] - 2026-09-12
+- Fixed: **the working cars get the working knob, and both games now say so.** Owner: "fix the
+  production and utility gear knobs." Two faults with one symptom. `WORK_BODIES` named six bodies and
+  the fleet has eight working ones - the AMBULANCE and the HATCH were both added after the list was
+  written. And only Interstate carried the style: the engine toggles the class in both games, which
+  was harmless until production became a race class, after which a SALOON reached a circuit grid
+  holding a polished ball while the same car on the highway held a moulded one. `tools/knob-test.py`
+  is new, runs both cabinets, reads the rendered knob rather than the class name, and takes
+  `BODY_CLASS` as its oracle so it fails the day the two lists disagree.
+  [RLG-226](../fragments/RLG-226.md)
+- Tracked, not started: **one official classification for the fleet.** Four defects in one day were
+  the same shape - a vehicle added, a hand-written list of vehicles not updated, no error. The fourth
+  is that the harness written to catch the third has the same hole.
+  [RLG-227](../fragments/RLG-227.md), [RLG-228](../fragments/RLG-228.md)
+
 <a id="v0-14-2"></a>
 ## [0.14.2] - 2026-09-12
 - Fixed: **the ambulance puts down the supercar's steering wheel.** Owner, from the device.

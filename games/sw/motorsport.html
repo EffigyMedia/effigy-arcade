@@ -564,6 +564,29 @@ body.gears5 #shifter{ width:92px }
 }
 #knob.grab{ transition:none; cursor:grabbing; filter:brightness(1.2) }
 #knob b{ font-family:var(--disp);font-size:12px;font-weight:800;color:#1a1d22 }
+/* ---- AND A WORKING CAR HAS A BLACK KNOB ON THE CIRCUIT TOO (RLG-069) ---
+   The engine toggles `body.workknob` in both games, because `road.js` does not
+   know which of the two is running. Only Interstate ever carried the rule, and
+   that was correct until [[RLG-213]]: the production class could not race, so
+   no car that wanted a black knob could reach a grid.
+
+   PRODUCTION RACES NOW. A SALOON, a COUPE or a HATCH is race-legal, the
+   circuit garage lists it, and it arrived here holding a polished ball while
+   the same car on the interstate held a moulded one. Same car, same control,
+   two finishes depending on which cabinet you opened.
+
+   THE UTILITY VEHICLES STILL NEVER REACH THIS SCREEN - `raceOnlyGarage` keeps
+   them out - so this rule is here for the production cars. It is written for
+   the whole class rather than for the three bodies in it, which costs nothing
+   and is right the day a fourth is added.
+   -------------------------------------------------------------------- */
+body.workknob #knob{
+  background:radial-gradient(circle at 38% 26%, #56585c 0%, #303235 26%, #191a1d 62%, #0a0b0d 100%);
+  border:1px solid #2b2d31;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.16), inset 0 -6px 9px rgba(0,0,0,.7),
+             0 5px 12px -3px #000;
+}
+body.workknob #knob b{ color:#f2f4f8 }
 #gearNums{ position:absolute;inset:0;pointer-events:none }
 #gearNums span{
   position:absolute;font-family:var(--disp);font-size:9px;font-weight:800;
