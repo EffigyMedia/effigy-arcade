@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.3';
+window.ROAD_BUILD = '0.14.4';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7503,6 +7503,30 @@ function buildFleet(){
   const CAB = { body:'#f2b32c', hi:'#ffd45e', lo:'#8f6408', lamp:'#c8102e' };
   TRAFFIC_SP.taxi = [ sprite(200,164, paintRig('taxi', CAB)) ];
   FRONT_SP.taxi   = [ sprite(200,164, paintRigFront('taxi', CAB)) ];
+  /* ---- AND THE AMBULANCE HAD A BACK AND NO FACE (RLG-228) ---------------
+     Owner, 2026-09-12, from the device: the ambulance was a generic blob in
+     the rearview mirror.
+
+     `drawMirrorFull` picks a traffic vehicle's face out of `FRONT_SP` by its
+     `type`, and the loop above builds that cache from a list of kinds that was
+     written before this vehicle existed. With no entry the lookup missed, the
+     racer branch was skipped - traffic carries a `type` and no `body` - and the
+     mirror fell through to the defensive grey lozenge, whose own comment says
+     nothing in the fleet should still need it.
+
+     THE BACK WAS FINE, WHICH IS WHY IT WAS ONLY EVER SEEN IN THE MIRROR. The
+     road pass falls back to `SP[type]` when the traffic cache misses and
+     `SP.ambulance` has been built all along. The mirror's pick has no such
+     fallback, so the same vehicle was right from behind and a blob head-on.
+
+     ONE LIVERY, LIKE THE TAXI AND THE PATROL CAR, and the same paint the back
+     is built from so the two ends are one vehicle. `paintRigFront` remaps
+     `ambulance` to the van and gates the van's newer face off it, which is
+     deliberate and is left alone - the owner's ambulance reference is a
+     different face again and is not built yet.
+     -------------------------------------------------------------------- */
+  const AMB = { body:'#f2f4f7', hi:'#ffffff', lo:'#aeb4bd', lamp:'#c8102e' };
+  FRONT_SP.ambulance = [ sprite(200,196, paintRigFront('ambulance', AMB)) ];
   /* the patrol car, and the lorry, which were the two the mirror had no face
      for. One livery each: a lorry's cab takes a traffic paint but its FACE is
      the same shape whatever colour it is, and a patrol car is white. */
@@ -30795,6 +30819,20 @@ requestAnimationFrame(frameLoop);
 
      Returns the sprite, or null. `kind` is a traffic type, a body key, or one
      of the two police cases. */
+  /* ---- AND THE HARNESS MUST NOT KEEP ITS OWN LIST OF VEHICLES (RLG-228) --
+     `face-test` was written after three vehicles had been found with no face in
+     the mirror, and it named the traffic kinds it asked about in a list of its
+     own. The ambulance was added to the game and never added to that list, so
+     the check that exists to catch this exact defect passed green while the
+     defect was on the road - the fourth instance, and the first one inside the
+     guard.
+
+     `TYPE_VMAX` is the oracle because the SPAWNER reads it: every kind that can
+     be put on the road has a top speed here, so a kind missing from it is a
+     kind that cannot appear. A list written for a test can go stale in silence;
+     this one cannot, because the game stops working before it does.
+     -------------------------------------------------------------------- */
+  API.trafficKinds = function(){ return Object.keys(TYPE_VMAX); };
   API.frontOf = function(kind, paint){
     if(kind === 'cop') return (FRONT_SP.cop || [])[0] || null;
     if(kind === 'supercop') return SP.superCopFront || null;

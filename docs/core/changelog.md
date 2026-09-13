@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-4"></a>
+## [0.14.4] - 2026-09-12
+- Fixed: **the ambulance has a face in the rearview mirror.** Owner, from the device: it was showing
+  as a generic blob. The mirror picks a traffic vehicle's face out of `FRONT_SP` by its type, and that
+  cache is built from a list written before the ambulance existed - so the lookup missed and the
+  mirror fell through to the defensive grey lozenge. The back was always right, because the road pass
+  falls back to `SP[type]` and the mirror's pick has no such fallback.
+  [RLG-228](../fragments/RLG-228.md)
+- Fixed: **the harness written to catch that had the same hole.** `face-test.py` named its own
+  traffic kinds and had neither the ambulance nor the hatchback in it, so the check that exists to
+  stop a vehicle reaching the mirror faceless passed green while one was. It enumerates from the
+  engine now, through the spawner's own speed table, and went from 33 vehicles checked to 40.
+  [RLG-228](../fragments/RLG-228.md)
+
 <a id="v0-14-3"></a>
 ## [0.14.3] - 2026-09-12
 - Fixed: **the working cars get the working knob, and both games now say so.** Owner: "fix the

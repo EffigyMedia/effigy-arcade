@@ -10,7 +10,16 @@ Each one was found by eye, on a phone, weeks after it shipped. This asks the eng
 
 It also checks the sprite is a real picture rather than an empty canvas, because a blank sprite and a
 missing one look identical in a mirror and only one of them is caught by a null test.
+
+    .venv/Scripts/python tools/face-test.py
+    .venv/Scripts/python tools/face-test.py --falsify
+
+`--falsify` serves the engine with the ambulance's face struck back out of `FRONT_SP`, which is the
+state the game was in when the owner reported it. The run must report `traffic ambulance` as a
+block. A check that has never failed on a vehicle has proved nothing about that vehicle - and this
+one had never failed on the ambulance because it had never been asked about it.
 """
+import argparse
 import functools
 import http.server
 import importlib.util
@@ -44,10 +53,18 @@ from harness import console_utf8, launch_chromium, boot  # noqa: E402
 
 # every case the mirror can be handed. The traffic types are what a traffic car carries as `type`;
 # the body keys are what a racer carries as `body`; the last two are the police.
+#
+# THIS FILE NO LONGER NAMES THE VEHICLES (RLG-228). It used to carry
+#     const TRAFFIC = ['sedan','sedan2','coupe','tuner','muscle','pickup','van','taxi','truck'];
+# and neither `ambulance` nor `hatch` was ever added to it. So the harness written to stop a vehicle
+# reaching the mirror without a face passed green for weeks while the ambulance was a grey blob -
+# the fault it guards against, inside the guard. The kinds come from `API.trafficKinds` now, which
+# answers out of the SPAWNER's own speed table: a kind that is not in there cannot be put on the
+# road at all, so this list cannot go quietly stale the way a list written for a test can.
 PROBE = r"""
 () => {
   const R = window.__probe.road;
-  const TRAFFIC = ['sedan','sedan2','coupe','tuner','muscle','pickup','van','taxi','truck'];
+  const TRAFFIC = R.trafficKinds();
   const out = [];
   const look = (label, kind, paint) => {
     const spr = R.frontOf(kind, paint);
@@ -76,6 +93,10 @@ PROBE = r"""
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--falsify', action='store_true',
+                    help="serve the engine without the ambulance's face; the run must report it as a block")
+    args = ap.parse_args()
     console_utf8()
     dt_path = Path(__file__).resolve().parent / 'drive-test.py'
     spec = importlib.util.spec_from_file_location('dt', dt_path)
@@ -88,12 +109,27 @@ def main():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     print('face-test  -  everything that can be behind you has a face')
+    if args.falsify:
+        print("  FALSIFY: the ambulance's face is served out of FRONT_SP. It must report as a block.")
     bad = []
     try:
         with sync_playwright() as p:
             b = launch_chromium(p, headless=True, args=['--mute-audio'])
             ctx = b.new_context(viewport={'width': 480, 'height': 900})
             ctx.add_init_script(dt.INIT)
+            if args.falsify:
+                # the defect, struck out of the ENGINE rather than out of this file's idea of it,
+                # so the check meets the build the owner was looking at.
+                src = (ROOT / 'road.js').read_text(encoding='utf-8')
+                need = "  FRONT_SP.ambulance = [ sprite(200,196, paintRigFront('ambulance', AMB)) ];\n"
+                if need not in src:
+                    raise SystemExit('[face-test] --falsify cannot find the line it removes')
+                src = src.replace(need, '', 1)
+                # ONE PARAMETER, NOT TWO. Playwright reads the handler's arity: a two-argument
+                # handler is called with (route, request), so a `body=src` default is overwritten
+                # by the Request and fulfill fails on something that will not serialize.
+                ctx.route('**/road.js', lambda route: route.fulfill(
+                    status=200, content_type='application/javascript', body=src))
             pg = ctx.new_page()
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
