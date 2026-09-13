@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-13"></a>
+## [0.14.13] - 2026-09-13
+- Added: **the run clock is shown as a fuel gauge, in two designs for the owner to choose between**
+  — an arc inside the speedometer, and a third dial. Full is the start allowance, with a red
+  reserve. It shows only while the clock counts. The speedometer arc is the default until the owner
+  chooses. [RLG-240](../fragments/RLG-240.md)
+
 <a id="v0-14-12"></a>
 ## [0.14.12] - 2026-09-13
 - Fixed: **a tunnel no longer shows the outside world past its wall, and its wall is solid.** The

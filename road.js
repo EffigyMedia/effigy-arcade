@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.12';
+window.ROAD_BUILD = '0.14.13';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26038,22 +26038,53 @@ function drawMirror(){
    the needles stay crisp. Sweep runs from 7 o'clock round to 5 o'clock, which
    is the arc every car instrument has used since they stopped being vertical.
    -------------------------------------------------------------------------- */
-let dialDpr = 0;
+/* ---- THE RUN CLOCK AS A FUEL GAUGE (RLG-240) -----------------------------
+   Owner, 2026-09-13: "I like time to be represented by a fuel gauge (in
+   addition to the actual UI numbers countdown)." FULL is the start allowance,
+   and the needle stays at full while the clock holds more than that.
+
+   TWO DESIGNS, AND THE OWNER CHOOSES. "I would prefer it to be inside the
+   speedometer, but if it's too cluttered, then I would rather it be its own
+   third dial so let's design both and then pick the best."
+     'speedo'  an arc in the empty sector at the bottom of the speedometer face,
+               between 7 and 5 o'clock, E on the left and F on the right.
+     'dial'    a third, smaller dial to the left of the tachometer.
+   Whichever is not chosen is to be deleted, with this switch.
+
+   IT IS ONLY THERE WHILE THE CLOCK COUNTS (`clockRuns`). On a test drive with
+   the timer off, time is not a currency, so a gauge for it would be a reading
+   of nothing - the same reasoning RLG-125 applied to the crate. */
+const FUEL_GAUGE = {
+  style:   'speedo',  /* 'speedo' or 'dial' - see above                          */
+  reserve: 20         /* seconds; below this the gauge reads red                  */
+};
+function fuelFrac(){ return clamp(clock / CLOCK_START, 0, 1); }
+let dialDpr = 0, dialW = 0;
 function drawDials(){
   if(!dialCx) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  if(dpr !== dialDpr){
-    dialDpr = dpr;
-    dialCv.width = 115*dpr; dialCv.height = 59*dpr;
+  const fuel = clockRuns();
+  const third = fuel && FUEL_GAUGE.style === 'dial';
+  /* the third dial widens the canvas to the LEFT: the cluster is anchored by its
+     right edge, so the two dials it already had do not move */
+  const DW = third ? 160 : 115, off = third ? 45 : 0;
+  if(dpr !== dialDpr || DW !== dialW){
+    dialDpr = dpr; dialW = DW;
+    dialCv.width = DW*dpr; dialCv.height = 59*dpr;
+    /* the #dials box is 115 wide in the stylesheet and is right-anchored, so it
+       has to grow with the canvas or the canvas overflows off the right edge */
+    dialCv.style.width = DW + 'px';
+    if(dialCv.parentElement) dialCv.parentElement.style.width = DW + 'px';
   }
   const g = dialCx;
   g.setTransform(dpr,0,0,dpr,0,0);
-  g.clearRect(0,0,115,59);
+  g.clearRect(0,0,DW,59);
+  if(third) fuelDial(g, 21, 37, 19, fuelFrac());
 
   const rpm = engineRpm();
   /* the launch window is on the face while the start is live and gone after */
   const lw = (launchArmed || launchNoteT > 0) ? launchWindow() : undefined;
-  face(g, 30, 30, 26, rpm / redline(), (rpm/1000).toFixed(1), 'x1000',
+  face(g, 30 + off, 30, 26, rpm / redline(), (rpm/1000).toFixed(1), 'x1000',
        0.86, '#5ff0d8', '#ff3b5c', undefined, gearLabel(), lw);
   /* ---- THE DIAL HAS TO REACH ------------------------------------------
      The needle was `spd / MAX_SPD`, so 200mph was full deflection and anything
@@ -26073,8 +26104,84 @@ function drawDials(){
      ------------------------------------------------------------------- */
   const DIAL_TOP = Math.ceil(FLEET_TOP * 200 / 20) * 20;
   const mph = clamp((spd / MAX_SPD * 200) / DIAL_TOP, 0, 1);
-  face(g, 85, 30, 26, mph, Math.round(spd/MAX_SPD*200), 'MPH',
+  face(g, 85 + off, 30, 26, mph, Math.round(spd/MAX_SPD*200), 'MPH',
        (bodyStat('vmax') * 200) / DIAL_TOP, '#ffd98a', '#ff3b5c', dist);
+  if(fuel && !third) fuelArc(g, 85 + off, 30, 26, fuelFrac());
+}
+/* THE RESERVE, AS A FRACTION OF THE TANK, and the colour the gauge reads in it */
+function fuelLow(frac){ return frac * CLOCK_START <= FUEL_GAUGE.reserve; }
+const FUEL_INK = '#e6ecf6', FUEL_RED = '#ff3b5c';
+/* ---- DESIGN A: AN ARC IN THE SPEEDOMETER'S EMPTY SECTOR ------------------
+   The sweep runs 7 o'clock to 5 o'clock over the top, so the bottom quarter of
+   every face is empty. The arc lives there, in the same groove radius as the red
+   zone, and fills from E toward F. */
+function fuelArc(g, cx, cy, r, frac){
+  const E = Math.PI*0.75, F = Math.PI*0.25;       /* 7 o'clock and 5 o'clock   */
+  const rr = r - 4, low = fuelLow(frac);
+  g.save();
+  g.lineCap = 'round';
+  g.beginPath(); g.arc(cx, cy, rr, F, E);
+  g.strokeStyle = 'rgba(150,160,180,.18)'; g.lineWidth = 2.6; g.stroke();
+  /* the reserve, painted into the groove from E */
+  const resEnd = E - (E - F) * (FUEL_GAUGE.reserve / CLOCK_START);
+  g.beginPath(); g.arc(cx, cy, rr, resEnd, E);
+  g.strokeStyle = 'rgba(255,59,92,.30)'; g.lineWidth = 2.6; g.stroke();
+  if(frac > 0){
+    g.beginPath(); g.arc(cx, cy, rr, E - (E - F) * frac, E);
+    g.strokeStyle = low ? FUEL_RED : FUEL_INK; g.lineWidth = 2.0; g.stroke();
+  }
+  g.font = '700 3.4px ' + getComputedStyle(document.body).getPropertyValue('--disp');
+  g.textAlign = 'center';
+  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)';
+  g.fillText('E', cx + Math.cos(E)*(rr + 0.2) - 3.2, cy + Math.sin(E)*(rr + 0.2) + 2.6);
+  g.fillStyle = 'rgba(150,160,180,.72)';
+  g.fillText('F', cx + Math.cos(F)*(rr + 0.2) + 3.2, cy + Math.sin(F)*(rr + 0.2) + 2.6);
+  g.restore();
+}
+/* ---- DESIGN B: A THIRD, SMALLER DIAL --------------------------------------
+   A fuel gauge reads a half turn, E at 9 o'clock to F at 3 o'clock over the
+   top, which also tells it apart from the two instruments beside it at a
+   glance. A pump symbol sits under the pivot where the others carry a number. */
+function fuelDial(g, cx, cy, r, frac){
+  const E = Math.PI, F = Math.PI*2, low = fuelLow(frac);
+  g.save();
+  g.beginPath(); g.arc(cx, cy, r, 0, 6.2832);
+  g.fillStyle = 'rgba(10,12,16,.92)'; g.fill();
+  g.strokeStyle = 'rgba(150,160,180,.30)'; g.lineWidth = 1.2; g.stroke();
+  const resEnd = E + (F - E) * (FUEL_GAUGE.reserve / CLOCK_START);
+  g.beginPath(); g.arc(cx, cy, r - 4, E, resEnd);
+  g.strokeStyle = 'rgba(255,59,92,.30)'; g.lineWidth = 3.0; g.stroke();
+  for(let i = 0; i <= 4; i++){
+    const a = E + (F - E) * i / 4, inr = (i % 2 === 0) ? r - 7 : r - 4.5;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(a)*inr, cy + Math.sin(a)*inr);
+    g.lineTo(cx + Math.cos(a)*(r - 2), cy + Math.sin(a)*(r - 2));
+    g.strokeStyle = 'rgba(190,200,220,.55)'; g.lineWidth = (i % 2 === 0) ? 1.4 : 0.9;
+    g.stroke();
+  }
+  g.font = '700 4.4px ' + getComputedStyle(document.body).getPropertyValue('--disp');
+  g.textAlign = 'center';
+  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.8)';
+  g.fillText('E', cx - r + 7.5, cy + 5.5);
+  g.fillStyle = 'rgba(150,160,180,.8)';
+  g.fillText('F', cx + r - 7.5, cy + 5.5);
+  /* the pump: a body, a window, and a hose */
+  g.fillStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)';
+  g.fillRect(cx - 2.4, cy + 5.5, 3.6, 5.2);
+  g.fillStyle = 'rgba(10,12,16,.92)';
+  g.fillRect(cx - 1.7, cy + 6.3, 2.2, 1.6);
+  g.strokeStyle = low ? FUEL_RED : 'rgba(150,160,180,.72)'; g.lineWidth = 0.7;
+  g.beginPath(); g.moveTo(cx + 1.2, cy + 6.4); g.lineTo(cx + 2.9, cy + 7.6);
+  g.lineTo(cx + 2.9, cy + 10.2); g.stroke();
+  /* the needle, drawn last */
+  const a = E + (F - E) * frac;
+  g.beginPath();
+  g.moveTo(cx - Math.cos(a)*3, cy - Math.sin(a)*3);
+  g.lineTo(cx + Math.cos(a)*(r - 5), cy + Math.sin(a)*(r - 5));
+  g.strokeStyle = low ? FUEL_RED : FUEL_INK; g.lineWidth = 1.4; g.lineCap = 'round'; g.stroke();
+  g.beginPath(); g.arc(cx, cy, 2.2, 0, 6.2832);
+  g.fillStyle = '#2a2f38'; g.fill();
+  g.restore();
 }
 function gearLabel(){
   /* Just the number. The D prefix was noise — you know which box you chose,
@@ -30110,6 +30217,12 @@ requestAnimationFrame(frameLoop);
      cannot tell the difference. */
   /* the bore's own numbers, live, because four rebuilds were spent guessing at
      them from captures and the owner can dial them in one sitting (RLG-105) */
+  /* the fuel gauge's design switch, so both designs can be photographed (RLG-240) */
+  API.fuelGauge = function(o){
+    if(o) for(const k in o) if(k in FUEL_GAUGE) FUEL_GAUGE[k] = o[k];
+    return Object.assign({ frac: +fuelFrac().toFixed(3) }, FUEL_GAUGE);
+  };
+  API.setClock = function(s){ clock = s; return clock; };
   API.boreModel = function(o){
     if(o) for(const k in o) if(k in BORE) BORE[k] = o[k];
     return Object.assign({}, BORE);
