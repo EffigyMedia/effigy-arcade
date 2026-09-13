@@ -1,0 +1,6 @@
+# Messages are read, acted on, recorded in LEDGER.md and deleted. They are never committed, so a
+# sender never dirties this line's working tree.
+*
+!.gitignore
+!README.md
+!LEDGER.md
