@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-11"></a>
+## [0.14.11] - 2026-09-13
+- Fixed: **a five-speed's gate has no slot below fifth, and the knob is drawn over the rails.** A
+  thumb pulling down from fifth could park the knob in an undrawn neutral slot, because the drag
+  path never checked that the slot existed. The keys already did. On a five-speed the short third
+  rail was painted across the knob. The owner reversed the earlier answer that kept the slot.
+  [RLG-236](../fragments/RLG-236.md)
+
 <a id="v0-14-10"></a>
 ## [0.14.10] - 2026-09-13
 - Changed: **the checkpoint clock pays per group — utility 30 seconds, production 20, sports 15,

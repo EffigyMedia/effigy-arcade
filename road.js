@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.10';
+window.ROAD_BUILD = '0.14.11';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16773,9 +16773,8 @@ const SLOTS = [
    TWO RAILS FOR A FOUR-SPEED, THREE FOR ANYTHING ABOVE IT, which is how the
    pattern is cut in a real car: a rail carries two gears, so five and six
    share the third one. A five-speed therefore has the third rail and only the
-   top of it - the slot below fifth is where reverse lives in a road car, and
-   this game has no reverse, so it reads NEUTRAL rather than engaging a sixth
-   gear the engine does not have.
+   top of it. The slot below fifth does not exist, on the keys or on the thumb
+   (RLG-236).
 
    AND THE KNOB CANNOT LEAVE THE RAILS THE CAR HAS. This is the half that was
    missing and the half that mattered: `shiftStep` clamped to `RAIL_X.length`,
@@ -16876,7 +16875,14 @@ knobEl.addEventListener('pointermove', e => {
   const y = e.clientY - r.top  - 14;
   /* The thumb proposes; the GATE disposes. Off the centre rail you can only
      move along your own rail, so 1 to 3 has to go through neutral. */
-  const wantY = y < (TOP_Y+MID_Y)/2 ? TOP_Y : y > (MID_Y+BOT_Y)/2 ? BOT_Y : MID_Y;
+  let wantY = y < (TOP_Y+MID_Y)/2 ? TOP_Y : y > (MID_Y+BOT_Y)/2 ? BOT_Y : MID_Y;
+  /* ---- AND THERE IS NOTHING BELOW FIFTH ON THE THUMB EITHER (RLG-236) ----
+     Owner, 2026-09-13, reversing the 2026-09-12 answer: a five-speed has no
+     slot below fifth. `shiftStep` has refused that slot since RLG-069. This
+     listener did not ask, which is the RLG-220 fault again on the other axis,
+     so a thumb pulled down from fifth parked the knob in a NEUTRAL slot the
+     gate does not draw. A slot must exist before the knob can go to it. */
+  if(wantY === BOT_Y && !gateSlots().some(s => s.rail === knobRail && s.y === BOT_Y)) wantY = MID_Y;
   if(wantY !== knobY){
     /* never skip the centre: step one notch at a time */
     if(knobY === TOP_Y && wantY === BOT_Y) knobY = MID_Y;
@@ -16909,9 +16915,10 @@ knobEl.addEventListener('pointermove', e => {
        `railCount()` has been right the whole time - 2 for a four-speed, 3 above
        it. Nothing here needed inventing; this loop needed to ask.
 
-       THE FIVE-SPEED KEEPS ITS THIRD RAIL AND THE NEUTRAL SLOT ON IT. Owner,
-       asked directly: "It's fine if it's there for 5 speed... remove it on 4
-       speed!" That is `railCount()` exactly as it already reads. */
+       THE FIVE-SPEED KEEPS ITS THIRD RAIL. Owner, asked directly: "It's fine
+       if it's there for 5 speed... remove it on 4 speed!" That is `railCount()`
+       exactly as it already reads. The NEUTRAL slot below fifth that the same
+       answer kept was removed on 2026-09-13 (RLG-236), above. */
     let wantRail = 0, bd = 1e9;
     for(let i2=0;i2<railCount();i2++){
       const d2 = Math.abs(RAIL_X[i2] - x);

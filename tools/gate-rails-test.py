@@ -20,11 +20,15 @@ reads `API.gate().rail` afterwards - the engine's own report of where the knob i
 knob did not reach a rail the car does not have.
 
   4-speed   two rails. The knob must not reach rail index 2 however hard it is dragged.
-  5-speed   three rails, and the neutral slot on the third one stays. Owner's words above.
-  6-speed   three rails, all of them real.
+  5-speed   three rails, and NO slot below fifth. RLG-236, owner 2026-09-13, reversing the answer
+            quoted above. The knob is also drawn OVER the short third rail.
+  6-speed   three rails, all of them real, and a pull down the last rail reaches sixth.
 
-`--falsify` serves the engine with the drag loop back on `RAIL_X.length` - the defect exactly as
-reported - and the four-speed check must fail. A check that cannot be made to fail is not evidence.
+`--falsify` serves one defect back, and names the checks that must fail:
+  rails   the drag loop on `RAIL_X.length` (RLG-220): the four-speed rail check.
+  below   the drag path without its slot check (RLG-236): the five-speed pull-down check.
+  knob    the knob without its z-index (RLG-236): the five-speed drawing check.
+A check that cannot be made to fail is not evidence.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -103,10 +107,51 @@ def drag(pg, dx):
     return 'ok'
 
 
+BOT_Y = 62   # the knob's top in the bottom row of the gate, as `BOT_Y` in road.js
+
+
+def pull_down_last_rail(pg):
+    """Put the knob in the top slot of the last rail by thumb, then pull it hard down.
+
+    The knob starts wherever the previous drag left it, which is the first rail at the centre.
+    The gesture walks across the centre row to the last rail, up to the top slot, and then down
+    past the bottom of the plate.
+    """
+    box = pg.evaluate("""() => {
+      const k = document.getElementById('knob'), p = document.getElementById('shifter');
+      if (!k || !p) return null;
+      const a = k.getBoundingClientRect(), b = p.getBoundingClientRect();
+      return { kx: a.left + a.width / 2, ky: a.top + a.height / 2,
+               l: b.left, t: b.top, r: b.right, b: b.bottom, py: b.top + b.height / 2 };
+    }""")
+    if not box or box['r'] - box['l'] <= 10:
+        return 'the shifter has no box yet'
+    pg.mouse.move(box['kx'], box['ky'])
+    pg.mouse.down()
+    pg.mouse.move(box['kx'], box['py'], steps=4)
+    pg.mouse.move(box['r'] + 60, box['py'], steps=8)
+    pg.mouse.move(box['r'] + 60, box['t'] - 40, steps=6)
+    pg.mouse.move(box['r'] - 20, box['b'] + 80, steps=12)
+    pg.mouse.up()
+    return 'ok'
+
+
+def knob_face_luma(pg):
+    """The brightness of the knob's face between its top edge and its label, from a screenshot."""
+    import io
+    from PIL import Image
+    k = pg.evaluate("""() => { const a = document.getElementById('knob').getBoundingClientRect();
+      return { x: a.left + a.width / 2, y: a.top + a.height * 0.2 }; }""")
+    png = pg.screenshot(clip={'x': k['x'] - 1, 'y': k['y'] - 1, 'width': 3, 'height': 3})
+    im = Image.open(io.BytesIO(png)).convert('RGB')
+    rr, gg, bb = im.getpixel((im.width // 2, im.height // 2))
+    return round(0.299 * rr + 0.587 * gg + 0.114 * bb)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--falsify', action='store_true',
-                    help='serve the drag loop back on RAIL_X.length; the four-speed check must fail')
+    ap.add_argument('--falsify', choices=['rails', 'below', 'knob'],
+                    help='serve one defect back; see the docstring for what must fail')
     ap.add_argument('--headed', action='store_true')
     args = ap.parse_args()
     console_utf8()
@@ -132,7 +177,7 @@ def main():
 
     print('gate-rails-test  .  the gate holds the rails the car has, dragged by a thumb')
     if args.falsify:
-        print('  FALSIFY: the drag loop is served back on RAIL_X.length. The four-speed must fail.')
+        print('  FALSIFY %s: one defect is served back.' % args.falsify)
     try:
         with sync_playwright() as p:
             b = launch_chromium(p, headless=not args.headed, args=['--mute-audio'])
@@ -141,11 +186,27 @@ def main():
             ctx.add_init_script(dt.INIT)
             ctx.add_init_script(SEED)
             if args.falsify:
-                src = (ROOT / 'road.js').read_text(encoding='utf-8').replace(
-                    'for(let i2=0;i2<railCount();i2++){',
-                    'for(let i2=0;i2<RAIL_X.length;i2++){')
-                ctx.route('**/road.js', lambda route: route.fulfill(
-                    status=200, content_type='application/javascript', body=src))
+                if args.falsify == 'knob':
+                    name, need, put = GAME, '#knob{\n  position:absolute;z-index:1;', \
+                        '#knob{\n  position:absolute;'
+                    kind = 'text/html'
+                else:
+                    name, kind = 'road.js', 'application/javascript'
+                    need, put = {
+                        'rails': ('for(let i2=0;i2<railCount();i2++){',
+                                  'for(let i2=0;i2<RAIL_X.length;i2++){'),
+                        'below': ('  if(wantY === BOT_Y && !gateSlots().some(s => s.rail === '
+                                  'knobRail && s.y === BOT_Y)) wantY = MID_Y;', ''),
+                    }[args.falsify]
+                src = (ROOT / name).read_text(encoding='utf-8')
+                if need not in src:
+                    raise SystemExit('[gate-rails] --falsify cannot find %r in %s' % (need, name))
+                src = src.replace(need, put, 1)
+                # Playwright passes the request as a second argument when the handler takes
+                # two, so the served body is bound through a closure and not a default argument.
+                def serve(route):
+                    route.fulfill(status=200, content_type=kind, body=src)
+                ctx.route('**/' + name.split('/')[-1], serve)
             pg = ctx.new_page()
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
@@ -209,6 +270,34 @@ def main():
                         ok(worst == 2,
                            '%-9s and the drag does reach the last rail it has' % name,
                            'furthest rail reached was %d' % worst)
+
+                # ---- THE SLOT BELOW FIFTH (RLG-236) ---------------------------------
+                # Owner, 2026-09-13: a five-speed has no slot below fifth. The gesture
+                # the owner made is a pull DOWN from fifth. A six-speed must reach sixth
+                # on the same pull, which proves the pull happened.
+                if want_rails == 3:
+                    r = pull_down_last_rail(pg)
+                    if r != 'ok':
+                        ok(False, '%-9s could not be pulled down the last rail' % name, str(r))
+                        continue
+                    pg.wait_for_timeout(150)
+                    g = pg.evaluate("() => window.__probe.road.gate()")
+                    at_bottom = g['rail'] == 2 and g['y'] == BOT_Y
+                    if want_gears == 5:
+                        ok(not at_bottom and g['gear'] != 6,
+                           '%-9s a pull down from fifth finds no slot below it' % name,
+                           'knob on rail %d at y %d, gear %d' % (g['rail'], g['y'], g['gear']))
+                        # AND THE KNOB IS DRAWN OVER THE STUB RAIL. The stub crosses the
+                        # knob's centre column, so the pixel just above the label is the
+                        # knob's light face when it is on top and the rail's black when not.
+                        lum = knob_face_luma(pg)
+                        ok(lum is not None and lum > 90,
+                           '%-9s the knob is drawn over the rail' % name,
+                           'the knob face above its label reads luma %s' % lum)
+                    else:
+                        ok(at_bottom and g['gear'] == 6,
+                           '%-9s and a six-speed does reach sixth on the same pull' % name,
+                           'knob on rail %d at y %d, gear %d' % (g['rail'], g['y'], g['gear']))
 
             if errs:
                 ok(False, 'page errors', errs[0][:140])
