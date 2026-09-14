@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.19';
+window.ROAD_BUILD = '0.14.20';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3322,18 +3322,24 @@ const BAR_SCHEME = {
      three together are what separates a yelp from a wail, and they are three
      rather than one because changing pitch alone reads as the same siren on a
      different car. */
-  /* `em` is the small emergency lamps' own pair of [lit, unlit], police only
-     (see `emLens`). Owner, 2026-09-14: the colour those lamps first wore UNLIT
-     "is the appropriate color for when they are lit", with bloom, and unlit
-     they "should have the same darkness as the unlit headlight and indicator
-     lamps". So lit is the bar's unlit lens colour, and unlit is that colour
-     scaled until its strongest channel is `#7a` - the rule `RED_OFF` and
-     `AMBER_OFF` are already dark by. The bar itself is unchanged. */
-  police:  { a:['#8fb6ff','#2f6bff'], b:['#ff8fa4','#ff2b4a'],
-             em:{ a:['#2f6bff','#16337a'], b:['#ff2b4a','#7a1423'] },
+  /* ---- A LENS IS DARK WHEN IT IS OFF (owner, 2026-09-14) ------------------
+     Owner, of the small emergency lamps: the colour they wore UNLIT "is the
+     appropriate color for when they are lit", with bloom, and unlit they
+     "should have the same darkness as the unlit headlight and indicator lamps".
+     Then: "you need to apply the same color changes to the actual light bar as
+     well."
+
+     SO THE BAR AND ITS SMALL LAMPS SHARE ONE PAIR AGAIN. Lit is the saturated
+     colour the bar used to show unlit - `#8fb6ff` and `#ff8fa4` were pale enough
+     to read as white under the baked halo. Unlit is that colour scaled until its
+     strongest channel is `#7a`, the rule `RED_OFF` and `AMBER_OFF` are dark by
+     ([[RLG-198]]). The ambulance's red follows the same rule, because a medical
+     bar is the same lamp in another colour. The WASH is light thrown on the
+     road rather than a lens, and is unchanged. */
+  police:  { a:['#2f6bff','#16337a'], b:['#ff2b4a','#7a1423'],
              wash:['90,140,255','255,70,80'],
              siren:{ hi:760, lo:560, rate:0.055, cutoff:2600 } },
-  medical: { a:['#ff8fa4','#ff2b4a'], b:['#ff8fa4','#ff2b4a'],
+  medical: { a:['#ff2b4a','#7a1423'], b:['#ff2b4a','#7a1423'],
              wash:['255,70,80','255,70,80'],
              siren:{ hi:980, lo:700, rate:0.098, cutoff:3200 } }
 };
@@ -3351,9 +3357,8 @@ const BAR_SCHEME = {
    painter bakes the bar BEFORE its lamp clusters - an unlit lens drawn with the
    bar would be covered by the cluster housing drawn after it.
 
-   The colour follows the lens's own side of the bar - `em.a` beside `a`, `em.b`
-   beside `b` - but the pair is the lamps' own, dark when unlit like every other
-   lamp on the car (see `em` in `BAR_SCHEME`).
+   The colour is the lens's own side of the bar: `SC.a` or `SC.b`, lit and unlit,
+   so the small lamp is the same blue and the same red as the bar above it.
 
    POLICE ONLY. An ambulance keeps a bar and no small lamps: the request named
    the police vehicles, and `force` is what means police (see above).
@@ -4773,8 +4778,8 @@ function paintRigFront(kind, o){
          does: this end's left lens takes the bar's red half. */
       if(kind === 'cop'){
         const SCe = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
-        decl(g, lamps, 'em.fl', emLens(SCe.em.b, w*(FL+FW-FT*0.90), ly + lh*0.18, w*FT*0.80, lh*0.64));
-        decl(g, lamps, 'em.fr', emLens(SCe.em.a, w*(FR+FT*0.10), ly + lh*0.18, w*FT*0.80, lh*0.64));
+        decl(g, lamps, 'em.fl', emLens(SCe.b, w*(FL+FW-FT*0.90), ly + lh*0.18, w*FT*0.80, lh*0.64));
+        decl(g, lamps, 'em.fr', emLens(SCe.a, w*(FR+FT*0.10), ly + lh*0.18, w*FT*0.80, lh*0.64));
       }
     }
     /* ---- ONE BADGE ON THE NOSE, NOT TWO (owner render, 2026-09-07) -----
@@ -5660,8 +5665,8 @@ function paintRig(kind, o){
          behind a real patrol car's screen. Nothing covers the glass there - the
          body starts at `deckY`, below it. Left is the bar's left lens. */
       if(kind === 'cop'){
-        decl(g, lamps, 'em.rl', emLens(BAR_SCHEME.police.em.a, w*0.30, deckY - h*0.042, w*0.09, h*0.020));
-        decl(g, lamps, 'em.rr', emLens(BAR_SCHEME.police.em.b, w*0.61, deckY - h*0.042, w*0.09, h*0.020));
+        decl(g, lamps, 'em.rl', emLens(BAR_SCHEME.police.a, w*0.30, deckY - h*0.042, w*0.09, h*0.020));
+        decl(g, lamps, 'em.rr', emLens(BAR_SCHEME.police.b, w*0.61, deckY - h*0.042, w*0.09, h*0.020));
       }
     }
   };
@@ -6284,8 +6289,8 @@ function paintFront(o){
         const SCe = BAR_SCHEME[B.bar] || BAR_SCHEME.police;
         const eLamp = (sx, col) => (gg, on) => lHouse(gg, sx, (c) =>
           emLens(col, -w*0.090, h*0.086, w*0.180, h*0.026)(c, on));
-        decl(g, lamps, 'em.fl', eLamp(-1, SCe.em.b));
-        decl(g, lamps, 'em.fr', eLamp(1, SCe.em.a));
+        decl(g, lamps, 'em.fl', eLamp(-1, SCe.b));
+        decl(g, lamps, 'em.fr', eLamp(1, SCe.a));
       }
       g.fillStyle = 'rgba(10,12,16,.9)';
       rr(g, w*(0.5-wid*0.34), topY + h*0.215, w*wid*0.68, h*0.055, 3); g.fill();
@@ -7033,8 +7038,8 @@ function paintCar(o){
         const SCe = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
         const emBlade = (sideL, col) => (gg, on) =>
           chevron(gg, sideL, 0, col[on ? 0 : 1], col[on ? 0 : 1]);
-        decl(g, lamps, 'em.rl', emBlade(0, SCe.em.a));
-        decl(g, lamps, 'em.rr', emBlade(1, SCe.em.b));
+        decl(g, lamps, 'em.rl', emBlade(0, SCe.a));
+        decl(g, lamps, 'em.rr', emBlade(1, SCe.b));
       }
     }
 
@@ -25914,11 +25919,17 @@ function drawMirrorFull(mx, my, mw, mh){
           if(cs && cw >= 1.2){
             const ch = cw * cs.height / cs.width;
             ctx.drawImage(cs, pp.x - cw/2, pp.y - ch, cw, ch);
-            /* the bar is the one part of a police car that is not in the sprite */
+            /* ---- THE ROADBLOCK'S BAR IS THE SPRITE'S TOO (owner, 2026-09-14) --
+               This painted a full-width rectangle ABOVE the roof, under a
+               comment that the bar "is not in the sprite" - the same stray bar
+               RLG-177 removed from the traffic cruisers, left behind on the
+               roadblock's. It had nothing else to light: `FRONT_SP.cop` drew
+               its lenses undeclared until RLG-243. It declares `bar.fl` and
+               `bar.fr` now, so this asks the sprite, on the mirror's own beat,
+               and the small lenses in the headlights flash with it. */
             const on3 = Math.floor(sirenPhase*1.4) % 2;
-            ctx.fillStyle = on3 ? '#3b6bff' : '#ff2b4a';
-            ctx.fillRect(pp.x - cw/2, pp.y - ch - Math.max(1, ch*0.06),
-                         cw, Math.max(1, ch*0.06));
+            lampsLit({ x: pp.x, y: pp.y, w: cw, h: ch }, cs,
+                     emOf([on3 ? 'bar.fl' : 'bar.fr']), 1);
           }
           continue;
         }
