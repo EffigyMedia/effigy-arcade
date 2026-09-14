@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-19"></a>
+## [0.14.19] - 2026-09-14
+- Changed: **the cruiser's emergency lens shows at full beam, and the unlit emergency lamps are
+  dark.** The lit headlight stops short of the lens. Unlit, the small lamps are as dark as an unlit
+  indicator; lit, they are the saturated blue and red with their glow. [RLG-243](../fragments/RLG-243.md)
+
 <a id="v0-14-18"></a>
 ## [0.14.18] - 2026-09-14
 - Added: **both police cars flash a small blue and red emergency lamp at each end, in step with
