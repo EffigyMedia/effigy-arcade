@@ -98,6 +98,10 @@ def smoke(page, base, game, seconds):
     meta = page.evaluate(
         '() => (document.querySelector(\'meta[name="arcade-title"]\')||{}).content')
     ok(meta, 'arcade-title meta present', meta or 'missing')
+    # The effect of the stamps check above, read from the page itself: a
+    # cabinet served fresh must not call its own build MIXED (RLG-245).
+    tag = page.evaluate('() => window.Arcade.buildTag ? Arcade.buildTag() : ""')
+    ok('MIXED' not in tag, 'the build tag is not MIXED', tag)
 
     first = page.evaluate(CANVAS_SIG)
     page.wait_for_timeout(int(seconds * 1000))
@@ -321,6 +325,29 @@ def saves(page, base):
     return checks
 
 
+def stamps(root=ROOT):
+    """THE ENGINE'S STAMP AND THE SHELL'S VERSION AGREE (RLG-245).
+
+    `Arcade.buildTag()` prints MIXED when `window.ROAD_BUILD` in road.js differs
+    from `A.version` in arcade.js. The tag exists to catch a cached engine
+    beside a fresh shell. The two stamps drifted fourteen versions apart once,
+    so every device read MIXED and the signal meant nothing. This reads the
+    source, so it runs for any selection of cabinets and needs no browser."""
+    import re
+    shell = re.search(r"^A\.version = '([^']*)';",
+                      (root / 'arcade.js').read_text(encoding='utf-8'), re.M)
+    road = re.search(r"^window\.ROAD_BUILD = '([^']*)';",
+                     (root / 'road.js').read_text(encoding='utf-8'), re.M)
+    checks = []
+    ok = lambda c, l, d='': checks.append((bool(c), l, d))
+    ok(shell, 'arcade.js has an A.version line')
+    ok(road, 'road.js has a window.ROAD_BUILD line')
+    if shell and road:
+        ok(shell.group(1) == road.group(1), 'ROAD_BUILD matches A.version',
+           f'road.js {road.group(1)}, arcade.js {shell.group(1)}')
+    return checks
+
+
 def main():
     console_utf8()
     ap = argparse.ArgumentParser()
@@ -335,8 +362,15 @@ def main():
     httpd, port = serve()
     base = f'http://127.0.0.1:{port}'
     failed = 0
-    total = len(games)
+    total = len(games) + 1
     print(f'smoke-test  ·  {len(games)} cabinets  ·  {args.seconds:g}s each')
+
+    vbad = [c for c in stamps() if not c[0]]
+    failed += bool(vbad)
+    line = f'  {"ok  " if not vbad else "FAIL"}  {"stamps":<10}'
+    if vbad:
+        line += '  ·  ' + '; '.join(f'{l} ({d})' if d else l for _, l, d in vbad)
+    print(line)
     with sync_playwright() as p:
         browser = launch_chromium(
             p,

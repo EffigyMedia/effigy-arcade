@@ -259,6 +259,18 @@ SW_RUN="$(grep -o "effigy-arcade-runtime-v[0-9]*" sw.js | head -1)"
 [ -n "$SW_CORE" ] || fail "sw.js has no cache version"
 [ "${SW_CORE##*-}" = "${SW_RUN##*-}" ] || fail "sw.js core is ${SW_CORE##*-} but runtime is ${SW_RUN##*-}"
 
+# ---- THE ENGINE'S STAMP AND THE SHELL'S VERSION AGREE (RLG-245) ------------
+# `Arcade.buildTag()` prints MIXED when `window.ROAD_BUILD` in road.js differs
+# from `A.version` in arcade.js. That tag exists to catch a cached engine beside
+# a fresh shell. The two stamps drifted fourteen versions apart once, so every
+# device read MIXED and the signal meant nothing. A disagreement in the source
+# is always a missed bump, never a stale cache, so it stops the build.
+SHELL_V="$(sed -n "s/^A\.version = '\([^']*\)';.*/\1/p" arcade.js | head -1)"
+ROAD_V="$(sed -n "s/^window\.ROAD_BUILD = '\([^']*\)';.*/\1/p" road.js | head -1)"
+[ -n "$SHELL_V" ] || fail "arcade.js has no A.version line"
+[ -n "$ROAD_V" ]  || fail "road.js has no window.ROAD_BUILD line"
+[ "$SHELL_V" = "$ROAD_V" ] || fail "road.js stamps ROAD_BUILD $ROAD_V but arcade.js is $SHELL_V - bump both in the same commit"
+
 # the one comparison, in a function, so there is one definition of what
 # agreement MEANS and two places that ask for it
 cache_agrees(){
