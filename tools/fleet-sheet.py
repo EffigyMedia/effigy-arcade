@@ -134,8 +134,11 @@ SHEET = r"""(cls) => {
   for (const r of rows) {
     const back = r.spr, front = r.front;
     const bL = back.lamps || {}, fL = (front && front.lamps) || {};
-    const bar = Object.keys(bL).filter(k => k.indexOf('bar.') === 0);
-    const fbar = Object.keys(fL).filter(k => k.indexOf('bar.') === 0);
+    /* the bar cell carries the small emergency lenses as well, because they
+       flash with it - `em.*` is named after the half of the bar it follows */
+    const isBar = k => k.indexOf('bar.') === 0 || k.indexOf('em.') === 0;
+    const bar = Object.keys(bL).filter(isBar);
+    const fbar = Object.keys(fL).filter(isBar);
 
     g.fillStyle = '#e6e9f0';
     g.font = '600 16px system-ui, sans-serif';

@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-18"></a>
+## [0.14.18] - 2026-09-14
+- Added: **both police cars flash a small blue and red emergency lamp at each end, in step with
+  the light bar.** The cruiser carries them in its headlights and its rear window; the interceptor
+  under its front indicators and as the innermost tail chevron. A patrol car in the mirror now
+  flashes its bar, which it never did. [RLG-243](../fragments/RLG-243.md)
+
 <a id="v0-14-17"></a>
 ## [0.14.17] - 2026-09-13
 - Fixed: **on a bend, the road, the cars and the barrier strip beyond the curve no longer draw

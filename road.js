@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.17';
+window.ROAD_BUILD = '0.14.18';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3330,6 +3330,35 @@ const BAR_SCHEME = {
              siren:{ hi:980, lo:700, rate:0.098, cutoff:3200 } }
 };
 
+/* ---- A POLICE CAR FLASHES IN ITS OWN LAMPS TOO (owner, 2026-09-14) --------
+   Owner: "add emergency lights within the headlights and tail lights of the
+   police vehicles so a little blue and a little red lamp - matching the side
+   the colors are on the light bar".
+
+   EACH SMALL LENS IS A LAMP OF ITS OWN, NAMED AFTER THE HALF OF THE BAR IT
+   FLASHES WITH. `bar.rl` is the rear bar's left lens and `em.rl` is the small
+   lens on that side of the tail, so a caller that lights one half of the bar
+   lights `emOf` of the same ids and the two cannot fall out of step. They are
+   separate declarations rather than more drawing inside the bar's, because a
+   painter bakes the bar BEFORE its lamp clusters - an unlit lens drawn with the
+   bar would be covered by the cluster housing drawn after it.
+
+   The colour is the lens's own side of the bar: `SC.a` or `SC.b`, lit and unlit,
+   so the small lamp is the same blue and the same red as the bar above it.
+
+   POLICE ONLY. An ambulance keeps a bar and no small lamps: the request named
+   the police vehicles, and `force` is what means police (see above).
+   ------------------------------------------------------------------------- */
+function emLens(col, x, y, bw, bh){
+  return (gg, on) => {
+    gg.fillStyle = col[on ? 0 : 1];
+    rr(gg, x, y, bw, bh, Math.min(bw, bh)*0.5); gg.fill();
+  };
+}
+function emOf(ids){
+  return ids.concat(ids.map(id => 'em' + id.slice(3)));
+}
+
 /* ---- A SIREN BELONGS TO THE VEHICLE SOUNDING IT ---------------------------
    Owner, 2026-09-05: "the ambulance just has to have a different sounding siren
    no matter what" - it "has nothing to do with the player driving or not".
@@ -4720,6 +4749,14 @@ function paintRigFront(kind, o){
       });
       decl(g, lamps, 'turn.l', turnBulb(w*FL, ly, w*FT, lh, true));
       decl(g, lamps, 'turn.r', turnBulb(w*(FR+FW-FT), ly, w*FT, lh, true));
+      /* the cruiser's small emergency lenses, at the inboard end of each
+         headlight - see `emLens`. The front mirrors the rear like the bar
+         does: this end's left lens takes the bar's red half. */
+      if(kind === 'cop'){
+        const SCe = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
+        decl(g, lamps, 'em.fl', emLens(SCe.b, w*(FL+FW-FT*0.90), ly + lh*0.18, w*FT*0.80, lh*0.64));
+        decl(g, lamps, 'em.fr', emLens(SCe.a, w*(FR+FT*0.10), ly + lh*0.18, w*FT*0.80, lh*0.64));
+      }
     }
     /* ---- ONE BADGE ON THE NOSE, NOT TWO (owner render, 2026-09-07) -----
        Owner, from the saved fleet renders: "there's two badges on the front" of
@@ -4821,10 +4858,21 @@ function paintRigFront(kind, o){
       g.fillStyle = '#1b1e24';
       rr(g, w*0.24, pRoof-h*0.055, w*0.52, h*0.045, 2); g.fill();
       /* the front mirrors the rear: this end's left lens is the rear's right */
-      g.fillStyle = SC.b[1];
-      rr(g, w*0.255, pRoof-h*0.050, w*0.235, h*0.034, 2); g.fill();
-      g.fillStyle = SC.a[1];
-      rr(g, w*0.51, pRoof-h*0.050, w*0.235, h*0.034, 2); g.fill();
+      /* ---- AND THE TWO LENSES ARE LAMPS (owner, 2026-09-14) -------------
+         They were painted straight into the sprite, unlit, with no
+         declaration - so the mirror asked this sprite for `bar.fl` and
+         `bar.fr`, found neither, and a patrol car behind you never flashed.
+         Declaring them is what lets the small lenses in the headlights flash
+         WITH something. Same rectangles and the same unlit colours as before,
+         so the dark sprite is unchanged. */
+      decl(g, lamps, 'bar.fl', (gg, on) => {
+        gg.fillStyle = SC.b[on ? 0 : 1];
+        rr(gg, w*0.255, pRoof-h*0.050, w*0.235, h*0.034, 2); gg.fill();
+      });
+      decl(g, lamps, 'bar.fr', (gg, on) => {
+        gg.fillStyle = SC.a[on ? 0 : 1];
+        rr(gg, w*0.51, pRoof-h*0.050, w*0.235, h*0.034, 2); gg.fill();
+      });
     }
   };
 }
@@ -5586,6 +5634,16 @@ function paintRig(kind, o){
         gg.fillStyle = SC.b[on ? 0 : 1];
         rr(gg, w*0.51, roofY-h*0.050, w*0.235, h*0.034, 2); gg.fill();
       });
+      /* ---- THE CRUISER'S REAR EMERGENCY LAMPS ARE IN THE WINDOW (owner) ----
+         Owner, 2026-09-14, choosing between two renders: "for the cruiser, I
+         like the front lights and prefer the rear lights in the window." A short
+         bar each side at the foot of the rear glass, the way a deck light sits
+         behind a real patrol car's screen. Nothing covers the glass there - the
+         body starts at `deckY`, below it. Left is the bar's left lens. */
+      if(kind === 'cop'){
+        decl(g, lamps, 'em.rl', emLens(SC.a, w*0.30, deckY - h*0.042, w*0.09, h*0.020));
+        decl(g, lamps, 'em.rr', emLens(SC.b, w*0.61, deckY - h*0.042, w*0.09, h*0.020));
+      }
     }
   };
 }
@@ -6195,6 +6253,21 @@ function paintFront(o){
       });
       decl(g, lamps, 'turn.l', lTurn(-1));
       decl(g, lamps, 'turn.r', lTurn(1));
+      /* ---- THE INTERCEPTOR'S EMERGENCY LAMP IS A SECOND BAR (owner) -------
+         Owner, 2026-09-14: "for the front I'd want them to be a bar like the
+         turn indicator, under the turn indicators." So it is the indicator's
+         own shape, dropped by the indicator's height plus a gap, in the same
+         rotated frame - the stack reads as one designed unit, which is the
+         reason the indicator follows the lamp's rake in the first place. It
+         takes no headlight: every lens on this face stays a headlight. The
+         front mirrors the rear, so the car's left bar from here is red. */
+      if(B.force){
+        const SCe = BAR_SCHEME[B.bar] || BAR_SCHEME.police;
+        const eLamp = (sx, col) => (gg, on) => lHouse(gg, sx, (c) =>
+          emLens(col, -w*0.090, h*0.086, w*0.180, h*0.026)(c, on));
+        decl(g, lamps, 'em.fl', eLamp(-1, SCe.b));
+        decl(g, lamps, 'em.fr', eLamp(1, SCe.a));
+      }
       g.fillStyle = 'rgba(10,12,16,.9)';
       rr(g, w*(0.5-wid*0.34), topY + h*0.215, w*wid*0.68, h*0.055, 3); g.fill();
       for(const sx of [-1,1]){
@@ -6907,7 +6980,10 @@ function paintCar(o){
            Owner, 2026-08-29: two more brake chevrons before the indicator
            chevron on the external edge. The cluster reads as a swept bank of
            lamps rather than as a pair with a signal beside it. */
-        for(const sideL of [0,1]) for(const k of [0,1,2,3,4,5,6,7]) chevron(gg, sideL, k, c0, c1);
+        /* on a police car the innermost blade belongs to the emergency lamp
+           instead - see below */
+        const first = o.force ? 1 : 0;
+        for(const sideL of [0,1]) for(let k = first; k < 8; k++) chevron(gg, sideL, k, c0, c1);
       };
       blades(g, false);
       if(lamps) lamps.tail = blades;
@@ -6926,6 +7002,21 @@ function paintCar(o){
       const turnL = turn(0), turnR = turn(1);
       turnL(g, false); turnR(g, false);
       if(lamps){ lamps['turn.l'] = turnL; lamps['turn.r'] = turnR; }
+      /* ---- THE INNERMOST CHEVRON IS THE EMERGENCY LAMP (owner) ------------
+         Owner, 2026-09-14: "for the super cruiser I'd want the emergency tail
+         lights to be the first inner chevron instead of the brake one." The
+         same split the indicator made at the other end of the bank: one blade
+         leaves the brake lamp and becomes a lamp of its own, so the cluster
+         keeps its shape lit or dark. From behind, the left blade is the bar's
+         left lens, and the highlight down its middle is the lit lens colour
+         over the unlit one, the way the brake blades carry theirs. */
+      if(o.force){
+        const SCe = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
+        const emBlade = (sideL, col) => (gg, on) =>
+          chevron(gg, sideL, 0, col[on ? 0 : 1], on ? 'rgba(255,255,255,.75)' : col[0]);
+        decl(g, lamps, 'em.rl', emBlade(0, SCe.a));
+        decl(g, lamps, 'em.rr', emBlade(1, SCe.b));
+      }
     }
 
     /* The marque, small, high on the panel. CREST wears a full-width light
@@ -23224,7 +23315,7 @@ function drawCopLights(box, phase, spr, scheme){
      air around the car, not to the car - and it is only drawn for a cruiser
      close enough to show one. */
   if(spr && spr.lamps && spr.lamps['bar.rl']){
-    lampsLit(box, spr, [on ? 'bar.rl' : 'bar.rr'], 1);
+    lampsLit(box, spr, emOf([on ? 'bar.rl' : 'bar.rr']), 1);
     if(box.w > 26){
       const cxp = box.x + box.w*(on ? -0.105 : 0.105);
       const y = box.y - box.h*0.90, r = box.w*0.60;
@@ -23861,6 +23952,10 @@ function drawPlayer(){
       lampsHere(SP.player, -w/2, -h, w, h, ['tail'], 1, lvl);
     if(playerTurn && (blinkHold || Math.sin(blinkPhase) > 0))
       lampsHere(SP.player, -w/2, -h, w, h, [playerTurn < 0 ? 'turn.l' : 'turn.r'], 1);
+    /* the small emergency lenses in your own tail lamps, on the same beat as
+       the heads below: blue on the left while the left head is lit */
+    if(barOn && inCruiser())
+      lampsHere(SP.player, -w/2, -h, w, h, [Math.sin(sirenPhase) > 0 ? 'em.rl' : 'em.rr'], 1);
   }
   ctx.restore();
 
@@ -25943,7 +26038,7 @@ function drawMirrorFull(mx, my, mw, mh){
       if(it.cop){
         const on2 = Math.floor(sirenPhase*1.4) % 2;
         lampsLit({ x: x0 + sw/2, y: p1.y, w: sw, h: fh },
-                 fs, [on2 ? 'bar.fl' : 'bar.fr'], 1);
+                 fs, emOf([on2 ? 'bar.fl' : 'bar.fr']), 1);
         /* WHERE THE GLASS PUT THIS CRUISER, for a check to read (RLG-177). The
            rule is that nothing belonging to a police car may be painted ABOVE
            its own sprite, and a check cannot say that without knowing where the
