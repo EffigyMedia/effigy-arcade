@@ -19,6 +19,11 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-21"></a>
+## [0.14.21] - 2026-09-14
+- Fixed: **the Interceptor's unlit emergency chevron stays on top of its brake chevrons** when the
+  brake or running lights are on. [RLG-243](../fragments/RLG-243.md)
+
 <a id="v0-14-20"></a>
 ## [0.14.20] - 2026-09-14
 - Changed: **the light bar is dark when unlit and saturated when lit, like its small emergency

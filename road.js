@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.20';
+window.ROAD_BUILD = '0.14.21';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7008,6 +7008,24 @@ function paintCar(o){
            instead - see below */
         const first = o.force ? 1 : 0;
         for(const sideL of [0,1]) for(let k = first; k < 8; k++) chevron(gg, sideL, k, c0, c1);
+        /* ---- AND THE UNLIT EMERGENCY BLADE GOES BACK ON TOP (owner) --------
+           Owner, 2026-09-14: the unlit emergency chevrons "are rendered behind
+           the brake lights, but when they're bright, they are rendered on top".
+           The sprite bakes them in the right order. The fault is at runtime:
+           a lit brake or running light redraws these blades over the car, and
+           the next blade out overlaps the emergency one. So this drawing puts
+           the UNLIT emergency blade back after its own. When the bar lights
+           it, `em.*` is drawn after the tail and covers this again.
+
+           IN BOTH STATES, NOT ONLY LIT. `lamp-test` holds every lit lamp inside
+           its own unlit drawing (RLG-053), and a blade drawn only when lit is
+           92 pixels outside it. Drawn unlit too, it is part of the tail's own
+           shape, and the sprite simply bakes the same dark blade twice. */
+        if(o.force){
+          const SCb = BAR_SCHEME[o.bar] || BAR_SCHEME.police;
+          chevron(gg, 0, 0, SCb.a[1], SCb.a[1]);
+          chevron(gg, 1, 0, SCb.b[1], SCb.b[1]);
+        }
       };
       blades(g, false);
       if(lamps) lamps.tail = blades;
