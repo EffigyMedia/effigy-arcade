@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-35"></a>
+## [0.14.35] - 2026-09-15
+- Changed: **the police radio is gone.** Only speed traps and patrol cars put cruisers on you now,
+  and both obey the slots, so your wanted level buys police through the slots rather than through a
+  dispatcher. A patrol you pass with no slot free reports you and stays in the traffic. INTERCEPT
+  wingmen and the Interceptors are unchanged. [RLG-257](../fragments/RLG-257.md)
+
 <a id="v0-14-34"></a>
 ## [0.14.34] - 2026-09-15
 - Removed: **the SPEED TRAPS ENGAGE debug switch.** The owner confirmed on the device that the

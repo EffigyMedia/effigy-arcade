@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.34';
+window.ROAD_BUILD = '0.14.35';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10860,6 +10860,13 @@ function patrolWatch(){
        pulls a speeding NPC over, and that is the half of it INTERCEPT wants. */
     if(playerIsPolice()) continue;
     if(spd <= MAX_SPD * SPEED_LIMIT) continue;    /* you went by legally */
+    /* ---- ONLY INTO AN OPEN SLOT, LIKE A TRAP (owner, 2026-09-15, RLG-257) ---
+       "Only patrols and speed traps can add to your engaged cruisers, they all
+       obey the same slot allotment." The slot is read before the heat goes on,
+       for the reason given at `trapWatch`. A patrol with no slot to fill reports
+       you - the heat - and stays in the traffic. `passed` fires once per car, so
+       it cannot report you twice. */
+    if(!slotOpen(null)){ addHeat(HEAT_SEEN, 'patrol'); continue; }
     /* out of the traffic and into the chase, at its own place and speed */
     traffic.splice(i, 1);
     lastCopDz = Math.round(c.z - pz);
@@ -10880,7 +10887,11 @@ function patrolWatch(){
       spd: Math.max(c.spd || 0, spd * 0.95 + 1800),
       wreck:0, ang:0, grace:0.5, cool:0, side:1,
       w:0.27, len:400, phase: Math.random()*6.28,
-      dmg:0, from:'patrol', bornDz: lastCopDz
+      dmg:0, from:'patrol', bornDz: lastCopDz,
+      /* committed to the player who woke it, so it fills the player's slot and
+         no other car's (RLG-257, as `trapEngage` does for a trap) */
+      tgt: null, onPlayer: true, engaged: true, commits: 1,
+      tz: pz, tx: playerX, tSpd: spd
     });
     snd.warnCop();
     flashWarn('PATROL ENGAGED');
@@ -18534,11 +18545,17 @@ function step(dt){
         spawnCop();
         radioSent++;
       }
-    } else if(onYou && mine < dispatchCap() && live.length < 4){
-      spawnCop();
-      radioSent++;
-      snd.warnCop();
     }
+    /* ---- THE RADIO IS GONE (owner, 2026-09-15, RLG-257) --------------------
+       "I want to get rid of the radio. Only patrols and speed traps can add to
+       your engaged cruisers, they all obey the same slot allotment."
+
+       This branch sent a cruiser from 3,200-4,200 units behind every 12-22
+       seconds while one was already on the player, up to `dispatchCap`. The
+       wanted level now buys police through the slots instead (RLG-256): each
+       star is one more cruiser a trap or a patrol may add. The shift's wingmen
+       above are not the radio and are unchanged. `onYou` and `mine` above were
+       the radio's two conditions and nothing reads them now. */
     /* and the shift checks its own complement far more often than the radio
        reinforces a pursuit, for the same reason: a floor that is checked every
        twenty seconds is not a floor (RLG-203) */

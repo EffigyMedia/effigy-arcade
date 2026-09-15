@@ -1,146 +1,128 @@
 #!/usr/bin/env python3
-"""LADDER TEST - a higher wanted level actually puts more police on the road.
+"""LADDER TEST - there is no radio: a wanted level sends no cruiser of its own.
 
     .venv/Scripts/python tools/ladder-test.py
+    .venv/Scripts/python tools/ladder-test.py --root <an older checkout> --expect-fail
 
-THIS IS THE CHECK THAT WAS MISSING, and its absence is why an entire source of police
-went unnoticed. `spawnCop` - the rear spawner, the third of the owner's three sources -
-was defined and never called from anywhere for a long time. Nothing failed, because
-nothing had ever asked whether heat DOES anything. Heat four and heat two summoned
-identical cars and every gate stayed green.
+RLG-257. Owner, 2026-09-15: "I want to get rid of the radio. Only patrols and speed traps can add to
+your engaged cruisers, they all obey the same slot allotment."
 
-THE THREE SOURCES ANSWER TO DIFFERENT THINGS, so they are counted apart:
+WHAT THIS FILE USED TO BE. It proved the opposite: that the radio (`spawnCop`, from 'radio') sent more
+cars as heat rose, because for a long time that source was never called and nothing noticed. The
+radio is now removed on purpose, and a wanted level buys police through the slots (RLG-256), which
+tools/trap-slots-test.py proves. So this file now guards the removal.
 
-  traps     parked cruisers. Always a few; heat only lays them more thickly.
-  patrols   police driving as ordinary traffic. Not heat's business at all.
-  chasers   cars the radio sent after you. THIS is what a wanted level buys.
+THE CONDITIONS ARE THE RADIO'S OWN, so a radio that still existed would fire. At heat 3 and at heat 5
+a cruiser is committed to the player 9,000 units back - inside LOST_AT, so it is "on" the player - and
+the player is held at 72 % of top speed, faster than a cruiser, so it never catches up and ends the
+run. Each level is watched for 25 seconds, longer than the radio's longest wait at those levels.
 
-AND THEY ARE COUNTED APART, WHICH IS THE HALF THAT MAKES THIS WORK. The first version of
-this file counted every cruiser chasing you, and at speed a trap catches you and a patrol
-engages you constantly - so heat 1 read FOUR chasers and heat 5 read three, and the ladder
-appeared to run backwards on an engine that was working. Every cruiser records which of
-the three sources made it, and this reads only the radio's.
+  NONE     `copCensus().sent` does not rise, and no car from 'radio' is on the road.
+  LIVE     control: traps and patrols still put cruisers on the player in the same window, so a road
+           that had no police at all would not pass.
 
-WHAT IT ASSERTS: that the number of chasers the radio will keep on you rises with heat,
-and that it is zero at heat one - which is the baseline and means "not wanted". It reads
-the count of cars actually on the road, not the cap they are drawn from, because a cap
-that nothing acts on is exactly the failure this file exists to catch.
+WHAT THIS CANNOT SAY. Whether a pursuit without the radio has enough police in it is the owner's
+verdict on the device.
 
-IT IS RUN WITH THE ROAD CLEARED BETWEEN LEVELS, or a chase started at heat 4 is still
-running when heat 2 is measured and the ladder reads backwards.
+Exit code 0 if every check passed (or, with --expect-fail, if one failed), 1 otherwise.
 """
-import sys, threading, http.server, socketserver, functools
+import argparse
+import functools
+import http.server
+import socketserver
+import sys
+import threading
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8, boot, until
 from playwright.sync_api import sync_playwright
 
-console_utf8()
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
-srv = socketserver.TCPServer(('127.0.0.1', 0), handler)
-PORT = srv.server_address[1]
-threading.Thread(target=srv.serve_forever, daemon=True).start()
-BASE = f'http://127.0.0.1:{PORT}'
+TOOLS = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS))
+from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
 
-# long enough for the dispatch timer to fire several times at every level
-SETTLE = 26
+SECS = 25
+
+
+class Q(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
 
 
 def main():
-    bad = 0
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--root', default=str(TOOLS.parent))
+    ap.add_argument('--expect-fail', action='store_true')
+    args = ap.parse_args()
+    console_utf8()
+    root = Path(args.root)
+    fails = []
 
-    def ok(cond, label, detail=''):
-        nonlocal bad
-        if not cond:
-            bad += 1
-        print(f'  {"ok  " if cond else "FAIL"}  {label}' + (f'   {detail}' if detail else ''))
+    def ok(c, label, detail=''):
+        print(('  ok    ' if c else '  FAIL  ') + label + ('' if c else '   [' + str(detail) + ']'))
+        if not c:
+            fails.append(label)
 
-    print('ladder-test  .  a wanted level is a number that does something')
+    httpd = socketserver.TCPServer(('127.0.0.1', 0), functools.partial(Q, directory=str(root)))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.socket.getsockname()[1]
+    print('ladder-test  .  there is no radio')
+    print('      serving %s' % root)
     with sync_playwright() as p:
-        b = launch_chromium(p, headless=True,
-                            args=['--mute-audio', '--autoplay-policy=no-user-gesture-required'])
-        ctx = b.new_context(viewport={'width': 480, 'height': 900})
-        page = ctx.new_page()
+        b = launch_chromium(p, headless=True, args=['--mute-audio'])
+        pg = b.new_context(viewport={'width': 480, 'height': 900}).new_page()
         errs = []
-        page.on('pageerror', lambda e: errs.append(str(e)))
-        boot(page, f'{BASE}/games/sw/interstate.html')
-        try:
-            until(page, '() => navigator.serviceWorker && navigator.serviceWorker.controller', timeout=5000)
-            page.wait_for_timeout(1200)
-        except Exception:
-            pass
-        page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
-        page.click('[data-act="play"]')
-        page.wait_for_timeout(400)
-        page.click('[data-act="chase"]')          # HOT PURSUIT on, through the real menu
-        page.wait_for_timeout(200)
-        page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
-        page.click('[data-act="drive"]')
-        page.wait_for_timeout(1500)
-        ok(not page.evaluate("() => window.__road.pursuit().easy"),
-           'the pursuit system is running', 'or every number below is zero')
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        boot(pg, 'http://127.0.0.1:%d/games/sw/interstate.html' % port)
+        pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
+        pg.click('[data-act="play"]')
+        pg.wait_for_timeout(400)
+        pg.click('[data-act="chase"]')      # HOT PURSUIT on
+        pg.wait_for_timeout(200)
+        pg.click('[data-act="drive"]')
+        until(pg, '() => window.__road.startLine().left <= 0', timeout=10000)
+        pg.evaluate('() => window.__road.setTimed(false)')
 
-        rungs, concurrent = {}, {}
-        for level in (1, 2, 3, 5):
-            # THE ROAD IS CLEARED FIRST. A chase from the level before is still running
-            # otherwise, and the ladder reads backwards through no fault of the engine.
-            page.evaluate("() => { window.__road.copsClear(); }")
-            page.evaluate('(h) => window.__road.heat(h)', level)
-            peak = 0
-            census = None
-            sent0 = page.evaluate("() => window.__road.copCensus().sent")
-            for _ in range(SETTLE * 4):
-                # hold the heat: driving fast earns more of it, and this is measuring
-                # what a GIVEN level dispatches rather than how quickly one is earned
-                page.evaluate('(h) => { const R = window.__road;'
-                              ' R.setSpd(0.72 * R.MAX_SPD); R.heat(h); }', level)
-                page.wait_for_timeout(250)
-                census = page.evaluate("() => window.__road.copCensus()")
-                peak = max(peak, census['radio'])
-            # HOW MANY WERE SENT, not how many are standing there. See `radioSent`.
-            rungs[level] = page.evaluate("() => window.__road.copCensus().sent") - sent0
-            concurrent[level] = peak
-            print(f"  ..    heat {level}:  radio SENT {rungs[level]} over the window,"
-                  f" at most {peak} out at once   (cap {census['cap']};"
-                  f" {census['fromTrap']} from traps, {census['fromPatrol']} from patrols)")
+        total_radio, total_other = 0, 0
+        for level in (3, 5):
+            pg.evaluate('(h) => { const R = window.__road; R.copsClear(); R.heat(h);'
+                        ' if(R.commitCop) R.commitCop("player", -9000);'
+                        ' else R.cops().push({ z: R.startLine().pos + R.PLAYER_Z - 9000, x: 0, spd: 0,'
+                        '   wreck:0, ang:0, grace:0, cool:1, side:1, w:0.27, len:400, phase:0, dmg:0,'
+                        '   from:"test", engaged:true, onPlayer:true, tgt:null }); }', level)
+            sent0 = pg.evaluate('() => window.__road.copCensus().sent')
+            radio_seen, other = 0, set()
+            for _ in range(SECS * 4):
+                pg.evaluate('(h) => { const R = window.__road; R.setSpd(0.72 * R.MAX_SPD); R.heat(h); }', level)
+                pg.wait_for_timeout(250)
+                got = pg.evaluate("""() => { const cs = window.__road.cops().filter(k => k.wreck <= 0 && !k.trap);
+                    cs.forEach(k => { if(k.__id === undefined) k.__id = Math.random(); });
+                    return { radio: cs.filter(k => k.from === 'radio').length,
+                             other: cs.filter(k => k.from === 'trap' || k.from === 'patrol').map(k => k.__id) }; }""")
+                radio_seen = max(radio_seen, got['radio'])
+                other.update(got['other'])
+            sent = pg.evaluate('() => window.__road.copCensus().sent') - sent0
+            print('      heat %d: radio sent %d, at most %d radio cars out; %d cruisers from traps and patrols'
+                  % (level, sent, radio_seen, len(other)))
+            total_radio += sent + radio_seen
+            total_other += len(other)
 
-        # ---- WHAT IS ASSERTED, AND WHAT IS ONLY REPORTED --------------------------
-        # THE CAP IS DETERMINISTIC AND THE DISPATCHES ARE NOT. `dispatchCap` is a pure
-        # function of the wanted level, and it is the thing that says a higher level means
-        # more police. How many cars actually come out of it in a given window is not: the
-        # radio only reinforces a pursuit somebody still has eyes on, the population is at
-        # most three, and the level itself keeps being re-earned between the pins this
-        # harness applies - at 0.72 of top speed you are over the limit, so traps and
-        # patrols push the heat back up faster than it can be held down.
-        #
-        # Three attempts were made at asserting the observed numbers rung by rung and all
-        # three produced a gate that went red on the road rather than on the code. The cap
-        # is asserted; the cars are printed. When the wanted level becomes granular points
-        # - which the owner has asked for - this is the check to revisit, because the
-        # dispatch rate will then be a smooth function of something rather than a step.
-        caps = {h: page.evaluate('(v) => { window.__road.heat(v);'
-                                 ' return window.__road.copCensus().cap; }', h)
-                for h in (1, 2, 3, 5)}
-        print(f'  ..    the cap by level: {caps}')
-        ok(caps[1] == 0, 'heat 1 is the baseline and the radio is told to send nobody',
-           f'the cap at heat 1 is {caps[1]}')
-        ok(caps[5] > caps[2] > caps[1],
-           'and a higher wanted level raises how many it may send',
-           f"1:{caps[1]}  2:{caps[2]}  3:{caps[3]}  5:{caps[5]}")
-        ok(sum(rungs.values()) > 0,
-           'and the radio actually sends cars, so the source is live rather than a number',
-           f'sent 1:{rungs[1]}  2:{rungs[2]}  3:{rungs[3]}  5:{rungs[5]}')
-        print(f'  ..    on the road at once: 1:{concurrent[1]}  2:{concurrent[2]}'
-              f'  3:{concurrent[3]}  5:{concurrent[5]}  (reported - see the note above)')
-        ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
-        ctx.close()
+        ok(total_radio == 0, 'the radio sends nothing at heat 3 or heat 5 with a cruiser on the player',
+           '%d radio dispatches or cars seen' % total_radio)
+        ok(total_other > 0, 'control: traps and patrols still put cruisers on the player',
+           'none in %d seconds' % (SECS * 2))
+        ok(not errs, 'no page errors', errs[0][:120] if errs else '')
         b.close()
-    srv.shutdown()
-    print(f"\n  {'the ladder climbs' if not bad else str(bad) + ' FAILURES'}")
-    return 1 if bad else 0
+    httpd.shutdown()
+    print()
+    if args.expect_fail:
+        print('expected at least one failure: %s' % ('got %d' % len(fails) if fails else 'got NONE'))
+        return 0 if fails else 1
+    if fails:
+        print('FAILED: ' + '; '.join(fails))
+        return 1
+    print('there is no radio')
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    raise SystemExit(main())

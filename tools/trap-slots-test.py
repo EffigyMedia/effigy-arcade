@@ -27,6 +27,10 @@ tag, not an index, because the traffic array is reordered as the road runs.
   COOL     an NPC with 150 points and nobody on it cools after the 3 s grace at a star per 30 s: after
            6 s it holds 130 to 149 points.
 
+  PATROL   RLG-257: a patrol car put 1,200 ahead, passed at 90 % with the player at 0 stars. With no
+           cruiser on the player it engages; with one on it stays in the traffic and adds one
+           sighting of heat.
+
 WHAT THIS CANNOT SAY. Racers go through the same check as NPCs in `trapWatch`, but no race is staged
 here. Whether the police feel right in a race is the owner's verdict on the device.
 
@@ -74,15 +78,22 @@ ARM = """async (a) => {
   k.z = R.startLine().pos + R.PLAYER_Z + (a.npc ? -600 : 1500);
   const who = a.npc ? npc : 'player';
   const before = has ? R.slots(who) : null;
+  /* THE FIRST FRAME IT LEAVES ITS POST IS THE READING. A cruiser that runs its NPC into the
+     barrier loses it, gives up and parks again inside the window, so a trap state read at the
+     end once reported "did not engage" for a trap that had engaged on its first frame. */
   const t0 = performance.now();
+  let engaged = false, onPlayer = false, onNpc = false;
   await new Promise((done) => {
     const tick = () => {
+      if(!engaged && !k.trap){
+        engaged = true; onPlayer = k.onPlayer === true; onNpc = k.onPlayer === false && !!k.tgt;
+      }
       if(performance.now() - t0 < a.secs * 1000) requestAnimationFrame(tick); else done();
     };
     requestAnimationFrame(tick);
   });
   const after = has ? R.slots(who) : null;
-  return { engaged: !k.trap, onPlayer: k.onPlayer === true, onNpc: k.onPlayer === false && !!k.tgt,
+  return { engaged, onPlayer, onNpc,
            before, after, rise: (before && after) ? after.pts - before.pts : null };
 }"""
 
@@ -173,6 +184,29 @@ def main():
           return s ? s.pts : null; }""")
         print('      COOL          150 points after 6 s: %s' % cool)
         ok(cool is not None and 130 <= cool < 150, 'an NPC with nobody on it cools, at the player\'s rate', 'points %s' % cool)
+
+        # ---- PATROL (RLG-257) --------------------------------------------------------------
+        def patrol(name, on):
+            got = pg.evaluate("""async (on) => {
+              const R = window.__road;
+              R.holdSpd(null); R.copsClear(); R.parkTraffic(9, 60000); R.heat(0);
+              for(let i = 0; i < on; i++) if(R.commitCop) R.commitCop('player', -3000 - i * 600);
+              R.placePatrol(1200);
+              const w0 = R.patrols().woken, p0 = R.pursuit().pts;
+              R.holdSpd(0.9 * R.MAX_SPD);
+              await new Promise(r => setTimeout(r, 2500));
+              const out = { woke: R.patrols().woken - w0, rise: R.pursuit().pts - p0,
+                            patrolling: R.patrols().patrolling };
+              R.holdSpd(null);
+              return out; }""", on)
+            print('      %-13s %s' % (name, got))
+            return got
+        g = patrol('PATROL OPEN', 0)
+        ok(g['woke'] == 1, 'a patrol passed over the limit with a slot open engages', 'woke %d' % g['woke'])
+        g = patrol('PATROL FULL', 1)
+        ok(g['woke'] == 0 and g['patrolling'] >= 1, 'with the slot full it stays in the traffic',
+           'woke %d, still patrolling %d' % (g['woke'], g['patrolling']))
+        ok(15 <= g['rise'] <= 25, 'and still adds one sighting of heat', 'rise %s' % g['rise'])
 
         pg.evaluate('() => window.__road.holdSpd(null)')
         ok(not errs, 'no page errors', errs[0][:120] if errs else '')
