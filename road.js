@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.24';
+window.ROAD_BUILD = '0.14.25';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -519,6 +519,9 @@ const LOST_AT = 12000;
    -------------------------------------------------------------------- */
 const SUPER_MPH  = 150;
 const SUPER_HOLD = 4;
+/* how far behind the player a dispatched Interceptor enters, in world units:
+   the radio cruiser's band, so it is close enough to be seen (RLG-248) */
+const SUPER_BACK = [3200, 4200];
 /* ---- ONE ENGAGEMENT, ONE TARGET, PERMANENTLY (RLG-173) -----------------
    Owner, 2026-09-08: "whenever a cop engages a target it continues to engage
    that target until that target either pulls over voluntarily, is forced to
@@ -10967,10 +10970,27 @@ function spawnSuper(){
      every time a super cruiser was due, which is why none ever appeared */
   /* the other spawners use the literal; LANES is not in scope here and
      referencing it threw every time a super cruiser was due */
-  const ln = rint(0, 3);
+  /* ---- CLOSE ENOUGH TO BE SEEN (owner, 2026-09-14, RLG-248) --------------
+     Owner: "when an interceptor is dispatched I never see it."
+
+     IT STARTED 9,000 TO 16,000 UNITS BACK, and that is too far for this car.
+     An Interceptor is dispatched only when the player holds 150mph or more, and
+     it is a 190mph car. So it closes on the player at 40mph at best, and at
+     nothing when the player drives faster. Traffic in between makes it lift. A
+     harness at a held 180mph saw fifteen dispatches in thirty seconds. Every one
+     stayed 8,000 to 33,000 units behind, every one was drawn zero pixels wide,
+     and most fell back past the 34,000 cull after a second or two.
+
+     SO IT ENTERS WHERE A RADIO CRUISER ENTERS, the band `spawnCop` uses, and in
+     a lane that is free there. The speed rule does not change: the car still
+     cannot out-run a supercar, which is the owner's point about it. Now the
+     player sees it arrive, and a player who is faster sees it drop back. */
+  let ln = rint(0, 3), tries = 0;
+  const zz = pos - rnd(SUPER_BACK[0], SUPER_BACK[1]);   /* comes up from behind */
+  while(tries++ < 8 && !laneFree(zz, ln, 1800)) ln = rint(0, 3);
+  lastCopDz = Math.round(zz - (pos + PLAYER_Z));
   cops.push({
-    z: (function(){ const zz = pos - rnd(9000, 16000);   /* comes up from behind */
-                    lastCopDz = Math.round(zz - (pos + PLAYER_Z)); return zz; })(),
+    z: zz,
     x: LANE_X[ln],
     spd: spd * 1.04 + 1200,
     wreck:0, ang:0, grace:0.8, cool:0, side:1,
@@ -25280,6 +25300,8 @@ function drawFinishBack(g, px, py, roadW){
    -------------------------------------------------------------------------- */
 /* the last cruiser the glass drew, in canvas pixels - debug only, see RLG-177 */
 let mirrorCopBox = null;
+/* every Interceptor the glass drew while `drawWatch` is on - debug only, RLG-248 */
+let mirrorSupers = [];
 function drawMirrorFull(mx, my, mw, mh){
   ctx.save();
   ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 5); ctx.clip();
@@ -26053,6 +26075,15 @@ function drawMirrorFull(mx, my, mw, mh){
            arrival fade, so it never matched its own literal value and an
            exact-colour count passed happily on the broken build. */
         mirrorCopBox = { x: x0, y: p1.y - fh, w: sw, h: fh };
+        /* and every INTERCEPTOR the glass drew, with its width, so a check can
+           say whether a dispatched one was ever large enough to see (RLG-248).
+           The forward view's ledger never sees a car behind the player. */
+        if(drawWatch && it.o.superc){
+          if(!it.o.__vid) it.o.__vid = ++drawVid;
+          mirrorSupers.push({ vid: it.o.__vid, dz: Math.round(it.o.z - pos),
+                              w: +sw.toFixed(1), mw: Math.round(mw) });
+          if(mirrorSupers.length > 2000) mirrorSupers.shift();
+        }
       }
       /* RESTORED ON BOTH WAYS OUT. This branch ends in a `continue`, so a single
          restore after the loop body would be skipped for every car that has a
@@ -29799,6 +29830,14 @@ requestAnimationFrame(frameLoop);
              phase:+phase().toFixed(3), wet:+wet.toFixed(3) };
   };
   API.mirrorCopBox = function(){ return mirrorCopBox; };
+  API.mirrorSupers = function(clear){ const out = mirrorSupers.slice();
+                                      if(clear) mirrorSupers = []; return out; };
+  /* the Interceptor's spawn band, so a check can put the old band back and watch
+     the defect return (RLG-248). Called with no arguments it only reads. */
+  API.superBack = function(near, far){
+    if(near > 0 && far >= near){ SUPER_BACK[0] = near; SUPER_BACK[1] = far; }
+    return SUPER_BACK.slice();
+  };
   API.mirrorEye = function(v){ if(v > 0) MIRROR_EYE = v; return MIRROR_EYE; };
   API.mirrorHorizon = function(v){ if(v > 0) MIRROR_HORIZON = v; return MIRROR_HORIZON; };
   /* the mirror's three weather numbers, live, so the density and the streak can

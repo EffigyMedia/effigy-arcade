@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-25"></a>
+## [0.14.25] - 2026-09-14
+- Fixed: **a dispatched Interceptor now enters close enough to see in the mirror.** It came in
+  9,000 to 16,000 units behind and was never drawn more than a smudge; it now enters where a
+  radio cruiser does, 3,200 to 4,200 behind. It is still a 190mph car, so a faster player still
+  pulls away from it. [RLG-248](../fragments/RLG-248.md)
+
 <a id="v0-14-24"></a>
 ## [0.14.24] - 2026-09-14
 - Removed: **the player can no longer unlock or drive the work vehicles** (cab, pickup, van, semi,
