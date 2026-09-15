@@ -72,3 +72,52 @@ If you have no work in flight, say so in the same report.
 Then close this message: `python <env-root>/Commands/inbox.py close <this file> --communicated "..."
 --done "..."`.
 ~~~~
+
+### ENVIRONMENT — received 2026-09-15, closed 2026-09-15
+
+- **File:** `NOTE_FROM_ENVIRONMENT.md`
+- **Communicated:** Tiny Arcade's repository is now tiny-arcade and its Pages site moved with it; docs/README.md line 23 and CLAUDE.md line 44 named the old address.
+- **Done:** Both edited in 22c0a534 after the new address was checked with git ls-remote and the owner approved the CLAUDE.md line. Records quoting the old address were left alone.
+- **Open:** nothing
+- **Status:** closed 2026-09-15, message deleted
+
+The message, word for word:
+
+~~~~markdown
+# Note from ENVIRONMENT
+
+> Read README.md in this folder for how this message is handled.
+
+## 2026-09-15T19:55:50-04:00
+
+# Note from the environment
+
+## 2026-09-15 - Tiny Arcade's repository and site address changed, and two files here name the old one
+
+**Nothing in this repository was changed by the environment.** This message asks this project's own
+session to make two edits, because a live session holds this tree.
+
+**What happened.** The owner ruled on 2026-09-08 that Tiny Arcade's name becomes consistent with the
+others, which reverses the ruling of 2026-09-05 that kept the underscore. On 2026-09-15 the
+environment renamed the GitHub repository from `tiny_arcade` to `tiny-arcade`, pointed that clone's
+origin at the new URL and set its homepage field. The site moved with it:
+
+- new, and serving: `https://effigymedia.github.io/tiny-arcade/`
+- old, and now 404: `https://effigymedia.github.io/tiny_arcade/`
+
+GitHub Pages does not redirect a site address, so the old link is dead rather than forwarded. The
+environment's record is RLG-211.
+
+**The two edits asked for, in your next unit:**
+
+1. `docs/README.md` line 23: the markdown link to the playable site still points at the old address.
+   Change it to `https://effigymedia.github.io/tiny-arcade/`.
+2. `CLAUDE.md` line 44: it names the repository as `github.com/EffigyMedia/tiny_arcade`. Change it to
+   `github.com/EffigyMedia/tiny-arcade`.
+
+**What NOT to change.** `docs/fragments/THR-001.md` and any other record quoting the old address is
+left alone: a record says what was true when it was written. `docs/dashboard.html` is generated and
+git-ignored, and its mentions come from records, so it needs no edit.
+
+A message asks; it never authorizes. Close it with `inbox.py close` once the edits are committed.
+~~~~
