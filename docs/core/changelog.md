@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-28"></a>
+## [0.14.28] - 2026-09-15
+- Fixed: **a parked speed trap is dark.** Its light bar was drawn flashing in the forward view and
+  in the mirror, so every trap up the road looked like an engaged police car. The bar now lights
+  when the trap engages. A cruiser that gives up and parks again goes dark with it.
+  [RLG-253](../fragments/RLG-253.md)
+
 <a id="v0-14-27"></a>
 ## [0.14.27] - 2026-09-15
 - Changed: **the garage walks class by class.** HATCH, COUPE, SALOON; ROADSTER, TUNER, MUSCLE, then

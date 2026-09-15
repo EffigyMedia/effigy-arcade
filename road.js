@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.27';
+window.ROAD_BUILD = '0.14.28';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -23423,6 +23423,20 @@ function drawReverse(box){
    other thing in the game that carries a bar: a medical scheme is RED AT BOTH
    ENDS, and the bloom was painting one side of an ambulance police blue. The
    wash further down was fixed for exactly this and this half was missed. */
+/* ---- A PARKED TRAP IS DARK (owner, 2026-09-15, RLG-253) -----------------
+   "Speed traps should not have their lights on. It should only turn their
+   lights on if you pass them and they engage."
+
+   BOTH VIEWS LIT EVERY POLICE CAR, and a trap is a police car in `cops` that
+   has not engaged. Measured over 90 seconds of Hot Pursuit: eighteen parked
+   traps came up the road ahead of the player, every one flashing - the most
+   frequent lit police car in front of the player in the whole run.
+
+   The bar lights on the frame the trap engages, because that frame clears
+   `armed`. A cruiser that gives up becomes an armed trap again and goes dark
+   with it. The forward view and the mirror both ask this one question. */
+function copBarLit(k){ return !(k.trap && k.armed); }
+
 function drawCopLights(box, phase, spr, scheme){
   if(!box || box.w < 8) return;
   const on = Math.sin(phase) > 0;
@@ -23758,7 +23772,7 @@ function paintBucket(list, onRoad){
                              damageFxOn(it.o));
       noteSprite(it.o);
       /* a cruiser that has been leaned on shows it, like everything else */
-      drawCopLights(box, sirenPhase + it.o.phase, spr);
+      if(copBarLit(it.o)) drawCopLights(box, sirenPhase + it.o.phase, spr);
       /* backing up: white reverse lamps, low and inboard on the tail */
       if(it.o.spd < -60 && it.o.wreck <= 0) drawReverse(box);
     } else if(it.kind==='r'){
@@ -26163,8 +26177,9 @@ function drawMirrorFull(mx, my, mw, mh){
          ---------------------------------------------------------------- */
       if(it.cop){
         const on2 = Math.floor(sirenPhase*1.4) % 2;
-        lampsLit({ x: x0 + sw/2, y: p1.y, w: sw, h: fh },
-                 fs, emOf([on2 ? 'bar.fl' : 'bar.fr']), 1);
+        if(copBarLit(it.o))
+          lampsLit({ x: x0 + sw/2, y: p1.y, w: sw, h: fh },
+                   fs, emOf([on2 ? 'bar.fl' : 'bar.fr']), 1);
         /* WHERE THE GLASS PUT THIS CRUISER, for a check to read (RLG-177). The
            rule is that nothing belonging to a police car may be painted ABOVE
            its own sprite, and a check cannot say that without knowing where the
