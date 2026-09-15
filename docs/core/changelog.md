@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-22"></a>
+## [0.14.22] - 2026-09-14
+- Changed: **a car you do not own shows only the arrows to another car and BACK in the garage.**
+  Paint, gearbox, modes, time, pursuit and DRIVE are gone on a locked car. The garage is pinned
+  to the top so the arrows stay in the same place for every car. [RLG-223](../fragments/RLG-223.md)
+
 <a id="v0-14-21"></a>
 ## [0.14.21] - 2026-09-14
 - Fixed: **the Interceptor's unlit emergency chevron stays on top of its brake chevrons** when the

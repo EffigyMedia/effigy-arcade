@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.21';
+window.ROAD_BUILD = '0.14.22';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -27351,17 +27351,67 @@ function showGarage(){
     garageEnd = 'front';
   }
   state = 'garage';
+  /* ---- A CAR YOU DO NOT OWN OFFERS ONLY THE WAY TO ANOTHER CAR (RLG-223) --
+     Owner, 2026-09-12: "If you don't have a car unlocked we don't wanna show
+     any options in the garage other than changing car."
+
+     SO A LOCKED CAR GETS THE TWO ARROWS AND BACK, AND NOTHING ELSE. Paint,
+     gearbox, stripes, work vehicles, entry class, mode, time, the clock, hot
+     pursuit, a fork's own buttons and DRIVE are all choices about a drive this
+     car cannot take. BACK stays because it leaves the garage rather than
+     setting anything in it.
+
+     THIS IS NOT RLG-115's GREYING, and the two do not disagree. MODE is greyed
+     on a van because the van IS drivable and the greying teaches a rule about
+     it. On a car you cannot drive at all there is no rule to teach: every
+     control is meaningless rather than unavailable, so it is absent. The card
+     already says LOCKED and how to earn the car, and nothing is added to say
+     why the controls are gone - the owner cuts that kind of caption.
+
+     The actions go with the buttons: a locked garage is handed only `prev`,
+     `next` and `back`, so a stale veil or a hardware press cannot reach a
+     setting whose button is not drawn. */
+  const locked = carLocked(optBody);
+  const picker = '<div class="gbox' + (locked ? ' pick' : '') + '">' +
+      '<button class="go ghost" data-act="prev">\u2039</button>' +
+      (locked ? '' :
+        '<button class="go ghost" data-act="box">GEARBOX \u00B7 <b>' +
+          (optManual ? 'MANUAL' : 'AUTO') + '</b></button>') +
+      '<button class="go ghost" data-act="next">\u203A</button>' +
+    '</div>';
+  /* ---- AND THE ARROWS DO NOT MOVE UNDER THE THUMB (owner, 2026-09-14) ----
+     A locked garage is shorter, so the menu sat about 100 px lower on a locked
+     car than on an owned one, and tapping › through the fleet moved the
+     button being tapped. The owner chose to keep the arrows still.
+
+     THE GARAGE IS PINNED TO THE TOP (`#veil:has(.gbox)` in each cabinet), and
+     a locked card is padded down to the line where the last OWNED car put its
+     arrows. That line is always known: `enforceCarRules` never lets the garage
+     open on a car you do not own, so a locked car is only ever reached by an
+     arrow from an owned one. It is measured rather than computed, because the
+     owned card's height depends on its note, its stats and its swatches. */
+  if(locked){
+    openVeil(
+      '<div class="eyebrow">CHOOSE YOUR CAR</div>' +
+      garageCard() + '<div class="gspace"></div>' + picker +
+      '<div class="gstack">' +
+        '<button class="go ghost" data-act="back">BACK</button>' +
+      '</div>',
+      { prev: () => cycleBody(-1), next: () => cycleBody(1), back: showTitle });
+    drawGarageCar();
+    const pk = veilBody.querySelector('.gbox'), sp = veilBody.querySelector('.gspace');
+    if(pk && sp && garagePickTop > 0){
+      const here = pk.getBoundingClientRect().top - veilBody.getBoundingClientRect().top;
+      sp.style.height = Math.max(0, garagePickTop - here) + 'px';
+    }
+    return;
+  }
   openVeil(
     '<div class="eyebrow">CHOOSE YOUR CAR</div>' +
     garageCard() +
     '<style>.swatches{--sw:' + paintChoices().length + '}</style>' +
     paintSwatches() +
-    '<div class="gbox">' +
-      '<button class="go ghost" data-act="prev">\u2039</button>' +
-      '<button class="go ghost" data-act="box">GEARBOX \u00B7 <b>' +
-        (optManual ? 'MANUAL' : 'AUTO') + '</b></button>' +
-      '<button class="go ghost" data-act="next">\u203A</button>' +
-    '</div>' +
+    picker +
     /* the run's SHAPE belongs with the car, not on the title card: both are
        choices about the drive you are about to take */
     '<div class="gstack">' +
@@ -27453,14 +27503,11 @@ function showGarage(){
       (playerIsPolice() ? '<div class="gnote">INTERCEPT IS A PURSUIT</div>' : '') +
       /* a fork can put its own buttons here — Motorsport adds QUALIFY */
       (CFG.garageButtons ? CFG.garageButtons() : '') +
-      /* THE SAME SHAPE RLG-115 SET for a mode a car cannot enter: greyed with
-         the reason given, not hidden. `disabled` is what stops the press, so
-         the rule holds even if the note is ever restyled away - and the action
-         below checks again, because a hardware back-press or a stale veil must
-         not be able to drive a car that has not been won. */
-      '<button class="go' + (carLocked(optBody) ? ' ghost shut' : '') + '"' +
-        (carLocked(optBody) ? ' disabled' : '') + ' data-act="drive">' +
-        (carLocked(optBody) ? 'LOCKED' : 'DRIVE') + '</button>' +
+      /* A LOCKED CAR NEVER REACHES THIS LINE - it returns above with no DRIVE
+         at all (RLG-223), which replaced a greyed LOCKED button here. The
+         action below still checks, because a hardware back-press or a stale
+         veil must not be able to drive a car that has not been won. */
+      '<button class="go" data-act="drive">DRIVE</button>' +
       '<button class="go ghost" data-act="back">BACK</button>' +
     '</div>',
     Object.assign({}, (CFG.garageActions ? CFG.garageActions(start) : {}), {
@@ -27541,7 +27588,11 @@ function showGarage(){
       back: showTitle
     }));
   drawGarageCar();
+  /* where an owned car puts its arrows, for a locked card to line up with */
+  const pk = veilBody.querySelector('.gbox');
+  if(pk) garagePickTop = pk.getBoundingClientRect().top - veilBody.getBoundingClientRect().top;
 }
+let garagePickTop = 0;
 /* ---- WHAT CLASS A CAR IS, ASKED IN ONE PLACE ------------------------------
    This table used to live inside `cycleBody`, where its only job was deciding
    which cars the garage would let you cycle onto. RLG-115 gives the classes a

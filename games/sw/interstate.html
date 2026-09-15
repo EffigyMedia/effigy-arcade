@@ -935,6 +935,11 @@ h1 u{text-decoration:none;display:block;font-size:.34em;letter-spacing:.26em;col
 .gbox .go{flex:1;border-radius:0;margin:0;border-right-width:0}
 .gbox .go:first-child{flex:0 0 46px;border-radius:3px 0 0 3px}
 .gbox .go:last-child{flex:0 0 46px;border-radius:0 3px 3px 0;border-right-width:1px}
+/* a locked car's row is the two arrows alone (RLG-223), so they share it */
+.gbox.pick .go:first-child,.gbox.pick .go:last-child{flex:1}
+/* the garage is pinned to the top, so the arrows stay put between an owned car
+   and a shorter locked one - road.js pads the locked card down to the same line */
+#veil:has(.gbox){align-content:start}
 /* the whole cluster reads as one control: no gaps, shared edges, and the
    DRIVE button closes it off at the bottom */
 .gstack{display:flex;flex-direction:column;margin-top:0}
