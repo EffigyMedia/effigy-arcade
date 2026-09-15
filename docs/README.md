@@ -20,7 +20,7 @@ Each one is being built out into a full multi-scene game rather than filled in.
 
 ## Not to be confused with
 
-**[Tiny Arcade](https://effigymedia.github.io/tiny_arcade/)** — nineteen small machines on three
+**[Tiny Arcade](https://effigymedia.github.io/tiny-arcade/)** — nineteen small machines on three
 shelves, and the project this one grew out of. It is complete, parked, and still playable. Four of
 its cabinets came here to be taken further; nothing done here changes it.
 

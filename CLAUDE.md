@@ -41,7 +41,7 @@ because it is a frozen record written before the rename; the in-code citations t
 
 **This is not a version of Tiny Arcade.** That project is nineteen small machines sorted onto three
 shelves, and it is **parked, complete, and still playable** at
-`github.com/EffigyMedia/tiny_arcade`. Nothing here changes it, and a fix made here does not travel
+`github.com/EffigyMedia/tiny-arcade`. Nothing here changes it, and a fix made here does not travel
 back to it. This project inverts its premise: few machines, each deep.
 
 **Where this is going, and there are two routes.** Each game is intended to leave this arcade when
