@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.25';
+window.ROAD_BUILD = '0.14.26';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -463,6 +463,31 @@ const STOP_SPD  = 0.20;   /* under this fraction of MAX_SPD it is going nowhere 
 const STOP_HOLD = 2.5;    /* seconds it has to be held there */
 const STOP_NEAR = 3200;   /* and the player has to be this close, up the road */
 const STOP_WIDE = 0.55;   /* and roughly in front, not two lanes over */
+/* ---- AND THE SAME STOP, MADE ON THE PLAYER (owner, 2026-09-14, RLG-247) --
+   Owner: "If they get in front of you they force you to a stop unless you can
+   get around them (get enough X distance from them). It's the inverse of how it
+   works in intercept."
+
+   THE OWNER SET THE SHAPE AND LEFT TWO NUMBERS OPEN: how much lateral distance
+   is "around", and what the stop does to the run. These are the defaults, and
+   each is REVERSIBLE and the owner's to settle on a device:
+
+     wide    0.55 - Intercept's STOP_WIDE, so "around" is the same distance in
+             both directions of the same manoeuvre.
+     near    3,200 - Intercept's STOP_NEAR: how far up the road the cruiser may
+             be and still count as in front.
+     spd     0.20 - Intercept's STOP_SPD: under this the player is stopped.
+     decel   how hard a lined-up cruiser in front brakes, as a fraction of
+             MAX_SPD per second. 0.35 takes 200mph to nothing in about three
+             seconds, which is a hard stop that a thumb can still react to.
+
+   WHAT THE STOP DOES IS A BUST. It adds to the existing BUSTED count, so the
+   three-second hold, the bar on screen and the result are the ones a pursuit
+   already has. No new outcome is invented.
+
+   THEY ARE THEIR OWN NUMBERS, not references to Intercept's. The two modes
+   start equal by choice, and tuning one must not silently retune the other. */
+const PURSUIT_STOP = { wide: 0.55, near: 3200, spd: 0.20, decel: 0.35 };
 /* ---- HOW MANY WINGMEN THE SHIFT TRIES TO KEEP (RLG-203) ----------------
    Owner: "maybe we should always try to have at least two cruisers as wingmen
    in this mode." A floor rather than a cap, and "try" is the owner's own hedge.
@@ -10864,9 +10889,29 @@ function trapWatch(dt){
        second and the check simply missed it */
     /* and it does not catch one of its own either - see the patrol above. The
        loop under this one still watches every other car that goes past. */
-    if(!playerIsPolice() && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT){
+    /* ---- AND ONLY ONCE YOU ARE PAST IT (owner, 2026-09-14, RLG-247) --------
+       Owner: "there is def cop cars still spawning ahead and waiting on me to
+       catch up to them already engaged. They need to only come from behind."
+
+       THIS WAS THOSE CARS. `dz` above is a DISTANCE, not a direction, so the
+       7,000-unit window opened 7,000 units BEFORE the trap as well as after.
+       The trap then became a moving cruiser, still up the road, at 0.55 of the
+       player's speed - an engaged car the player caught up to. Measured over 80
+       seconds at four stars: ten of eighteen traps engaged 6,900 to 7,100 units
+       ahead, and every other source entered from behind.
+
+       RLG-157 already put this gate on the loop below, for a trap that sees a
+       speeding NPC. This is the same gate on the player's branch: the trap acts
+       when it is at or behind the player's car, which is when the player has
+       passed it. The window behind stays 7,000 units, for the reason above. */
+    const passed = k.z <= pos + PLAYER_Z;
+    if(!playerIsPolice() && passed && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT){
       k.armed = false; k.trap = false; k.grace = 0.35;
-      k.spd = spd * 0.55;
+      /* the figure every other cruiser starts a chase at (see the woken patrol
+         above). It was 0.55 of the player's speed, which only worked while the
+         trap engaged from AHEAD: from behind, a car at half your speed is a car
+         in the mirror for a moment and then gone (RLG-247). */
+      k.spd = spd * 0.95 + 1800;
       snd.warnCop();
       flashWarn('SPEED TRAP');
       addHeat(HEAT_SEEN, 'trap');
@@ -19327,7 +19372,12 @@ function step(dt){
        chasing its centre — one either side, one across the front — so the
        stop reads as being surrounded rather than tailgated. */
     if(boxing){
-      k.box = k.box === undefined ? (cops.indexOf(k) % 3) : k.box;
+      /* ---- THE FRONT STATION IS FILLED FIRST (owner, 2026-09-14, RLG-247) --
+         Owner: the police "need to try and get around you". The stations were
+         dealt in the order left, right, front, so a lone cruiser - or two - only
+         ever flanked, and the front was taken only by a third car. Dealt front
+         first, the first cruiser to reach the player goes for the front. */
+      k.box = k.box === undefined ? [2, 0, 1][cops.indexOf(k) % 3] : k.box;
       const off = k.box === 0 ? -0.42 : k.box === 1 ? 0.42 : 0;
       aim = clamp(playerX + off, -0.92, 0.92);
       /* the one in front sits just ahead; the flankers sit level */
@@ -19350,6 +19400,30 @@ function step(dt){
          ------------------------------------------------------------- */
       if(k.box === 2 && !stopped && dz > 300)
         k.spd = Math.min(k.spd, spd * 0.90);
+      /* ---- AND LINED UP IN FRONT, IT FORCES THE STOP (RLG-247) -----------
+         The rolling block above slows the player a tenth at a time, and a
+         player who keeps the throttle just follows it. The owner asked for a
+         cruiser in front to "force you to a stop unless you can get around".
+
+         SO ONCE IT IS AHEAD AND IN THE PLAYER'S LINE, it brakes at its own
+         rate - PURSUIT_STOP.decel - from the speed it had, whatever the player
+         does. `forceSpd` carries that speed from frame to frame, because the
+         station speed is rebuilt from the player's own every frame and would
+         otherwise undo the braking.
+
+         GETTING AROUND IT RELEASES IT. At PURSUIT_STOP.wide or more of lateral
+         distance the cruiser is not in the player's line, `forceSpd` is
+         dropped, and it goes back to holding station and trying to get across
+         the front again. Any cruiser in front can do this, not only the one on
+         the front station: a flanker that has got ahead is in front too. */
+      const inLine = Math.abs(k.x - playerX) < PURSUIT_STOP.wide;
+      if(!playerIsPolice() && dz > 300 && dz < PURSUIT_STOP.near && inLine){
+        const from = k.forceSpd === undefined ? Math.min(k.spd, spd) : k.forceSpd;
+        k.forceSpd = Math.max(0, from - MAX_SPD * PURSUIT_STOP.decel * dt);
+        k.spd = Math.min(k.spd, k.forceSpd);
+      } else {
+        k.forceSpd = undefined;
+      }
       /* ---- AND A CRUISER IS STILL A CRUISER (RLG-042, RLG-055) ---------
          The station speed above is built from the PLAYER'S speed, and that was
          harmless while the box only ever formed at a standstill - `spd` was
@@ -19797,6 +19871,25 @@ function step(dt){
            -------------------------------------------------------------- */
         if(k.trap || k.onPlayer === false) continue;
         if(Math.abs(k.z - pz) < 2600){ boxed = true; break; }
+      }
+    }
+    /* ---- OR SLOWED BY ONE LINED UP IN FRONT (owner, 2026-09-14, RLG-247) --
+       The inverse of Intercept's stop: the cruiser is ahead of the player,
+       within PURSUIT_STOP.near, in the player's line, and the player is under
+       PURSUIT_STOP.spd. That is the stop the cruiser in front forces, and it
+       feeds the same three-second count as being boxed at a crawl, so there is
+       one bar and one result. Getting PURSUIT_STOP.wide across ends it.
+
+       It is a separate test because it is a different situation. The crawl
+       test above counts a cruiser BESIDE or BEHIND a nearly stopped car; this
+       one counts only a cruiser IN FRONT, and it starts at a higher speed,
+       because a car being braked to a stop is caught before it stands still. */
+    if(!boxed && !optEasy && !held && !playerIsPolice() && spd < MAX_SPD * PURSUIT_STOP.spd){
+      for(const k of cops){
+        if(k.wreck > 0 || k.trap || k.onPlayer === false) continue;
+        const ahead = k.z - pz;
+        if(ahead > 0 && ahead < PURSUIT_STOP.near &&
+           Math.abs(k.x - playerX) < PURSUIT_STOP.wide){ boxed = true; break; }
       }
     }
     if(boxed){
@@ -30103,6 +30196,9 @@ requestAnimationFrame(frameLoop);
              superMph:SUPER_MPH, superHold:SUPER_HOLD, held:spdHold !== null };
   };
   API.earnSupers = function(v){ supersEarned = !!v; return supersEarned; };
+  /* the forced stop's numbers, and where the player's car is across the road, so
+     a check reads the thresholds rather than carrying its own copy (RLG-247) */
+  API.pursuitStop = function(){ return Object.assign({ playerX: playerX, bustT: bustT }, PURSUIT_STOP); };
   /* take every cruiser off the road, so a check for what happens with NOBODY on you
      can be exactly that. There is no in-game way to clear them and a harness that
      waits for them to leave is waiting on the thing it is measuring. */

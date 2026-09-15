@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-26"></a>
+## [0.14.26] - 2026-09-14
+- Changed: **in Hot Pursuit the police come only from behind, and a cruiser in front forces the
+  stop.** A speed trap no longer engages until you are past it, so no chasing cruiser waits up the
+  road. The first cruiser to reach you goes for the front. Lined up in front of you it brakes, and
+  if you drop under a fifth of top speed with it there you are busted, unless you get across by
+  0.55 of the road. Those numbers are first defaults, taken from Intercept, and are the owner's to
+  tune. [RLG-247](../fragments/RLG-247.md)
+
 <a id="v0-14-25"></a>
 ## [0.14.25] - 2026-09-14
 - Fixed: **a dispatched Interceptor now enters close enough to see in the mirror.** It came in
