@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-27"></a>
+## [0.14.27] - 2026-09-15
+- Changed: **the garage walks class by class.** HATCH, COUPE, SALOON; ROADSTER, TUNER, MUSCLE, then
+  the CRUISER; STALLION, MATADOR, CREST, then the SUPERCRUISER; VECTOR, APEX, COMET; then back to
+  HATCH. A new save opens on the HATCH. [RLG-250](../fragments/RLG-250.md)
+
 <a id="v0-14-26"></a>
 ## [0.14.26] - 2026-09-14
 - Changed: **in Hot Pursuit the police come only from behind, and a cruiser in front forces the

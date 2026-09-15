@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.26';
+window.ROAD_BUILD = '0.14.27';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -3848,8 +3848,12 @@ function bodyStat(k){ return (BODY[optBody] || BODY['MATADOR'])[k]; }
    THIS IS NOT A MIGRATION RISK. The chosen car is persisted BY KEY and a save
    carries its own; this is only what the game holds before a save says
    otherwise ([[RLG-197]]).
+
+   AND IT IS THE HATCH NOW (owner, 2026-09-15, RLG-250): "A new save opens on
+   hatch." The HATCH is the first car in the garage's order, so a new player
+   opens on the first car of the lineup.
    ------------------------------------------------------------------------- */
-let optBody = 'SALOON';
+let optBody = 'HATCH';
 
 
 /* ===========================================================================
@@ -28011,6 +28015,29 @@ function playableBodies(){
   return garageBodies().filter(k => !carLocked(k));
 }
 
+/* ---- THE ORDER THE ARROWS WALK (owner, 2026-09-15, RLG-250) ---------------
+   Owner: start at production, then "the sports cars ... the supercar ... the
+   formula cars", and "The cruiser and interceptor should be shown at the end of
+   their group". The production order is the owner's: HATCH, COUPE, SALOON.
+
+   IT IS A DECLARED LIST, NOT AN ORDER OF BODY. The garage listed BODY in the
+   order its records happen to be written, which put the supercars first and a
+   production car in the middle. A body that is not in this list still appears,
+   after every body that is, so a new record cannot vanish from the garage - but
+   it lands at the end, where it is obvious, until it is given a place here.
+
+   Each police car ends the class it races in: CRUISER is `raceClass:'sports'`
+   and SUPERCRUISER is `raceClass:'super'`. */
+const GARAGE_ORDER = [
+  'HATCH', 'COUPE', 'SALOON',
+  'ROADSTER', 'TUNER', 'MUSCLE', 'CRUISER',
+  'STALLION', 'MATADOR', 'CREST', 'SUPERCRUISER',
+  'VECTOR', 'APEX', 'COMET'
+];
+function garageRank(k){
+  const i = GARAGE_ORDER.indexOf(k);
+  return i < 0 ? GARAGE_ORDER.length : i;
+}
 function garageBodies(){
   /* ---- A LOCKED CAR IS LISTED AS A SILHOUETTE (owner, 2026-09-08) -------
      Every car in the garage fleet appears, and `carLocked` is what the card
@@ -28024,7 +28051,9 @@ function garageBodies(){
      pick. `carLocked` never read the debug switches, so UNLOCK ALL RACERS and
      UNLOCK POLICE did not open a car before this change either.
      ------------------------------------------------------------------- */
-  let ks = garageFleet();
+  /* in the garage's own order (RLG-250). The sort is stable, so bodies outside
+     GARAGE_ORDER keep their BODY order among themselves at the end. */
+  let ks = garageFleet().sort((a, b) => garageRank(a) - garageRank(b));
   /* ---- A CIRCUIT GARAGE LISTS ONLY WHAT CAN RACE (RLG-115) --------------
      Owner, 2026-09-05, choosing between four shapes: production and utility
      vehicles are "not offered at all in Motorsport". Interstate keeps them and
