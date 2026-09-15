@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-23"></a>
+## [0.14.23] - 2026-09-14
+- Changed: **every car in the garage is drawn at one scale, so a car's size on the card is its
+  size on the road.** Cars stand on one floor line. They are smaller on the card than before,
+  because the pickup, the tallest ordinary body, sets the scale. [RLG-246](../fragments/RLG-246.md)
+
 <a id="v0-14-22"></a>
 ## [0.14.22] - 2026-09-14
 - Changed: **a car you do not own shows only the arrows to another car and BACK in the garage.**

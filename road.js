@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.22';
+window.ROAD_BUILD = '0.14.23';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -27093,11 +27093,67 @@ function garageFit(){
      fleet's front and rear drawings do not agree in either dimension, and no
      amount of arithmetic on this card can make two different shapes the same.
      ------------------------------------------------------------------- */
+  /* ---- ONE SCALE FOR THE WHOLE FLEET (owner, 2026-09-14, RLG-246) --------
+     Owner: "All the cars shown in the garage need to be the same relative
+     size. Do not normalize the sizes."
+
+     EVERYTHING ABOVE FITTED EACH CAR TO THE CARD, which is normalizing: a
+     roadster and a pickup filled the same box. `sc` is kept as the answer to
+     "how big would this car be if it filled the card", because the harnesses
+     that read `garageFit` still ask it, but it no longer draws anything.
+
+     WHAT IS DRAWN IS THE ROAD'S OWN SCALE. On the road every player car's
+     sprite canvas is drawn PLAYER_W wide, and the mirror draws a face across
+     the same width, so one sprite pixel is worth `1 / img.width` of a car
+     width at both ends. `garageUnit` is that car width in card pixels, the same
+     for every car, so each end's scale is `garageUnit() / img.width` and a car
+     is as much bigger than another on the card as it is on the road.
+
+     BOTH ENDS STAND ON THE TALLER END'S FLOOR, so flipping the card neither
+     resizes the car nor moves the floor. A winged car is taller from behind
+     because the wing is there - which is now what the card says. */
+  const unit = garageUnit();
+  if(unit > 0){
+    const scales = pair.map(img => unit / img.width);
+    const drawnH = Math.max.apply(null, boxes.map((b, i) => b.h * scales[i]));
+    return { boxes: boxes, sc: sc, scales: scales,
+             drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
+  }
   const drawnH = maxH * sc;
   const wide = GARAGE_WIDE - GARAGE_PAD*2;
   const scales = boxes.map(b => Math.min(drawnH / b.h, wide / b.w));
   return { boxes: boxes, sc: sc, scales: scales,
            drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
+}
+/* ---- ONE CAR WIDTH, IN CARD PIXELS, FOR EVERY CAR (RLG-246) ---------------
+   The largest the shared scale can be. Every car's widest end must fit the
+   card's width, and every ordinary car's taller end must fit the ordinary
+   card's depth. An OVERSIZED body (`big` on the record, RLG-087) is left out
+   of the depth bound: it already gets the taller card, and letting a semi set
+   the depth would shrink every car to the size a semi forces.
+
+   Measured once across the fleet and cached, the way `garageReserve` is. It
+   loads each body in turn and puts the player's own car back, so a caller in
+   the middle of its own walk over the fleet gets its car back too. */
+let garageUnitCache = 0;
+function garageUnit(){
+  if(garageUnitCache) return garageUnitCache;
+  const was = optBody;
+  let unit = Infinity;
+  for(const k of Object.keys(BODY)){
+    if(BODY[k].npc) continue;
+    optBody = k; buildPlayer();
+    for(const img of [SP.player, SP.playerFront]){
+      if(!img) continue;
+      const b = spriteInk(img);
+      if(!b.w || !b.h) continue;
+      unit = Math.min(unit, (GARAGE_WIDE - GARAGE_PAD*2) * img.width / b.w);
+      if(!isBigBody(k)) unit = Math.min(unit, (GARAGE_DEEP - GARAGE_TOP) * img.width / b.h);
+    }
+  }
+  optBody = was; buildPlayer();
+  garageUnitCache = isFinite(unit) ? unit : 0;
+  return garageUnitCache;
 }
 /* ---- THE CARD IS ONE HEIGHT, AND IT IS THE TALLEST CAR'S (RLG-087) ----
    Owner, 2026-08-30: set the car render to the same static height, using the
@@ -27219,7 +27275,13 @@ function drawGarageCar(){
      so the two are the same height; and the BOTTOM is what is placed, so they
      stand on one line whatever they are.
      ------------------------------------------------------------------- */
-  const FLOOR = TOP + (fit.drawnH || 0);
+  /* THE FLOOR IS THE CARD'S, NOT THE CAR'S (RLG-246). Every car used to fill
+     the card, so `TOP + drawnH` was one line for the whole fleet. At one shared
+     scale a roadster is shorter than a saloon, and that expression would hang
+     each car from the ceiling again. The card is the tallest car of its tier
+     plus six, so the line six above its bottom is where the tallest car stands
+     and every shorter car stands there too. */
+  const FLOOR = CARD_H - 6;
   /* ---- A CAR NEEDS SOMETHING TO STAND ON BEFORE ITS TYRES CAN SHOW -------
      Owner, 2026-09-09 ([[RLG-182]]): "we need to show a little bit of the
      tires on the bottom."
@@ -30455,9 +30517,14 @@ requestAnimationFrame(frameLoop);
       const f = garageFit();
       if(!f){ out[k] = null; continue; }
       const b = f.boxes, sc = f.sc, scs = f.scales || [sc, sc];
-      const floor = GARAGE_TOP + (f.drawnH || 0);
+      /* the card's floor, as `drawGarageCar` places it (RLG-246) */
+      const floor = garageCardHeight(k) - 6;
+      const imgs = [SP.player, SP.playerFront];
       const row = (box, i) => ({
         inkH: box.h, inkW: box.w,
+        /* the sprite canvas's own width: on the road it is drawn one car wide,
+           so a check can ask whether the card keeps that scale (RLG-246) */
+        spriteW: imgs[i] ? imgs[i].width : null,
         drawnH: +(box.h * scs[i]).toFixed(1),
         /* both ends stand on one floor now (RLG-182), so the top is what moves */
         top: +(floor - box.h * scs[i]).toFixed(1),
