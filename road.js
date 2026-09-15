@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.30';
+window.ROAD_BUILD = '0.14.31';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -19496,7 +19496,19 @@ function step(dt){
     }
     if(dodge) aim = clamp(aim + dodge * skill, -1.02, 1.02);
 
-    k.x += clamp(aim - k.x, -1.15*dt, 1.15*dt);
+    /* ---- A PARKED TRAP DOES NOT STEER (owner, 2026-09-15, RLG-253) --------
+       Owner: "They spawn in the middle of the road and they follow my lateral
+       position as if they are stopped in the middle of the road."
+
+       THIS LINE WAS THE ROGUE CRUISER. `aim` is the player's X, and nothing
+       here asked whether the car was parked. RLG-173 guarded the speed and the
+       box steering and missed this, so a trap kept its speed of zero and slid off
+       the verge into the road, then held the player's lane while standing still.
+       Measured: spawned at -1.16, reached the centre line, and moved 2.16 across
+       the road in six seconds of lane changes. It had been reported since
+       RLG-157 as police appearing ahead, and with its bar lit it read as an
+       engaged car the player caught up to. */
+    if(!parked) k.x += clamp(aim - k.x, -1.15*dt, 1.15*dt);
     k.phase += dt*7;
 
     /* into the barrier at the edge: the heaviest thing that can happen to it */

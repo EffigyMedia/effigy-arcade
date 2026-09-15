@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-31"></a>
+## [0.14.31] - 2026-09-15
+- Fixed: **the rogue police cars ahead.** A parked speed trap was steered toward the player's lane
+  while it stood still, so it slid off the verge into the middle of the road and followed the
+  player from side to side. A parked trap now stays on its verge. [RLG-253](../fragments/RLG-253.md)
+
 <a id="v0-14-30"></a>
 ## [0.14.30] - 2026-09-15
 - Added (temporary test): **SPEED TRAPS ENGAGE** in OPTIONS > DEBUG, OFF by default. A trap you pass
