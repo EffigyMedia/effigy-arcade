@@ -144,6 +144,11 @@ with `thread.py set --next`. Then run `python <env-root>/Commands/unit.py ready`
 ready for the clear only when it prints `READY FOR CLEAR`. The thread points at units; only the intent
 for the next session is written out in words.
 
+**Record the work as it happens.** Write the fragment, the step evidence and the runway entry while
+the detail is live, so that at a clear the thread only points at the records and adds what is not in
+them yet. A session that recorded as it went has a cheap, accurate clear. A session that recorded
+nothing has to reconstruct its work under pressure, and loses detail.
+
 **Sessions reach each other through inboxes.** Every line has one: `<env-root>/Environment/docs/inbox/`
 for the environment and `docs/inbox/` in each project. To tell another line something, run
 `python <env-root>/Commands/inbox.py send --to <a path inside that line> --from <this project> --file
