@@ -13,14 +13,14 @@ cruiser update, `k.x += clamp(aim - k.x, ...)`, had no `parked` guard, and `aim`
 a trap slid off the verge into the road and then tracked the player's lane while standing still.
 RLG-173 guarded the box steering against parked traps and missed this line.
 
-THE CHECK. Hot Pursuit, traffic parked away, traps set not to engage so the car stays a trap for the
-whole watch. One trap is spawned by the road's own spawner and held 6,000 units ahead of the player's
+THE CHECK. Hot Pursuit, traffic parked away. The trap is held ahead of the player, so it is never passed and
+stays a trap for the whole watch. One trap is spawned by the road's own spawner and held 6,000 units ahead of the player's
 car. The player is moved between the left lane and the right lane every 1.5 seconds for 6 seconds.
 Every frame the trap's X is read.
 
   VERGE    the trap is always at least 1.1 from the centre - on the grass, off the road.
   STILL    it moves less than 0.02 across the whole watch.
-  AWAKE    control: with engagement ON, a trap the player passes over the limit leaves its post and
+  AWAKE    control: a trap the player passes over the limit leaves its post and
            does steer. Without this, a build in which no cruiser could steer at all would pass.
 
 WHAT THIS CANNOT SAY. Whether anything else on the road still looks like a rogue cruiser on the
@@ -108,9 +108,9 @@ def main():
         until(pg, '() => window.__road.startLine().left <= 0', timeout=10000)
 
         # ---- VERGE and STILL ---------------------------------------------------------------
-        # Engagement off, where the switch exists, so the car cannot stop being a trap mid-watch.
+        # The trap is held AHEAD of the player's car, so the player never passes it and it stays a trap.
         pg.evaluate('() => { const R = window.__road; R.setTimed(false); R.heat(3);'
-                    ' if(R.trapsEngage) R.trapsEngage(false); R.parkTraffic(9, 60000); R.copsClear();'
+                    ' R.parkTraffic(9, 60000); R.copsClear();'
                     ' R.spawnTrap(); R.holdSpd(0.5 * R.MAX_SPD); }')
         x0 = pg.evaluate('() => window.__road.cops()[0].x')
         got = pg.evaluate(WATCH, {'secs': 6, 'hold': 6000})
@@ -125,7 +125,7 @@ def main():
            'it moved %.2f' % got['spread'])
 
         # ---- AWAKE -------------------------------------------------------------------------
-        pg.evaluate('() => { const R = window.__road; if(R.trapsEngage) R.trapsEngage(true);'
+        pg.evaluate('() => { const R = window.__road;'
                     ' R.parkTraffic(9, 60000); R.copsClear(); R.spawnTrap();'
                     ' const k = R.cops()[0]; k.z = R.startLine().pos + R.PLAYER_Z - 300;'
                     ' R.holdSpd(0.9 * R.MAX_SPD); }')

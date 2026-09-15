@@ -124,8 +124,7 @@ def main():
         pg.wait_for_timeout(200)
         pg.click('[data-act="drive"]')
         until(pg, '() => window.__road.startLine().left <= 0', timeout=10000)
-        pg.evaluate('() => { const R = window.__road; R.setTimed(false);'
-                    ' if(R.trapsEngage) R.trapsEngage(true); }')
+        pg.evaluate('() => window.__road.setTimed(false)')
 
         def arm(name, **a):
             a.setdefault('secs', 2)

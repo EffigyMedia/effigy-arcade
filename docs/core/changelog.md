@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-34"></a>
+## [0.14.34] - 2026-09-15
+- Removed: **the SPEED TRAPS ENGAGE debug switch.** The owner confirmed on the device that the
+  stopped police car in the road is gone, so the test it was built for is over.
+  [RLG-253](../fragments/RLG-253.md)
+
 <a id="v0-14-33"></a>
 ## [0.14.33] - 2026-09-15
 - Changed: **a speed trap engages a car only if that car has a free slot.** Every car keeps its own

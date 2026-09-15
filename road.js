@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.33';
+window.ROAD_BUILD = '0.14.34';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -726,22 +726,6 @@ let optTime = 0;
    opened every class on the ladder with it. The third switch, for the work
    vehicles, went with RLG-249. */
 let dbgRacers = false, dbgPolice = false;
-/* ---- SPEED TRAPS DO NOT ENGAGE THE PLAYER - A TEST (owner, 2026-09-15) ----
-   "Why don't we just stop speed traps from engaging the player completely as a
-   temporary test to see if it still happens or not?" - RLG-253, the engaged
-   cruisers the owner keeps seeing ahead.
-
-   The test showed the traps were NOT the source by engaging: the cars appeared
-   with the switch either way. They were parked traps steered into the road
-   (fixed in 0.14.31). The owner ruled that once that was solved, traps go back
-   to pulling out and chasing, so the default is to ENGAGE again (0.14.32). The
-   debug menu can still turn it off. It is not saved. A trap still pulls over a
-   speeding NPC either way.
-
-   REMOVE THIS when the owner confirms RLG-253 on the device. The harnesses that
-   need a trap to engage the player set it through `API.trapsEngage(true)`. */
-const TRAPS_IGNORE_PLAYER_DEFAULT = false;
-let dbgTrapsOff = TRAPS_IGNORE_PLAYER_DEFAULT;
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -10946,11 +10930,10 @@ function trapWatch(dt){
        same pass is asking about.
 
        A pass at 170 still earns the Interceptors either way (RLG-030) - the trap
-       saw it - and the RLG-253 test switch, `dbgTrapsOff`, now simply closes
-       every slot the player has. */
+       saw it. */
     if(caught && !k.clocked){
       k.clocked = true;
-      const open = !dbgTrapsOff && slotOpen(null);
+      const open = slotOpen(null);
       addHeat(HEAT_SEEN, 'trap');
       if(spd > MAX_SPD * (170/200)) supersEarned = true;
       if(open){
@@ -28740,13 +28723,10 @@ function showDebug(){
         state(dbgRacers) + '</b></button>' +
       '<button class="go ghost" data-act="dp">UNLOCK POLICE \u00b7 <b>' +
         state(dbgPolice) + '</b></button>' +
-      '<button class="go ghost" data-act="dt">SPEED TRAPS ENGAGE \u00b7 <b>' +
-        state(!dbgTrapsOff) + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
       dp:   () => { dbgPolice  = !dbgPolice;  showDebug(); },
-      dt:   () => { dbgTrapsOff = !dbgTrapsOff; showDebug(); },
       back: () => showOptions() });
 }
 
@@ -31186,7 +31166,6 @@ requestAnimationFrame(frameLoop);
   API.spawnTrap = function(){ spawnTrap(); return cops.filter(k => k.trap).length; };
   /* the RLG-253 test switch, for a harness that needs a trap to engage the
      player. No argument reads it. */
-  API.trapsEngage = function(on){ if(on !== undefined) dbgTrapsOff = !on; return !dbgTrapsOff; };
   /* RLG-256's instrument. `who` is 'player', or an index into the traffic
      array. It reads the same four functions the trap decides with, so a check
      sees the numbers the trap saw. `pts` sets a traffic car's heat. */
