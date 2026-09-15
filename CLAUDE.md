@@ -138,6 +138,12 @@ codebase's own shorthand.
 session. **Checkpointing is the unit boundary**, which fires the context clear on its own. Do not
 write handoff documents and do not create a `docs/milestones/` folder.
 
+**Readiness for a clear is automatic.** When the clear arms, stop your own work while there is room:
+finish or roll back the step, close or abandon the unit, commit, and write the next session's intent
+with `thread.py set --next`. Then run `python <env-root>/Commands/unit.py ready`, and say you are
+ready for the clear only when it prints `READY FOR CLEAR`. The thread points at units; only the intent
+for the next session is written out in words.
+
 **Sessions reach each other through inboxes.** Every line has one: `<env-root>/Environment/docs/inbox/`
 for the environment and `docs/inbox/` in each project. To tell another line something, run
 `python <env-root>/Commands/inbox.py send --to <a path inside that line> --from <this project> --file
