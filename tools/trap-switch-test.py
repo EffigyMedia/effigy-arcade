@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TRAP SWITCH - by default a speed trap does not engage the player, and the debug switch restores it.
+"""TRAP SWITCH - a speed trap engages the player by default, and the debug switch stops it.
 
     .venv/Scripts/python tools/trap-switch-test.py
     .venv/Scripts/python tools/trap-switch-test.py --root <an older checkout> --expect-fail
@@ -9,13 +9,13 @@ as a temporary test to see if it still happens or not?"
 
 THIS TEST IS TEMPORARY WITH THE SWITCH. Delete it when RLG-253 is settled and the switch goes.
 
-  MENU     on a fresh boot, OPTIONS > DEBUG shows SPEED TRAPS ENGAGE · OFF. Tapping it shows ON and
-           the engine reads ON; tapping again shows OFF. The button is what drives the switch.
-  DEFAULT  with the switch as it boots, three traps from the road's own spawner are driven past at
+  MENU     on a fresh boot, OPTIONS > DEBUG shows SPEED TRAPS ENGAGE · ON (0.14.32; it booted OFF in
+           0.14.30 and 0.14.31). Tapping it shows OFF and the engine reads OFF; tapping again shows ON.
+  OFF      with the switch OFF, three traps from the road's own spawner are driven past at
            90 % of top speed on a road with the traffic parked away. None engages, but each pass
            still adds the trap's heat once and still earns the Interceptors, so the test build
            changes nothing about the police except the trap turning into a cruiser.
-  RESTORED with the switch ON, the same drive engages at least two of three, and each one engages at
+  DEFAULT  with the switch as it boots, the same drive engages at least two of three, and each one engages at
            or behind the player's car (the RLG-247 rule is still there).
 
 WHAT THIS CANNOT SAY. Whether the owner still sees engaged cruisers ahead with traps switched off is
@@ -90,7 +90,7 @@ def main():
     httpd = socketserver.TCPServer(('127.0.0.1', 0), functools.partial(Q, directory=str(root)))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     port = httpd.socket.getsockname()[1]
-    print('trap-switch  .  speed traps ignore the player by default, and the debug switch restores them')
+    print('trap-switch  .  speed traps engage the player by default, and the debug switch stops them')
     print('      serving %s' % root)
     with sync_playwright() as p:
         b = launch_chromium(p, headless=True, args=['--mute-audio'])
@@ -110,17 +110,17 @@ def main():
         tap('opts')
         tap('debug')
         first = pg.evaluate(LABEL)
-        ok(first is not None and first.endswith('OFF'), 'the debug menu boots with SPEED TRAPS ENGAGE OFF',
+        ok(first is not None and first.endswith('ON'), 'the debug menu boots with SPEED TRAPS ENGAGE ON',
            'label %r' % first)
         tap('dt')
         on = pg.evaluate(LABEL)
         engine_on = pg.evaluate('() => window.__road.trapsEngage ? window.__road.trapsEngage() : null')
-        ok(on is not None and on.endswith('ON') and engine_on is True, 'tapping it shows ON, and the engine reads ON',
+        ok(on is not None and on.endswith('OFF') and engine_on is False, 'tapping it shows OFF, and the engine reads OFF',
            'label %r, engine %r' % (on, engine_on))
         tap('dt')
         off = pg.evaluate(LABEL)
         engine_off = pg.evaluate('() => window.__road.trapsEngage ? window.__road.trapsEngage() : null')
-        ok(off is not None and off.endswith('OFF') and engine_off is False, 'tapping again shows OFF',
+        ok(off is not None and off.endswith('ON') and engine_off is True, 'tapping again shows ON',
            'label %r, engine %r' % (off, engine_off))
         tap('back')
         tap('back')
@@ -147,11 +147,12 @@ def main():
             pg.evaluate('() => window.__road.holdSpd(null)')
             return got, passes
 
-        # ---- DEFAULT ---------------------------------------------------------------------
+        # ---- OFF -------------------------------------------------------------------------
+        pg.evaluate('() => window.__road.trapsEngage && window.__road.trapsEngage(false)')
         none, passes = drive_past()
-        print('      DEFAULT   engaged at dz %s; each pass (heat points gained, Interceptors earned) %s'
+        print('      OFF       engaged at dz %s; each pass (heat points gained, Interceptors earned) %s'
               % (none, passes))
-        ok(not none, 'with the switch as it boots, no trap driven past at speed engages the player',
+        ok(not none, 'with the switch OFF, no trap driven past at speed engages the player',
            '%d engaged' % len(none))
         # HEAT_SEEN is 20 points. Measured per pass: 10 to 29, because heat cools during the drive
         # and the road lays traps of its own as well. The band is there to catch a trap that
@@ -161,11 +162,20 @@ def main():
         ok(all(e for _, e in passes), 'and a pass over 170 still earns the Interceptors',
            'earned per pass: %s' % [e for _, e in passes])
 
-        # ---- RESTORED --------------------------------------------------------------------
-        pg.evaluate('() => window.__road.trapsEngage && window.__road.trapsEngage(true)')
+        # ---- DEFAULT: a fresh boot, so the switch is as the product ships it ------------------
+        from harness import reboot  # noqa: E402
+        reboot(pg)
+        pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
+        pg.click('[data-act="play"]')
+        pg.wait_for_timeout(400)
+        pg.click('[data-act="chase"]')
+        pg.wait_for_timeout(200)
+        pg.click('[data-act="drive"]')
+        until(pg, '() => window.__road.startLine().left <= 0', timeout=10000)
+        pg.evaluate('() => window.__road.setTimed(false)')
         some, _ = drive_past()
-        print('      RESTORED  engaged at dz %s (positive is up the road)' % some)
-        ok(len(some) >= 2, 'with the switch ON, traps driven past at speed engage', '%d engaged' % len(some))
+        print('      DEFAULT   engaged at dz %s (positive is up the road)' % some)
+        ok(len(some) >= 2, 'with the switch as it boots, traps driven past at speed engage', '%d engaged' % len(some))
         ok(some and max(some) <= 400, 'and each engages at or behind the player',
            'the furthest ahead was %s' % (max(some) if some else None))
 
@@ -179,7 +189,7 @@ def main():
     if fails:
         print('FAILED: ' + '; '.join(fails))
         return 1
-    print('speed traps ignore the player by default, and the debug switch restores them')
+    print('speed traps engage the player by default, and the debug switch stops them')
     return 0
 
 

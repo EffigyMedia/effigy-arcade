@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.31';
+window.ROAD_BUILD = '0.14.32';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -725,14 +725,16 @@ let dbgRacers = false, dbgPolice = false;
    temporary test to see if it still happens or not?" - RLG-253, the engaged
    cruisers the owner keeps seeing ahead.
 
-   ON BY DEFAULT, because the test is the point of this build and a switch the
-   owner must remember to set on every launch is a test that does not run. The
-   debug menu turns it off, so the owner can compare both in one build. Like the
-   other two switches it is not saved. A trap still pulls over a speeding NPC.
+   The test showed the traps were NOT the source by engaging: the cars appeared
+   with the switch either way. They were parked traps steered into the road
+   (fixed in 0.14.31). The owner ruled that once that was solved, traps go back
+   to pulling out and chasing, so the default is to ENGAGE again (0.14.32). The
+   debug menu can still turn it off. It is not saved. A trap still pulls over a
+   speeding NPC either way.
 
-   REMOVE THIS when RLG-253 is settled. The harnesses that need a trap to engage
-   the player set it off through `API.trapsEngage(true)`. */
-const TRAPS_IGNORE_PLAYER_DEFAULT = true;
+   REMOVE THIS when the owner confirms RLG-253 on the device. The harnesses that
+   need a trap to engage the player set it through `API.trapsEngage(true)`. */
+const TRAPS_IGNORE_PLAYER_DEFAULT = false;
 let dbgTrapsOff = TRAPS_IGNORE_PLAYER_DEFAULT;
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
