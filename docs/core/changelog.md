@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-30"></a>
+## [0.14.30] - 2026-09-15
+- Added (temporary test): **SPEED TRAPS ENGAGE** in OPTIONS > DEBUG, OFF by default. A trap you pass
+  still adds its heat and still earns the Interceptors, but it stays parked instead of chasing you.
+  Turn it ON to compare. Expect fewer police overall while it is OFF, because the radio sends
+  cruisers only once one is already on you. [RLG-253](../fragments/RLG-253.md)
+
 <a id="v0-14-29"></a>
 ## [0.14.29] - 2026-09-15
 - Fixed: **the debug switches open cars again.** UNLOCK ALL RACERS and UNLOCK POLICE in OPTIONS >

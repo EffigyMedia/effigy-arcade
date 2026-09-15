@@ -142,6 +142,10 @@ def main():
         wide = pg.evaluate('() => window.__road.pursuitStop ? window.__road.pursuitStop().wide : 0.55')
 
         # ---- TRAP ------------------------------------------------------------------------
+        # RLG-253's test build boots with traps ignoring the player. This arm is about a trap
+        # that engages the player, so it turns them back on. The guard lets --root run an older
+        # checkout that has no switch.
+        pg.evaluate('() => window.__road.trapsEngage && window.__road.trapsEngage(true)')
         engaged = []
         for _ in range(3):
             pg.evaluate('() => { const R = window.__road; R.holdSpd(null); R.copsClear();'

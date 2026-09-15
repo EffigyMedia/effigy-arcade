@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.29';
+window.ROAD_BUILD = '0.14.30';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -720,6 +720,20 @@ let optTime = 0;
    opened every class on the ladder with it. The third switch, for the work
    vehicles, went with RLG-249. */
 let dbgRacers = false, dbgPolice = false;
+/* ---- SPEED TRAPS DO NOT ENGAGE THE PLAYER - A TEST (owner, 2026-09-15) ----
+   "Why don't we just stop speed traps from engaging the player completely as a
+   temporary test to see if it still happens or not?" - RLG-253, the engaged
+   cruisers the owner keeps seeing ahead.
+
+   ON BY DEFAULT, because the test is the point of this build and a switch the
+   owner must remember to set on every launch is a test that does not run. The
+   debug menu turns it off, so the owner can compare both in one build. Like the
+   other two switches it is not saved. A trap still pulls over a speeding NPC.
+
+   REMOVE THIS when RLG-253 is settled. The harnesses that need a trap to engage
+   the player set it off through `API.trapsEngage(true)`. */
+const TRAPS_IGNORE_PLAYER_DEFAULT = true;
+let dbgTrapsOff = TRAPS_IGNORE_PLAYER_DEFAULT;
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -10909,7 +10923,22 @@ function trapWatch(dt){
        when it is at or behind the player's car, which is when the player has
        passed it. The window behind stays 7,000 units, for the reason above. */
     const passed = k.z <= pos + PLAYER_Z;
-    if(!playerIsPolice() && passed && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT){
+    const caught = !playerIsPolice() && passed && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT;
+    /* ---- THE RLG-253 TEST: IT CLOCKS YOU AND STAYS PARKED ----------------
+       With `dbgTrapsOff` the trap does everything a pass does EXCEPT become a
+       moving cruiser: the heat still goes on and a pass at 170 still earns the
+       Interceptors. Without that, the test build would also have lost every
+       Interceptor and the trap's heat, and a change in what the owner sees could
+       not be put down to the traps alone. Once per trap, because it stays armed
+       and would otherwise add heat on every frame of the window. It still pulls
+       over a speeding NPC in the loop below. */
+    if(caught && dbgTrapsOff){
+      if(!k.clocked){
+        k.clocked = true;
+        addHeat(HEAT_SEEN, 'trap');
+        if(spd > MAX_SPD * (170/200)) supersEarned = true;
+      }
+    } else if(caught){
       k.armed = false; k.trap = false; k.grace = 0.35;
       /* the figure every other cruiser starts a chase at (see the woken patrol
          above). It was 0.55 of the player's speed, which only worked while the
@@ -28602,10 +28631,13 @@ function showDebug(){
         state(dbgRacers) + '</b></button>' +
       '<button class="go ghost" data-act="dp">UNLOCK POLICE \u00b7 <b>' +
         state(dbgPolice) + '</b></button>' +
+      '<button class="go ghost" data-act="dt">SPEED TRAPS ENGAGE \u00b7 <b>' +
+        state(!dbgTrapsOff) + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
       dp:   () => { dbgPolice  = !dbgPolice;  showDebug(); },
+      dt:   () => { dbgTrapsOff = !dbgTrapsOff; showDebug(); },
       back: () => showOptions() });
 }
 
@@ -31043,6 +31075,9 @@ requestAnimationFrame(frameLoop);
      to 52,000 units ahead, exactly as the road does, and this only calls it.
      -------------------------------------------------------------------- */
   API.spawnTrap = function(){ spawnTrap(); return cops.filter(k => k.trap).length; };
+  /* the RLG-253 test switch, for a harness that needs a trap to engage the
+     player. No argument reads it. */
+  API.trapsEngage = function(on){ if(on !== undefined) dbgTrapsOff = !on; return !dbgTrapsOff; };
   /* what every police car on the road is doing, WITH ITS POST AND ITS TARGET.
      `copCensus` counts traps and `copState` reports damage; neither can answer
      whether a trap is still standing where it was put, which is the whole of

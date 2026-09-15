@@ -321,6 +321,12 @@ def main():
         # are counted.
         page.evaluate("() => { const R = window.__road; R.copsClear();"
                       " R.clearCopOrigins(); }")
+        # RLG-253'S TEST BUILD BOOTS WITH TRAPS IGNORING THE PLAYER, and the radio sends a
+        # cruiser only when one is already on the player - so with traps off this watch saw
+        # 0 and 3 cruisers where the build before saw 5 and 3. This watch is about where the
+        # police come from in normal play, so it turns traps back on. The guard lets an older
+        # checkout run it.
+        page.evaluate("() => window.__road.trapsEngage && window.__road.trapsEngage(true)")
         page.evaluate("() => { const R = window.__road; R.setTimed(false);"
                       " window.__ah = setInterval(() => { R.heat(4);"
                       " R.setSpd(0.72 * R.MAX_SPD); }, 200); }")
