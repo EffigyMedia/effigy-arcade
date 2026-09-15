@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.28';
+window.ROAD_BUILD = '0.14.29';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -28008,15 +28008,25 @@ const UNLOCK_HOW = {
    ---------------------------------------------------------------------- */
 const PLAYER_BARRED = { utility:1 };
 
-/* whether this car is still to be won, ignoring the debug overrides - those
-   open a car WITHOUT writing the flag, and a car opened for testing should
-   look like a car you own */
+/* whether this car is still to be won */
 function carLocked(k){
   const need = BODY_CLASS[k];
   if(!need) return false;
   /* a class the player starts in is never locked (RLG-213) */
   if(OPEN_FROM_THE_START[need]) return false;
   if(unlocked(need)) return false;
+  /* ---- AND THE DEBUG SWITCHES OPEN IT (owner, 2026-09-15) -----------------
+     "The debug toggles we have in our debug menu no longer work."
+
+     NOTHING READ THEM. OPTIONS > DEBUG flipped `dbgRacers` and `dbgPolice`, and
+     this function decided alone, so every car stayed locked with both switches
+     on. RLG-249 recorded that this function never read them.
+
+     They are read HERE and not in `unlocked`, so a car opened for testing looks
+     and drives like a car you own while the save still says it is locked. The
+     reward screens ask `unlocked`, so they can still be earned afterwards. A
+     police car is one with `force`; every other car is a racer. */
+  if(BODY[k] && BODY[k].force ? dbgPolice : dbgRacers) return false;
   return true;
 }
 /* how it is won, or '' for the two that do not say */

@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-29"></a>
+## [0.14.29] - 2026-09-15
+- Fixed: **the debug switches open cars again.** UNLOCK ALL RACERS and UNLOCK POLICE in OPTIONS >
+  DEBUG changed their label and nothing else, so every locked car stayed locked. They now open the
+  cars for driving without marking them unlocked in the save, and a reload still turns them off.
+  [RLG-255](../fragments/RLG-255.md)
+
 <a id="v0-14-28"></a>
 ## [0.14.28] - 2026-09-15
 - Fixed: **a parked speed trap is dark.** Its light bar was drawn flashing in the forward view and
