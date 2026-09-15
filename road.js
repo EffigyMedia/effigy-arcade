@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.32';
+window.ROAD_BUILD = '0.14.33';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -586,6 +586,12 @@ const COP_GIVE_UP_T = 5.0;
    -------------------------------------------------------------------- */
 const TRAPS_BASE = 4;          /* parked and waiting at no heat at all */
 const TRAPS_MAX  = 8;          /* and the most the road ever holds */
+/* ---- HOW MANY POLICE ONE CAR CAN HOLD (owner, 2026-09-15, RLG-256) --------
+   A trap engages a car only into an open slot. Ordinary cruisers: stars + 1,
+   "no max". Interceptors: their own two, separate from those. */
+const TRAP_SLOTS_BASE     = 1;  /* at no stars */
+const TRAP_SLOTS_PER_STAR = 1;  /* and one more for every star */
+const SUPER_SLOTS         = 2;  /* Interceptors on one car */
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
@@ -10901,6 +10907,7 @@ function patrolWatch(){
 
 /* a trap watches everything that goes past, not just you */
 function trapWatch(dt){
+  coolCarHeat(dt);
   for(const k of cops){
     if(!k.trap || !k.armed || k.wreck > 0) continue;
     /* the player */
@@ -10926,36 +10933,32 @@ function trapWatch(dt){
        passed it. The window behind stays 7,000 units, for the reason above. */
     const passed = k.z <= pos + PLAYER_Z;
     const caught = !playerIsPolice() && passed && dz < 7000 && spd > MAX_SPD * SPEED_LIMIT;
-    /* ---- THE RLG-253 TEST: IT CLOCKS YOU AND STAYS PARKED ----------------
-       With `dbgTrapsOff` the trap does everything a pass does EXCEPT become a
-       moving cruiser: the heat still goes on and a pass at 170 still earns the
-       Interceptors. Without that, the test build would also have lost every
-       Interceptor and the trap's heat, and a change in what the owner sees could
-       not be put down to the traps alone. Once per trap, because it stays armed
-       and would otherwise add heat on every frame of the window. It still pulls
-       over a speeding NPC in the loop below. */
-    if(caught && dbgTrapsOff){
-      if(!k.clocked){
-        k.clocked = true;
-        addHeat(HEAT_SEEN, 'trap');
-        if(spd > MAX_SPD * (170/200)) supersEarned = true;
-      }
-    } else if(caught){
-      k.armed = false; k.trap = false; k.grace = 0.35;
-      /* the figure every other cruiser starts a chase at (see the woken patrol
-         above). It was 0.55 of the player's speed, which only worked while the
-         trap engaged from AHEAD: from behind, a car at half your speed is a car
-         in the mirror for a moment and then gone (RLG-247). */
-      k.spd = spd * 0.95 + 1800;
-      snd.warnCop();
-      flashWarn('SPEED TRAP');
+    /* ---- ONLY INTO AN OPEN SLOT (owner, 2026-09-15, RLG-256) ----------------
+       "We want speed traps to only actively pull out and engage if the car in
+       question has open engagement slots per its heat level, otherwise it just
+       adds to its heat level and waits for another car with open slots. This
+       means racers in the lead don't pull ALL the traps."
+
+       ONCE PER CAR PER TRAP. The trap stays armed when it does not engage, and
+       the window is 7,000 units long, so without `clocked` it would add heat on
+       every frame of it. The slot is read BEFORE the heat goes on: the heat a
+       pass adds can raise a star, and that star must not open the slot the
+       same pass is asking about.
+
+       A pass at 170 still earns the Interceptors either way (RLG-030) - the trap
+       saw it - and the RLG-253 test switch, `dbgTrapsOff`, now simply closes
+       every slot the player has. */
+    if(caught && !k.clocked){
+      k.clocked = true;
+      const open = !dbgTrapsOff && slotOpen(null);
       addHeat(HEAT_SEEN, 'trap');
-      /* ---- AND HOW FAST YOU WENT PAST IT IS REMEMBERED (RLG-030) ------
-         Owner: a super cruiser is dispatched only at heat three and above AND
-         after you have gone past a trap at 170. So the trap records the speed
-         it caught you at, and nothing else has to reconstruct it later. */
       if(spd > MAX_SPD * (170/200)) supersEarned = true;
-      continue;
+      if(open){
+        trapEngage(k, null);
+        snd.warnCop();
+        flashWarn('SPEED TRAP');
+        continue;
+      }
     }
     /* and anything else on the road — a speeding driver gets pulled too. It asked
        for the `rogue` flag, which no longer exists; a driver who CHOOSES to
@@ -10987,7 +10990,29 @@ function trapWatch(dt){
        ahead. That is a real loss to the living road RLG-046 was for, and it is
        the price of nothing arriving from in front.
        ---------------------------------------------------------------- */
-    if(k.z <= pos + PLAYER_Z)
+    if(k.z <= pos + PLAYER_Z){
+    /* ---- AND A RACER IS CLOCKED LIKE ANYBODY ELSE (RLG-256) ----------------
+       This loop read `traffic` only, so a rival went past a trap for nothing.
+       The owner's slot rule names racers - "racers in the lead don't pull ALL
+       the traps" - so a racer over the limit is a candidate here, and the slot
+       is what stops the leader taking every trap on the road. */
+    const clocked = k.clockedCars || (k.clockedCars = []);
+    const consider = (c, cs) => {
+      if(clocked.indexOf(c) >= 0) return false;
+      if(Math.abs(k.z - c.z) > 2200) return false;
+      if(!(cs > MAX_SPD * SPEED_LIMIT)) return false;
+      clocked.push(c);
+      const open = slotOpen(c);
+      addCarHeat(c, HEAT_SEEN);
+      if(open) trapEngage(k, c);
+      return open;
+    };
+    let took = false;
+    for(const r of racers){
+      if(r.out || r.wreck > 0 || !isFinite(r.z)) continue;
+      if(consider(r, r.spd || 0)){ took = true; break; }
+    }
+    if(!took)
     for(const c of traffic){
       /* ---- AND NEVER AN AMBULANCE ON A CALL (owner, 2026-09-07) ---------
          "It should go without saying that the police will not try to engage an
@@ -11007,14 +11032,80 @@ function trapWatch(dt){
          ---------------------------------------------------------------- */
       if(c.emergency || c.patrol) continue;
       if(!(c.mind >= SPEEDER)) continue;
-      if(Math.abs(k.z - c.z) > 2200) continue;
-      if((c.spd || c.cruise || 0) > MAX_SPD * SPEED_LIMIT){
-        k.armed = false; k.trap = false; k.grace = 0.6;
-        k.spd = (c.spd || c.cruise) * 0.6;
-        k.tz = c.z; k.tx = c.x; k.onPlayer = false;
-        break;
-      }
+      if(consider(c, c.spd || c.cruise || 0)) break;
     }
+    }
+  }
+}
+
+/* ---- ENGAGEMENT SLOTS (owner, 2026-09-15, RLG-256) ---------------------------
+   Every car a trap can catch - the player, a racer, a speeding NPC - has its own
+   heat, and its heat decides how many ordinary cruisers may be on it: stars + 1,
+   with no ceiling. Interceptors have their own two, in `superWatch`.
+
+   `null` IS THE PLAYER, as it is in `k.tgt`. The player's heat is `heatPts`
+   and has its own earning and cooling; everybody else carries `heatPts` on the
+   car and cools in `coolCarHeat`, on the same clock and at the same rate. Only
+   the player's stars are drawn. */
+function carStars(o){
+  return o === null ? heat : Math.min(5, Math.floor((o.heatPts || 0) / PTS_PER_STAR));
+}
+function carSlots(o){ return TRAP_SLOTS_BASE + TRAP_SLOTS_PER_STAR * carStars(o); }
+/* the ordinary cruisers on a car now. A fresh radio cruiser has no `onPlayer`
+   yet and is sent for the player (RLG-173), so for the player it is anything
+   not working somebody else; for anybody else it is the committed target. */
+function cruisersOn(o){
+  let n = 0;
+  for(const k of cops){
+    if(k.wreck > 0 || k.trap || k.superc) continue;
+    if(o === null ? k.onPlayer !== false : k.tgt === o) n++;
+  }
+  return n;
+}
+function slotOpen(o){ return cruisersOn(o) < carSlots(o); }
+function addCarHeat(o, n){
+  if(o === null){ addHeat(n, 'trap'); return; }
+  if(optEasy) return;
+  o.heatPts = clamp((o.heatPts || 0) + n, 0, HEAT_MAX);
+  o.heatCoolT = 0;
+}
+/* the same rule the player's heat cools by: nothing comes off while a cruiser
+   is on the car, and after COOL_GRACE clear of them it sheds a star every
+   HEAT_COOL seconds */
+function coolCarHeat(dt){
+  const cool = (o) => {
+    if(!(o.heatPts > 0)) return;
+    let on = false;
+    for(const k of cops) if(k.wreck <= 0 && !k.trap && k.tgt === o){ on = true; break; }
+    if(on){ o.heatCoolT = 0; return; }
+    o.heatCoolT = (o.heatCoolT || 0) + dt;
+    if(o.heatCoolT > COOL_GRACE)
+      o.heatPts = Math.max(0, o.heatPts - (PTS_PER_STAR / HEAT_COOL) * dt);
+  };
+  for(const r of racers) cool(r);
+  for(const c of traffic) cool(c);
+}
+/* A trap leaves its post COMMITTED to the car that woke it. Before RLG-256 it
+   left uncommitted and its first target search could take a different car,
+   which would put a cruiser in somebody else's slot. `o` is null for the
+   player. The speeds are the ones each branch always used. */
+function trapEngage(k, o){
+  k.armed = false; k.trap = false;
+  k.engaged = true; k.commits = (k.commits || 0) + 1;
+  if(o === null){
+    k.grace = 0.35;
+    /* the figure every other cruiser starts a chase at (see the woken patrol
+       above). It was 0.55 of the player's speed, which only worked while the
+       trap engaged from AHEAD: from behind, a car at half your speed is a car
+       in the mirror for a moment and then gone (RLG-247). */
+    k.spd = spd * 0.95 + 1800;
+    k.tgt = null; k.onPlayer = true;
+    k.tz = pos + PLAYER_Z; k.tx = playerX; k.tSpd = spd;
+  } else {
+    k.grace = 0.6;
+    k.spd = (o.spd || o.cruise || 0) * 0.6;
+    k.tgt = o; k.onPlayer = false;
+    k.tz = o.z; k.tx = o.x; k.tSpd = o.spd || 0;
   }
 }
 
@@ -11036,7 +11127,9 @@ function superWatch(dt){
   const fast = spd > MAX_SPD * (SUPER_MPH/200);
   fastFor = fast ? fastFor + dt : 0;
   if(!optEasy && heat >= 3 && supersEarned && fastFor > SUPER_HOLD){
-    const want = Math.min(4, Math.ceil(heat / 1.5));
+    /* two slots for Interceptors, separate from the cruisers' (RLG-256). It
+       was up to four. */
+    const want = Math.min(SUPER_SLOTS, Math.ceil(heat / 1.5));
     const have = cops.filter(k => k.superc && k.wreck <= 0).length;
     if(have < want){
       spawnSuper();
@@ -19267,6 +19360,8 @@ function step(dt){
         k.engaged = false; k.giveUp = 0; k.tgt = undefined;
         k.tz = undefined; k.tx = undefined; k.tSpd = undefined; k.onPlayer = undefined;
         k.trap = true; k.armed = true; k.boxing = false; k.station = -1;
+        /* a fresh trap: it has clocked nobody at its new post (RLG-256) */
+        k.clocked = false; k.clockedCars = null;
         /* back on whichever verge it is nearer, facing the traffic, engine off */
         k.side = k.x < 0 ? -1 : 1;
         k.x = k.side * 1.16;
@@ -31092,6 +31187,39 @@ requestAnimationFrame(frameLoop);
   /* the RLG-253 test switch, for a harness that needs a trap to engage the
      player. No argument reads it. */
   API.trapsEngage = function(on){ if(on !== undefined) dbgTrapsOff = !on; return !dbgTrapsOff; };
+  /* RLG-256's instrument. `who` is 'player', or an index into the traffic
+     array. It reads the same four functions the trap decides with, so a check
+     sees the numbers the trap saw. `pts` sets a traffic car's heat. */
+  /* who is 'player', 'tag:<name>' for a car tagged with 	agTraffic, or an
+     index. An index is only good on the frame it is read: the traffic array is
+     reordered as the road runs. */
+  const carFor = (who) => who === 'player' ? null
+    : (typeof who === 'string' && who.indexOf('tag:') === 0)
+      ? traffic.find(c => c.__tag === who.slice(4))
+      : traffic[who];
+  API.tagTraffic = function(i, name){ const c = traffic[i]; if(!c) return null; c.__tag = name; return name; };
+  API.slots = function(who, pts){
+    const o = carFor(who);
+    if(o === undefined) return null;
+    if(o !== null && pts !== undefined){ o.heatPts = pts; o.heatCoolT = 0; }
+    return { stars: carStars(o), slots: carSlots(o), on: cruisersOn(o),
+             pts: Math.round(o === null ? heatPts : (o.heatPts || 0)) };
+  };
+  API.trafficSpeed = function(i, v){
+    const c = carFor(i); if(!c) return null;
+    c.spd = v; c.cruise = v; return c.spd;
+  };
+  /* a cruiser committed to a car, for staging a full set of slots */
+  API.commitCop = function(who, dz){
+    const o = carFor(who);
+    if(o === undefined) return 0;
+    const z = (o === null ? pos + PLAYER_Z : o.z) + (dz === undefined ? -3000 : dz);
+    cops.push({ z, x: o === null ? playerX : o.x, spd: o === null ? spd : (o.spd || 0),
+                wreck:0, ang:0, grace:0, cool:1, side:1, w:0.27, len:400, phase:0, dmg:0,
+                from:'test', engaged:true, commits:1,
+                tgt: o, onPlayer: o === null });
+    return cops.length;
+  };
   /* what every police car on the road is doing, WITH ITS POST AND ITS TARGET.
      `copCensus` counts traps and `copState` reports damage; neither can answer
      whether a trap is still standing where it was put, which is the whole of

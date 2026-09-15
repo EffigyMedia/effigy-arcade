@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-33"></a>
+## [0.14.33] - 2026-09-15
+- Changed: **a speed trap engages a car only if that car has a free slot.** Every car keeps its own
+  heat, and each star gives it one more slot for a cruiser (stars + 1). A trap whose car is full adds
+  heat to that car and waits for the next one, so the race leader cannot pull every trap. Racers are
+  now clocked by traps too, and Interceptors are limited to 2 per car. [RLG-256](../fragments/RLG-256.md)
+
 <a id="v0-14-32"></a>
 ## [0.14.32] - 2026-09-15
 - Changed: **speed traps chase you again.** With the rogue trap fixed, SPEED TRAPS ENGAGE in
