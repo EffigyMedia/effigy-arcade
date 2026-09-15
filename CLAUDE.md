@@ -134,6 +134,11 @@ repeat what was done and why it mattered, from your reply alone? If not, the pur
 missing. Owner-decided 2026-08-28, after several sessions of reports written entirely in this
 codebase's own shorthand.
 
+**Ask the owner questions in question form, never as a list in chat.** When you need the owner to
+decide or answer something, pose it with the question tool, one question per decision, each with its
+options and your recommendation. Do not end a reply with several questions in prose. Owner-decided
+2026-09-15: question form lets the owner take each question in turn.
+
 **Re-entry is the thread.** `python <env-root>/Commands/thread.py show` — read it first in every
 session. **Checkpointing is the unit boundary**, which fires the context clear on its own. Do not
 write handoff documents and do not create a `docs/milestones/` folder.
