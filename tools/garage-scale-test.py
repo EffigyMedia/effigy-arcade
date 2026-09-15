@@ -21,8 +21,8 @@ build that was drawing at one scale.
                    Card pixels are read off the canvas, so rounding to whole pixels is the tolerance.
     fits           no car's ink touches the card's left or right edge, so one scale clipped nothing.
 
-Oversized bodies (the `big` tier) are left out: they get a taller card by RLG-087, and the width check
-still covers them only if they are in the garage.
+Every garage car is measured. The oversized `big` tier that was left out went with RLG-249, because the
+work vehicles it held are no longer in the garage.
 
 Exit code 0 if every check passes, 1 otherwise.
 """
@@ -81,12 +81,11 @@ def main():
         page.click('[data-act="play"]')
         page.wait_for_selector('#veil:not(.hidden) [data-act="back"]', timeout=5000)
         ends = page.evaluate("() => window.__road.carEnds()")
-        big = page.evaluate("() => window.__road.garageFits().big")
         bodies = page.evaluate("() => window.__road.garageBodies()")
         rows, clipped = [], []
         for k in bodies:
             e = ends.get(k)
-            if big.get(k) or not e or not e['front'] or not e['front'].get('spriteW'):
+            if not e or not e['front'] or not e['front'].get('spriteW'):
                 continue
             page.evaluate("(k) => { const R = window.__road; R.setBody(k); R.showGarage(); }", k)
             page.wait_for_timeout(150)

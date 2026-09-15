@@ -156,9 +156,11 @@ def main():
         # leave the rule with no check at all, and the rule is the whole ruling.
         ctx, page = boot_with(b, port, '{"utility":true}')
         have = listed(page)
-        shut = [k for k in MERGED if k not in have]
-        res.ok(not shut, 'the utility flag opens the whole class',
-               'still missing: %s' % ', '.join(shut))
+        # RLG-249 (owner, 2026-09-14): the class is no longer the player's at all, so the
+        # flag that once opened it must open NOTHING now.
+        got = [k for k in MERGED if k in have]
+        res.ok(not got, 'the utility flag opens NOTHING now (RLG-249)',
+               'still offered: %s' % ', '.join(got))
         ctx.close()
 
         ctx, page = boot_with(b, port, '{"traffic":true}')

@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-24"></a>
+## [0.14.24] - 2026-09-14
+- Removed: **the player can no longer unlock or drive the work vehicles** (cab, pickup, van, semi,
+  ambulance). They stay on the road as traffic. The WORK VEHICLES garage toggle and the debug
+  switch for them are gone. The garage card is one height, set by the tallest remaining car, so
+  every car on it is a little larger. A save that had a work vehicle selected opens on a car the
+  player owns. [RLG-249](../fragments/RLG-249.md)
+
 <a id="v0-14-23"></a>
 ## [0.14.23] - 2026-09-14
 - Changed: **every car in the garage is drawn at one scale, so a car's size on the card is its

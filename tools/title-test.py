@@ -206,36 +206,30 @@ def main():
         # It moved between 79 and 90 px across the cars a player starts with - small, which
         # is the complaint rather than a defence of it: a large change reads as a transition
         # and a small one reads as the page failing to hold still.
+        # RLG-249 made it ONE size again: the oversized tier held only the work vehicles,
+        # and those left the garage.
         fits = page.evaluate('() => window.__probe.road.garageFits()')
         each = {k: v for k, v in fits['each'].items() if v}
-        big = {k for k in each if fits['big'].get(k)}
-        small = {k for k in each if k not in big}
-        res.check(bool(big) and bool(small),
-                  'the fleet has both ordinary cars and oversized ones',
-                  'big=%s' % sorted(big))
-        want_s = max(each[k] for k in small)
-        want_b = max(each[k] for k in big) if big else want_s
-        print('      ordinary cars want up to %d px (%s), the big ones up to %d px (%s)'
-              % (want_s, max(small, key=lambda k: each[k]),
-                 want_b, max(big, key=lambda k: each[k]) if big else '-'))
-        print('      reserved: %d for the ordinary cars, %d for the big ones'
-              % (fits['reserved']['small'], fits['reserved']['big']))
-        # EXACTLY the tallest of its own tier, not merely big enough. A reservation with
-        # slack over every car would satisfy a covers-them-all check while wasting the
-        # difference on all of them - which is the fault the single tier had.
-        res.check(fits['reserved']['small'] == want_s,
-                  'the ordinary cars reserve exactly their own tallest',
-                  '%d reserved where %d was needed' % (fits['reserved']['small'], want_s))
-        res.check(fits['reserved']['big'] == want_b,
-                  'and the big ones reserve exactly theirs',
-                  '%d reserved where %d was needed' % (fits['reserved']['big'], want_b))
-        # AND THE TIERS ARE WORTH HAVING. If the biggest ordinary car were as tall as the
-        # lorry there would be nothing to separate, and this check would be theatre.
-        res.check(fits['reserved']['big'] > fits['reserved']['small'],
-                  'and the two tiers are actually different sizes',
-                  'both are %d' % fits['reserved']['small'])
+        want = max(each.values())
+        print('      the tallest garage car wants %d px (%s); reserved %d'
+              % (want, max(each, key=lambda k: each[k]), fits['reserved']))
+        # EXACTLY the tallest, not merely big enough. A reservation with slack over every
+        # car would satisfy a covers-them-all check while wasting the difference on all of
+        # them - which is the buffer the owner asked to remove.
+        res.check(fits['reserved'] == want,
+                  'the card reserves exactly the tallest garage car',
+                  '%d reserved where %d was needed' % (fits['reserved'], want))
+        # AND NO CAR IS TALLER THAN THE CARD'S DEPTH. The shared scale is bound by the depth
+        # and by the width, so the card is at most the depth plus its 6 px floor. Which of
+        # the two binds is printed, because it decides whether the tallest car fills the depth.
+        deep = fits['deep']
+        print('      card depth %d px: the %s binds the shared scale'
+              % (deep, 'depth' if want >= deep + 6 - 1 else 'width'))
+        res.check(want <= deep + 6,
+                  'and no car is taller than the card depth',
+                  'tallest %d px against a %d px card depth' % (want, deep))
 
-        # and the drawn card holds still while the car is an ordinary one
+        # and the drawn card holds still between cars
         heights = []
         for _ in range(4):
             h = page.evaluate("""() => {
@@ -249,14 +243,14 @@ def main():
                 break
             nxt.click()
             page.wait_for_timeout(240)
-        print('      the drawn card across four ordinary cars: %s' % heights)
+        print('      the drawn card across four cars: %s' % heights)
         res.check(len(set(heights)) == 1,
-                  'the drawn card does not change height between ordinary cars',
+                  'the drawn card does not change height between cars',
                   'it measured %s' % heights)
-        res.check(not heights or heights[0] == fits['reserved']['small'],
-                  'and it is the ordinary reservation, not the big one',
+        res.check(not heights or heights[0] == fits['reserved'],
+                  'and it is the one reservation',
                   'drawn at %s, reserved %d'
-                  % (heights[0] if heights else None, fits['reserved']['small']))
+                  % (heights[0] if heights else None, fits['reserved']))
 
         errs = page.evaluate('() => window.__probe.errors')
         res.check(not errs, 'no page errors', str(errs))

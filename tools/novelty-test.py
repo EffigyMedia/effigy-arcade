@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
-"""NOVELTY TEST - the garage toggle that puts the work vehicles away.
+"""NOVELTY TEST - the work vehicles are traffic, and the player cannot own one.
 
     .venv/Scripts/python tools/novelty-test.py
 
-RLG-194. Owner, 2026-09-09: "there needs to be a toggle that hides the unlocked production and
-utility vehicles from the garage to prevent clutter since they are novelty vehicles."
+RLG-249. Owner, 2026-09-14: "let's just get rid of unlocking the non-racing vehicles. That means we
+can get rid of the hiding toggle."
 
-WHAT IT PROVES, AND WHAT IT WOULD MISS IF IT ASKED A NARROWER QUESTION. The easy check is that the
-list gets shorter, and a toggle that emptied the garage would pass it. So every check here is about
-WHICH cars moved:
+This file tested the WORK VEHICLES toggle (RLG-194) until that toggle was removed. It now tests the
+removal. A check that only asks "is the toggle gone" passes on a garage that still lists a van, so
+every check here is about WHICH cars the player can reach:
 
-  the control is absent until one of the two secret classes is won, because a switch for something
-  the player has never seen advertises a thing the game is not ready to explain;
+  a fresh save lists no work vehicle, and the garage has no WORK VEHICLES control;
 
-  turning it off removes EXACTLY the production and utility cars and leaves every other car in
-  place, in the same order;
+  a save that already holds the old `utility` unlock flag still lists no work vehicle, and the flag
+  itself is left in the save untouched;
 
-  the unlock is not touched - turning it back on returns the same cars;
+  a save that has a work vehicle SELECTED loads onto a car the player owns, and that choice is
+  written back to the save, so the next boot does not start in the van again;
 
-  and a player sitting IN a work vehicle when they turn it off is moved to a car the garage will
-  still list, rather than left selecting something that is not there.
-
-The unlock flags are written into the save before the reload, because the two classes are the
-game's only secret unlocks and are absent from the garage until they are earned - the toggle has
-nothing to act on before that, which is itself one of the checks below.
+  and the work vehicles are still built as traffic sprites, because only the player's access went.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -41,7 +36,7 @@ from harness import console_utf8, launch_chromium, boot, reboot
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
-WORK = {'COUPE', 'SALOON', 'CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE'}
+WORK = {'CAB', 'PICKUP', 'VAN', 'SEMI', 'AMBULANCE'}
 
 
 def main():
@@ -64,7 +59,7 @@ def main():
         print('  %s  %s%s' % ('ok  ' if cond else 'FAIL', label,
                               ('   ' + detail) if detail else ''))
 
-    print('novelty-test  .  the garage puts the work vehicles away')
+    print('novelty-test  .  the work vehicles are traffic, not the player\'s')
     with sync_playwright() as p:
         b = launch_chromium(p, headless=not args.headed,
                             args=['--mute-audio', '--autoplay-policy=no-user-gesture-required'])
@@ -81,72 +76,49 @@ def main():
         def bodies():
             return page.evaluate('() => window.__road.garageBodies()')
 
-        def toggle():
-            return page.query_selector('[data-act="novelty"]')
-
-        # ---- BEFORE THE UNLOCK: the control must not be there -------------
+        # ---- A FRESH SAVE ----------------------------------------------------
         boot(page, '%s/%s' % (base, GAME))
         page.wait_for_timeout(600)
         open_garage()
         clean = bodies()
-        ok(toggle() is None,
-           'the control is absent on a save that has not won the work vehicles')
-        ok(not (set(clean) & WORK),
-           'and those cars are absent too, as the secret unlock intends',
-           'listed %d cars' % len(clean))
+        ok(len(clean) >= 3, 'the garage lists cars', 'listed %d' % len(clean))
+        ok(not (set(clean) & WORK), 'a fresh save lists no work vehicle',
+           ', '.join(sorted(set(clean) & WORK)))
+        ok(page.query_selector('[data-act="novelty"]') is None,
+           'and the garage has no WORK VEHICLES control')
+        fleet = page.evaluate('() => window.__road.garageFleet()')
+        ok(not (set(fleet) & WORK), 'no work vehicle is in the fleet a garage can ever hold',
+           ', '.join(sorted(set(fleet) & WORK)))
 
-        # ---- WIN THEM, the way the road does -----------------------------
+        # ---- A SAVE THAT WON THEM UNDER THE OLD RULE, SITTING IN A VAN -------
         page.evaluate("""() => {
-            const A = window.Arcade;
-            A.save.merge('interstate-opts', { production:true, utility:true });
+            window.Arcade.save.merge('interstate-opts', { utility:true, body:'VAN' });
         }""")
         reboot(page)
         page.wait_for_timeout(600)
         open_garage()
-        shown = bodies()
-        work_shown = sorted(set(shown) & WORK)
-        ok(bool(work_shown), 'winning them puts them in the garage',
-           '%d work vehicle(s): %s' % (len(work_shown), ', '.join(work_shown)))
-        ok(toggle() is not None, 'and the control appears with them')
-
-        # ---- SIT IN ONE, so the swap is exercised rather than assumed ----
-        page.evaluate('(k) => window.__road.setBody(k)', work_shown[0])
-        page.evaluate('() => window.__road.showGarage && window.__road.showGarage()')
-
-        # ---- TURN IT OFF -------------------------------------------------
-        page.click('[data-act="novelty"]')
-        page.wait_for_timeout(120)
-        hidden = bodies()
-        ok(not (set(hidden) & WORK),
-           'turning it off removes every work vehicle',
-           '%d left' % len(hidden))
-        ok(sorted(hidden) == sorted(set(shown) - WORK),
-           'and removes ONLY those - every other car is still listed',
-           'expected %d, got %d' % (len(set(shown) - WORK), len(hidden)))
-        ok([k for k in shown if k not in WORK] == hidden,
-           'and the order of what is left is unchanged')
-        label = page.eval_on_selector('[data-act="novelty"] b', 'el => el.textContent').strip()
-        ok(label == 'HIDDEN', 'the control says so', 'reads %r' % label)
-
+        won = bodies()
+        ok(not (set(won) & WORK), 'the old unlock flag does not list them',
+           ', '.join(sorted(set(won) & WORK)))
+        owned = page.evaluate('() => window.__road.playableBodies()')
         cur = page.eval_on_selector('#veilBody .gname', 'el => el.textContent').strip()
-        ok(cur in hidden,
-           'a player sitting in a work vehicle is moved to one the garage lists',
-           'now showing %s' % cur)
+        saved = page.evaluate("() => (window.Arcade.save.get('interstate-opts') || {})")
+        ok(saved.get('body') in owned,
+           'a save sitting in a work vehicle loads onto a car the player owns',
+           'saved body %r, card reads %r' % (saved.get('body'), cur))
+        ok(saved.get('utility') is True, 'and the old flag is left in the save untouched')
 
-        # ---- AND BACK -----------------------------------------------------
-        page.click('[data-act="novelty"]')
-        page.wait_for_timeout(120)
-        again = bodies()
-        ok(sorted(again) == sorted(shown),
-           'turning it back on returns exactly the same cars',
-           '%d cars' % len(again))
+        # ---- THE BODIES ARE STILL TRAFFIC -------------------------------------
+        # `API.fleet` is every vehicle the engine can put on the road. Its rows are named by
+        # body key or by traffic rig, so each work vehicle is looked for under both names.
+        names = {'CAB': 'taxi', 'PICKUP': 'pickup', 'VAN': 'van', 'SEMI': 'truck',
+                 'AMBULANCE': 'ambulance'}
+        rows = page.evaluate("() => window.__road.fleet().map(r => String(r.name || r.label || ''))")
+        seen = {k for k, r in names.items()
+                if any(n.split(' ')[0] in (k, r) for n in rows)}
+        ok(seen == WORK, 'every work vehicle is still on the road\'s fleet',
+           'found: %s of %d rows' % (', '.join(sorted(seen)), len(rows)))
 
-        # ---- IT IS A VIEW, NOT AN UNLOCK ----------------------------------
-        won = page.evaluate("""() => {
-            const sv = window.Arcade.save.get('interstate-opts') || {};
-            return !!sv.production && !!sv.utility;
-        }""")
-        ok(won, 'and the unlock itself was never touched')
         ok(not errs, 'the run was clean', '; '.join(errs[:2]))
         ctx.close()
         b.close()

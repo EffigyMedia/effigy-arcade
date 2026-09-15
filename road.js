@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.23';
+window.ROAD_BUILD = '0.14.24';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -666,22 +666,8 @@ function timeFlash(label, secs){ return label + '  ' + timeAward(secs); }
 let timedRun = true;
 /* stripes are paint, not a body — any car can wear them */
 let optStripes = false;
-/* ---- THE NOVELTY VEHICLES CAN BE PUT AWAY (owner, 2026-09-09) -----------
-   Owner: "there needs to be a toggle that hides the unlocked production and
-   utility vehicles from the garage to prevent clutter since they are novelty
-   vehicles."
-
-   THEY ARE A REWARD THAT MAKES THE GARAGE WORSE THE MOMENT IT IS COLLECTED.
-   Production and utility are the two SECRET unlocks - fifty and twenty-five
-   miles of test driving - and until they are won they are not listed at all.
-   Winning them adds seven cars nobody picks between two they do, and the
-   player pays for that on every garage visit for the rest of the save.
-
-   SO IT IS A TOGGLE AND NOT A SETTING THAT UNDOES THE UNLOCK. Off, the cars
-   are still owned, still in the save, still one press from coming back. The
-   flag says what is SHOWN and nothing else.
-   -------------------------------------------------------------------- */
-let optNovelty = true;
+/* The WORK VEHICLES toggle (`optNovelty`, owner 2026-09-09) was removed by
+   RLG-249: the player cannot own a work vehicle, so there is nothing to hide. */
 /* ---- WHAT TIME YOU SET OFF ------------------------------------------------
    The day cycle has always existed and always started wherever the last run
    left it. This picks the phase a run BEGINS at; the four minutes then run on
@@ -701,10 +687,11 @@ const TIMES = [
 ];
 let optTime = 0;
 /* debug only — never saved, never treated as an unlock */
-/* three switches, one per locked group: the racing ladder, the police, and the
-   road cars. They were two, and the patrol car rode on the racers' switch -
-   which meant testing a pursuit opened every class on the ladder with it. */
-let dbgRacers = false, dbgUtility = false, dbgPolice = false;
+/* two switches, one per locked group: the racing ladder and the police. The
+   patrol car once rode on the racers' switch, which meant testing a pursuit
+   opened every class on the ladder with it. The third switch, for the work
+   vehicles, went with RLG-249. */
+let dbgRacers = false, dbgPolice = false;
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -3680,7 +3667,7 @@ const BODY = {
      an ambulance is built to get moving rather than to have a higher top end.
      The owner has ruled the other way and the vehicle is faster in both tables.
      -------------------------------------------------------------------- */
-  'AMBULANCE': { hardy:1.20, rig:'ambulance', big:true, bar:'medical',
+  'AMBULANCE': { hardy:1.20, rig:'ambulance', bar:'medical',
                /* the bar rose with the box (RLG-221): the heads now sit at rows
                   0.015 to 0.049 of the sprite, mid 0.032, where they were 0.055 to
                   0.099 on a van's roofline. This is what puts the RED WASH on the
@@ -3691,7 +3678,7 @@ const BODY = {
                   carries the reasoning and had to move by the same amount */
                redline:6500, pitch:0.56, rear:'MEDICAL', mass:2600, hp:170, grip:0.50, launch:1.20, mech:1.06, vmax:0.47,
                note:'AMBULANCE \u00B7 EVERYTHING MOVES, AND NOT FOR YOU' },
-  'VAN': { hardy:1.20, rig:'van', big:true, gears:4, wide:0.060, arch:1.00, horn:0.78,
+  'VAN': { hardy:1.20, rig:'van', gears:4, wide:0.060, arch:1.00, horn:0.78,
                redline:6500, pitch:0.58, rear:'GENERIC', mass:2400, hp:140, grip:0.48, launch:1.17, mech:1.06, vmax:0.43,
                note:'VAN \u00B7 A BOX WITH A STEERING WHEEL' },
     /* ---- FOUR SPEEDS, AND A LORRY DOES 80 ---------------------------------
@@ -3699,7 +3686,7 @@ const BODY = {
      car and the cruiser get more. And a lorry's ceiling is 80mph, not 104:
      `vmax` is a fraction of 200, so 0.40.
      -------------------------------------------------------------------- */
-  'SEMI': { hardy:1.30, rig:'truck', big:true, gears:4, wide:0.120, arch:1.10, horn:0.52,
+  'SEMI': { hardy:1.30, rig:'truck', gears:4, wide:0.120, arch:1.10, horn:0.52,
                redline:5000, pitch:0.42, rear:'GENERIC', mass:14000, hp:420, grip:0.42, launch:1.11, mech:0.95, vmax:0.4,
                note:'SEMI \u00B7 NOTHING GETS OUT OF ITS WAY TWICE' },
   'CREST': { hardy:0.85, bodyTop:0.40, cabinTop:0.10, cabW:0.48, cabOff:0, roofR:0.30,
@@ -11208,7 +11195,7 @@ function reset(){
   ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
   clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
-  barOn = false; wonUtility = false; coasting = false;
+  barOn = false; coasting = false;
   if(hornBtn) hornBtn.classList.remove('on');
   /* RLG-181: this named ONE body, so the interceptor could never be the car
      the force matched itself to. `inForce` asks the BODY record, which is the
@@ -16017,7 +16004,6 @@ function ordinal(n){
    interceptor has.
    ------------------------------------------------------------------------- */
 let barOn = false;
-let wonUtility = false;
 /* ---- ANY FORCE CAR, NOT JUST THE CRUISER ------------------------------
    This named one body, so the SUPER CRUISER had lights on its sprite and no
    way to switch them on: no latch, no siren, no wash, no scatter. `force` is
@@ -17854,38 +17840,11 @@ function step(dt){
      race — the tournament rewards winning, and this rewards lasting. All three
      conditions matter: without the clock there is no pressure, and without
      pursuit there is nothing to survive. */
-  /* ---- THE ROAD CARS ARE EARNED BY DISTANCE, ON THE CLOCK --------------
-     Owner, 2026-08-29, and the shape has been through three versions. It was a
-     hundred miles on TEST DRIVE at any settings, opening every road car at
-     once; then two triggers at 25 and 50 for utility and production; and it is
-     ONE again now, because [[RLG-213]] merges those two classes back into one.
-
-     THE CLOCK MUST BE RUNNING, which is the part that has never changed.
-     Without the timer a hundred miles is a thing you can leave the game doing;
-     with it, distance is something you have to keep earning at checkpoints,
-     which is what makes it a reward rather than an errand.
-
-       UTILITY_MILES in ONE timed run   the whole non-racing fleet:
-                                        cab, pickup, van, lorry, ambulance
-
-     ONE TRIGGER FOR ONE CLASS, by the owner's own words: "those just get
-     unlocked with a single unlock trigger." Production is not here any more
-     because the player starts in it.
-
-     AND THE NUMBER IS A CONSTANT BECAUSE IT IS THE ONE THING STILL OPEN. The
-     owner asked whether it should be 50 or 100 and 100 was recommended - the
-     merged class pays FIVE vehicles where two triggers paid three and three,
-     so the bar carries more - but they have not said. It is one edit either
-     way and nothing else in the resort depends on it.
-     ------------------------------------------------------------------- */
-  if(mode !== 'race' && timedRun){
-    if(dist >= UTILITY_MILES && !unlocked('utility')){
-      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { utility:true });
-      wonUtility = true;
-      snd.checkpoint();
-      flashWarn('VEHICLES UNLOCKED');
-    }
-  }
+  /* ---- THE WORK VEHICLES ARE NOT WON OUT HERE ANY MORE (RLG-249) ---------
+     A timed test drive of UTILITY_MILES used to give the player the cab,
+     pickup, van, semi and ambulance. The owner removed that access on
+     2026-09-14: those bodies are traffic only. A save that holds the old
+     `utility` flag keeps it, and nothing reads it. */
   /* ---- THE POLICE CARS ARE NOT WON OUT HERE ANY MORE ---------------------
      Both used to be earned on TEST DRIVE: twenty miles on the clock under
      pursuit for the CRUISER, and the same twenty at a 180mph average for the
@@ -27126,11 +27085,12 @@ function garageFit(){
            drawnH: drawnH, h: Math.ceil(GARAGE_TOP + drawnH + 6) };
 }
 /* ---- ONE CAR WIDTH, IN CARD PIXELS, FOR EVERY CAR (RLG-246) ---------------
-   The largest the shared scale can be. Every car's widest end must fit the
-   card's width, and every ordinary car's taller end must fit the ordinary
-   card's depth. An OVERSIZED body (`big` on the record, RLG-087) is left out
-   of the depth bound: it already gets the taller card, and letting a semi set
-   the depth would shrink every car to the size a semi forces.
+   The largest the shared scale can be. Every garage car's widest end must fit
+   the card's width, and its taller end must fit the card's depth.
+
+   RLG-249 removed the exception. An OVERSIZED body (`big`, RLG-087) was left
+   out of the depth bound so that a semi could not shrink every car. No
+   oversized body reaches the garage now, so every garage car is in both bounds.
 
    Measured once across the fleet and cached, the way `garageReserve` is. It
    loads each body in turn and puts the player's own car back, so a caller in
@@ -27140,15 +27100,14 @@ function garageUnit(){
   if(garageUnitCache) return garageUnitCache;
   const was = optBody;
   let unit = Infinity;
-  for(const k of Object.keys(BODY)){
-    if(BODY[k].npc) continue;
+  for(const k of garageFleet()){
     optBody = k; buildPlayer();
     for(const img of [SP.player, SP.playerFront]){
       if(!img) continue;
       const b = spriteInk(img);
       if(!b.w || !b.h) continue;
       unit = Math.min(unit, (GARAGE_WIDE - GARAGE_PAD*2) * img.width / b.w);
-      if(!isBigBody(k)) unit = Math.min(unit, (GARAGE_DEEP - GARAGE_TOP) * img.width / b.h);
+      unit = Math.min(unit, (GARAGE_DEEP - GARAGE_TOP) * img.width / b.h);
     }
   }
   optBody = was; buildPlayer();
@@ -27201,29 +27160,41 @@ function garageUnit(){
    vehicle IS. It is two words in the table and the harness checks the fleet
    against it.
    -------------------------------------------------------------------- */
-const garageReserve = { big: 0, small: 0 };
-function isBigBody(k){ return !!(BODY[k] && BODY[k].big); }
-function garageCardHeight(k){
-  const tier = isBigBody(k === undefined ? optBody : k) ? 'big' : 'small';
-  if(garageReserve[tier]) return garageReserve[tier];
+/* ---- AND IT IS ONE SIZE AGAIN, WITH NO BUFFER (owner, 2026-09-14, RLG-249) --
+   Owner: pick "an appropriate single size for the garage card that leaves
+   vehicles all the same relative size without extra unneeded, buffer or
+   padding on the card."
+
+   THE TWO TIERS EXISTED ONLY FOR THE WORK VEHICLES. RLG-249 took those out of
+   the garage, so the `big` tier had nothing left to hold, and it is gone with
+   its flag on the body records.
+
+   THE HEIGHT IS STILL MEASURED, NOT DECLARED, for the reason above. It is the
+   tallest garage car at the shared scale plus the 6-pixel floor. The shared
+   scale is bound by the card's depth, so the tallest car fills the card and
+   no band of spare space is left over the whole fleet.
+   -------------------------------------------------------------------- */
+/* the bodies a garage can ever list: not an NPC, and not a class the player is
+   barred from. The two card measurements walk this and nothing wider, so a
+   traffic body never sets the size of a card no player sees it on. */
+function garageFleet(){
+  return Object.keys(BODY).filter(k => !BODY[k].npc && !PLAYER_BARRED[BODY_CLASS[k] || '']);
+}
+const garageReserve = { h: 0 };
+function garageCardHeight(){
+  if(garageReserve.h) return garageReserve.h;
   const was = optBody;
-  let tall = { big: 0, small: 0 };
-  for(const b of Object.keys(BODY)){
+  let tall = 0;
+  for(const b of garageFleet()){
     optBody = b;
     buildPlayer();
     const fit = garageFit();
-    if(fit){
-      const t = isBigBody(b) ? 'big' : 'small';
-      tall[t] = Math.max(tall[t], fit.h);
-    }
+    if(fit) tall = Math.max(tall, fit.h);
   }
   optBody = was;
   buildPlayer();
-  const floor = GARAGE_TOP + (GARAGE_DEEP - GARAGE_TOP) + 6;
-  garageReserve.small = tall.small || floor;
-  /* a fleet with no oversized vehicle in it still has to answer the question */
-  garageReserve.big = Math.max(tall.big || floor, garageReserve.small);
-  return garageReserve[tier];
+  garageReserve.h = tall || (GARAGE_DEEP + 6);
+  return garageReserve.h;
 }
 
 function drawGarageCar(){
@@ -27259,8 +27230,8 @@ function drawGarageCar(){
   const fit = garageFit();
   if(!fit) return;
   const boxes = fit.boxes, sc = fit.sc, scales = fit.scales || [sc, sc];
-  /* the card is the tallest car's card, whichever car is in it (RLG-087) */
-  const CARD_H = garageCardHeight(optBody);
+  /* the card is the tallest car's card, whichever car is in it (RLG-087, RLG-249) */
+  const CARD_H = garageCardHeight();
   cv.width = 300*dpr; cv.height = CARD_H*dpr;
   cv.style.width = '300px'; cv.style.height = CARD_H + 'px';
   g2.setTransform(dpr,0,0,dpr,0,0);
@@ -27483,20 +27454,6 @@ function showGarage(){
         ? '<button class="go ghost" data-act="stripes">STRIPES \u00B7 <b>' +
             (optStripes ? 'ON' : 'OFF') + '</b></button>'
         : '') +
-      /* ---- AND THE NOVELTY VEHICLES, ONCE THERE ARE ANY ------------------
-         The control appears the moment one of the two secret classes is won
-         and not before, for the same reason those cars are absent rather than
-         greyed until then: a switch for something the player has never seen
-         advertises a thing the game is not ready to explain.
-
-         It names what it SHOWS rather than what it hides, so ON is the fuller
-         garage and OFF is the quiet one - the same way the stripes control
-         above names what it adds.
-         ---------------------------------------------------------------- */
-      (noveltyOwned()
-        ? '<button class="go ghost" data-act="novelty">WORK VEHICLES \u00B7 <b>' +
-            (optNovelty ? 'SHOWN' : 'HIDDEN') + '</b></button>'
-        : '') +
       /* ---- WHICH CLASS A FORMULA CAR IS ENTERING (RLG-213) ---------------
          The one part of the ladder that needed a control that did not exist.
          A formula car has no league, so without this it has no grid at all.
@@ -27582,18 +27539,6 @@ function showGarage(){
       stripes: () => { if(stripesAllowed()) optStripes = !optStripes;
                        buildPlayer();
                        if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { stripes:optStripes });
-                       showGarage(); },
-      /* ---- HIDING THE CAR YOU ARE STANDING IN ---------------------------
-         `enforceCarRules` is what makes this safe, and it is called rather than
-         reimplemented here: it already holds the rule that a car the garage
-         will not list must not stay selected, and it swaps to one the garage
-         WILL list. So turning the toggle off while sitting in the van moves you
-         to a car you can see, and turning it back on leaves you there rather
-         than dragging you back into the van.
-         ---------------------------------------------------------------- */
-      novelty: () => { optNovelty = !optNovelty;
-                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { novelty:optNovelty });
-                       enforceCarRules();
                        showGarage(); },
       mode:  () => {
         /* the button is `disabled` as well, so this is the second lock rather
@@ -27737,10 +27682,6 @@ const BODY_CLASS = { 'STALLION':'super', 'MATADOR':'super', 'CREST':'super',
    second free class added tomorrow goes in here and needs no other edit.
    --------------------------------------------------------------------- */
 const OPEN_FROM_THE_START = { production:1 };
-/* HOW FAR THE MERGED CLASS COSTS, in miles of ONE timed test drive. A tunable
-   with a committed default rather than a number written into the branch that
-   reads it - and the owner has not settled between 50 and 100. See RLG-213. */
-const UTILITY_MILES = 100;
 
 /* ---- THE CARS THE EVENTS ARE FOR (RLG-115) --------------------------------
    Owner, 2026-08-31: "if you have a production or utility vehicle selected, the
@@ -27912,7 +27853,17 @@ const UNLOCK_HOW = {
    two: one trigger, found once, paying the whole of the fleet that is not a
    racer.
    ---------------------------------------------------------------------- */
-const SECRET_UNLOCK = { utility:1 };
+/* ---- AND NOW IT IS NOT AN UNLOCK AT ALL (owner, 2026-09-14, RLG-249) -----
+   Owner: "let's just get rid of unlocking the non-racing vehicles." The owner
+   gave the reason: an ownable work vehicle needed its own card size, its own
+   toggle and its own menu subset, and those three things cost more than the
+   reward gave.
+
+   SO THE SECRET CLASS BECAME A BARRED CLASS. A body in it is never listed and
+   never measured for the card, and it stays on the road as TRAFFIC. The two
+   comment blocks above are kept as the record of what it was.
+   ---------------------------------------------------------------------- */
+const PLAYER_BARRED = { utility:1 };
 
 /* whether this car is still to be won, ignoring the debug overrides - those
    open a car WITHOUT writing the flag, and a car opened for testing should
@@ -27930,26 +27881,6 @@ function unlockHow(k){
   const need = BODY_CLASS[k];
   return (need && UNLOCK_HOW[need]) || '';
 }
-/* ---- WHAT COUNTS AS A NOVELTY VEHICLE ---------------------------------
-   The two SECRET unlock classes and nothing else. A cruiser is not a novelty -
-   it is police, it has its own unlock and its own reason to be driven - and a
-   sports car is not one either. Written as a test on the CLASS rather than as
-   a list of bodies, so a van added tomorrow is covered without a second edit.
-   ---------------------------------------------------------------------- */
-function isNovelty(k){
-  /* ONE CLASS NOW (RLG-213). The test was a pair of names and is a lookup, so
-     the toggle covers whatever `SECRET_UNLOCK` holds rather than whatever this
-     line was last edited to say. */
-  return !!SECRET_UNLOCK[BODY_CLASS[k] || ''];
-}
-/* whether the toggle has anything to act on. A control that hides nothing is
-   worse than no control: it asks the player to make a choice that changes
-   their screen not at all, and it teaches them that the button is broken. */
-function noveltyOwned(){
-  return Object.keys(BODY).some(k =>
-    !BODY[k].npc && isNovelty(k) && !carLocked(k) &&
-    (!CFG.raceOnlyGarage || raceLegal(k)));
-}
 
 /* the cars that can actually be driven - what `garageBodies` used to return */
 function playableBodies(){
@@ -27957,33 +27888,19 @@ function playableBodies(){
 }
 
 function garageBodies(){
-  /* ---- DEBUG OVERRIDES ---------------------------------------------------
-     These open a car in the garage WITHOUT writing the unlock flag, so the
-     reward screens can still be earned properly afterwards. That is the whole
-     point of them: testing the cars must not consume the moment of winning
-     them. `unlocked()` is untouched - only this gate is widened.
-     ---------------------------------------------------------------------- */
-  const openBy = k => {
-    const need = BODY_CLASS[k];
-    if(!need) return true;
-    /* a class the player starts in costs nothing (RLG-213) */
-    if(OPEN_FROM_THE_START[need]) return true;
-    if(unlocked(need)) return true;
-    if(need === 'utility') return !!dbgUtility;
-    /* the police car has its own switch: a patrol car is not a racer, and
-       testing pursuit should not require opening the whole ladder */
-    if(need === 'cruiser' || need === 'supercruiser') return !!dbgPolice;
-    return !!dbgRacers;
-  };
-  /* ---- AND A LOCKED CAR IS LISTED AS A SILHOUETTE (owner, 2026-09-08) ---
-     `openBy` is now the test for whether a car is READY, not for whether it is
-     shown. Everything else in this fleet appears; only the two secret unlocks
-     are held back, and `carLocked` is what the card and the painter read to
-     decide how to draw it.
+  /* ---- A LOCKED CAR IS LISTED AS A SILHOUETTE (owner, 2026-09-08) -------
+     Every car in the garage fleet appears, and `carLocked` is what the card
+     and the painter read to decide how to draw it.
+
+     THE DEBUG GATE THAT STOOD HERE IS GONE (RLG-249). `openBy` widened the
+     list for the debug switches, but after the silhouettes it only decided
+     whether a SECRET-class car was listed. That class is barred now, so
+     `openBy` had no effect left. `garageFleet` removes the barred class with
+     the NPC bodies, which have stats and a sprite but are not cars you can
+     pick. `carLocked` never read the debug switches, so UNLOCK ALL RACERS and
+     UNLOCK POLICE did not open a car before this change either.
      ------------------------------------------------------------------- */
-  const shown = k => openBy(k) || !SECRET_UNLOCK[BODY_CLASS[k] || ''];
-  /* an NPC body has stats and a sprite but is not a car you can pick */
-  let ks = Object.keys(BODY).filter(k => !BODY[k].npc).filter(shown);
+  let ks = garageFleet();
   /* ---- A CIRCUIT GARAGE LISTS ONLY WHAT CAN RACE (RLG-115) --------------
      Owner, 2026-09-05, choosing between four shapes: production and utility
      vehicles are "not offered at all in Motorsport". Interstate keeps them and
@@ -27997,18 +27914,6 @@ function garageBodies(){
      engine never asks which game it is.
      ------------------------------------------------------------------- */
   if(CFG.raceOnlyGarage) ks = ks.filter(raceLegal);
-  /* ---- AND THE NOVELTY VEHICLES CAN BE PUT AWAY (owner, 2026-09-09) -----
-     `optNovelty` hides the production and utility cars once they are won. It
-     hides them from the LIST, which is the only thing it touches: the unlock
-     flags are untouched, `carLocked` still says they are yours, and turning it
-     back on returns them exactly as they were.
-
-     IT RUNS AFTER THE CIRCUIT FILTER because the two rules are different in
-     kind. A circuit will not list a bus at all, ever; this is a preference
-     about a garage that would list one. Where both apply the circuit has
-     already removed them and this does nothing, which is correct.
-     ------------------------------------------------------------------- */
-  if(!optNovelty) ks = ks.filter(k => !isNovelty(k));
   /* never hand back an empty list: the arrows would divide by zero and the
      garage would have no car to draw */
   return ks.length ? ks : ['ROADSTER'];
@@ -28057,6 +27962,10 @@ function enforceCarRules(){
        The novelty toggle is what made this reachable. Before it, the only thing
        that removed your car from the list was a circuit garage refusing a bus,
        and that path happens before a player ever sees the card.
+
+       RLG-249 removed the toggle, and this is now the path for a SAVE that
+       still has a work vehicle selected: that body is barred, so it is not
+       listed, and the player is moved to the first car they own.
        ---------------------------------------------------------------- */
     const play = playableBodies();
     optBody = play.length ? play[0] : ks[0];
@@ -28515,13 +28424,10 @@ function showDebug(){
         state(dbgRacers) + '</b></button>' +
       '<button class="go ghost" data-act="dp">UNLOCK POLICE \u00b7 <b>' +
         state(dbgPolice) + '</b></button>' +
-      '<button class="go ghost" data-act="dt">UNLOCK ALL UTILITY \u00b7 <b>' +
-        state(dbgUtility) + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
       dp:   () => { dbgPolice  = !dbgPolice;  showDebug(); },
-      dt:   () => { dbgUtility = !dbgUtility; showDebug(); },
       back: () => showOptions() });
 }
 
@@ -28985,7 +28891,6 @@ if (AR && AR.options) AR.options.define([
        rather than building a grid out of `undefined`. */
     if(g0.entry) optEntry = g0.entry;
     if(typeof g0.stripes === 'boolean') optStripes = g0.stripes;
-    if(typeof g0.novelty === 'boolean') optNovelty = g0.novelty;
     /* range-checked rather than trusted: a save written by a future build with
        more times in it must not index past the end of this build's table */
     if(typeof g0.time === 'number' && g0.time >= 0 && g0.time < TIMES.length)
@@ -30069,9 +29974,10 @@ requestAnimationFrame(frameLoop);
              cutoff: snd.siren.filter ? snd.siren.filter.frequency.value : null,
              gain:   snd.siren.gain ? snd.siren.gain.gain.value : null };
   };
-  /* opens the traffic classes in the garage WITHOUT writing an unlock flag,
-     which is what the DEBUG menu's own switch does */
-  API.dbgUtility = function(v){ dbgUtility = !!v; return dbgUtility; };
+  /* `API.dbgUtility` went with its debug switch (RLG-249). The list of cars a
+     garage can ever hold is readable instead, so a harness can check that no
+     barred body is in it. `API.garageBodies`, above, is what it lists now. */
+  API.garageFleet = function(){ return garageFleet(); };
   API.showGarage = function(){ showGarage(); };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
@@ -30511,14 +30417,13 @@ requestAnimationFrame(frameLoop);
   };
   API.carEnds = function(){
     const was = optBody, out = {};
-    for(const k of Object.keys(BODY)){
-      if(BODY[k].npc) continue;
+    for(const k of garageFleet()){
       optBody = k; buildPlayer();
       const f = garageFit();
       if(!f){ out[k] = null; continue; }
       const b = f.boxes, sc = f.sc, scs = f.scales || [sc, sc];
       /* the card's floor, as `drawGarageCar` places it (RLG-246) */
-      const floor = garageCardHeight(k) - 6;
+      const floor = garageCardHeight() - 6;
       const imgs = [SP.player, SP.playerFront];
       const row = (box, i) => ({
         inkH: box.h, inkW: box.w,
@@ -30533,21 +30438,19 @@ requestAnimationFrame(frameLoop);
       out[k] = { sc: +sc.toFixed(4), cardH: f.h,
                  back: row(b[0], 0), front: b[1] ? row(b[1], 1) : null };
     }
-    optBody = was; buildPlayer(); garageCardHeight(was);
+    optBody = was; buildPlayer();
     return out;
   };
   API.garageFits = function(){
-    const was = optBody, out = {}, big = {};
-    for(const k of Object.keys(BODY)){
+    const was = optBody, out = {};
+    for(const k of garageFleet()){
       optBody = k; buildPlayer();
       const f = garageFit();
       out[k] = f ? f.h : null;
-      big[k] = isBigBody(k);
     }
     optBody = was; buildPlayer();
-    garageCardHeight(was);
-    return { each: out, big: big,
-             reserved: { small: garageReserve.small, big: garageReserve.big } };
+    /* one card height for the whole garage fleet (RLG-249) */
+    return { each: out, reserved: garageCardHeight(), deep: GARAGE_DEEP };
   };
   API.clearTraffic = function(){
     traffic.length = 0; cops.length = 0; blocks.length = 0;

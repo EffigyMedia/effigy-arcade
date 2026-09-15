@@ -35,6 +35,11 @@ THE THREE THINGS THAT WOULD MAKE THIS VACUOUS, each guarded:
      because nothing ever set it otherwise proves nothing. So the walk sets a TOURNAMENT
      on a race-legal car FIRST, confirms it took, and only then goes looking for the van.
 
+RLG-249 CHANGED WHAT THIS CAN FIND. The owner removed the work vehicles from the garage on
+2026-09-14, and they were the only garage cars with no event to enter. Guards 1 and 2 above
+describe the file before that. Now both games assert that the garage lists NO car that cannot
+race, and that the walk saw at least three cars, so an empty walk still fails.
+
 Exit code 0 if every check passed, 1 otherwise.
 """
 import sys, threading, http.server, socketserver, functools
@@ -100,13 +105,6 @@ with sync_playwright() as p:
         pg.on('pageerror', lambda e: errs.append(str(e)))
         open_garage(pg, path)
 
-        # ---- open the traffic classes, or guard 1 makes the whole run vacuous -----
-        # OPTIONS -> DEBUG -> UNLOCK ALL TRAFFIC. It widens the garage gate without
-        # writing an unlock flag, which is exactly what a test wants.
-        pg.evaluate("() => window.__road && window.__road.dbgUtility && window.__road.dbgUtility(true)")
-        pg.evaluate("() => window.__road && window.__road.showGarage && window.__road.showGarage()")
-        pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
-
         # ---- guard 3: put a real race mode on a race-legal car first --------------
         start_car = car(pg)
         pg.click('[data-act="mode"]')          # TEST DRIVE -> SINGLE RACE
@@ -142,52 +140,16 @@ with sync_playwright() as p:
                 found, shut_at = k, mode_state(pg)
                 break
 
-        if gid == 'interstate':
-            # guard 2: silence here is a BROKEN WALK, not a pass
-            check(found is not None,
-                  'the garage lists a car that cannot race',
-                  f'{found} ({len(seen)} cars walked)' if found
-                  else f'NONE in {len(seen)} cars - the walk found nothing to test')
-            if found:
-                check(shut_at['shut'],
-                      'and its MODE control is shut',
-                      f"disabled/greyed: {shut_at['shut']}")
-                check(shut_at['label'].endswith('TEST DRIVE'),
-                      'and it reads TEST DRIVE',
-                      f"'{shut_at['label']}'")
-                note = next((n for n in shut_at['notes'] if 'TEST DRIVE ONLY' in n), None)
-                check(note is not None,
-                      'and it says why, where the player can read it',
-                      f"'{note}'" if note else 'no reason given - the rule is invisible')
-                # the tournament is left alone, only switched off
-                keep = pg.evaluate("() => window.__road.tourState ? window.__road.tourState() : null")
-                check(keep is not None and keep['on'] is False and keep['round'] >= 0,
-                      'the tournament is switched off, not erased',
-                      f'tourOn={keep["on"]}, round kept at {keep["round"]}' if keep else 'unreadable')
-                # ---- and pressing it anyway changes nothing ------------------
-                # READ THE ENGINE'S `mode`, NOT THE BUTTON'S LABEL. The label is
-                # hardcoded to TEST DRIVE on the banned branch, so it cannot move
-                # whatever happens underneath - a first draft of this check
-                # watched the label and PASSED with both locks removed. That is
-                # the vacuous-check failure this project keeps being bitten by.
-                before = pg.evaluate("() => window.__road.mode()")
-                pg.evaluate("""() => { const b=document.querySelector('[data-act=\\"mode\\"]');
-                                       if(b) b.click(); }""")
-                pg.wait_for_timeout(150)
-                after = pg.evaluate("() => window.__road.mode()")
-                check(after == before == 'endless',
-                      'and pressing it anyway does nothing',
-                      f"mode {before} -> {after}")
-        else:
-            # a circuit must not list one at all
-            check(found is None,
-                  'the circuit garage lists NO car that cannot race',
-                  f'{len(seen)} cars walked, none banned' if found is None
-                  else f'{found} was offered and should not have been')
-            check(len(seen) >= 3,
-                  'and the walk actually walked',
-                  f'{len(seen)} distinct cars seen')
-
+        # RLG-249: the work vehicles were the only garage cars with no event to enter, and
+        # they left the garage. So BOTH games now list no such car. The shut MODE control is
+        # still in `road.js` for a car that cannot race; it has no car in the garage to show on.
+        check(found is None,
+              'the garage lists NO car that cannot race',
+              f'{len(seen)} cars walked, none banned' if found is None
+              else f'{found} was offered and should not have been')
+        check(len(seen) >= 3,
+              'and the walk actually walked',
+              f'{len(seen)} distinct cars seen')
         check(not errs, 'no page errors', errs[0] if errs else 'clean')
         pg.close()
     b.close()
