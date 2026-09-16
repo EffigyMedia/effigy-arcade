@@ -287,6 +287,33 @@ def main():
                 check(xR - xL > 60, '%s puts the rail on the side the hazard is' % k,
                       'x=%.1f with the hazard left, x=%.1f with it right' % (xL, xR))
 
+        # ---- AND A CLIFF IS A DROP, SO NOTHING STANDS ON IT (RLG-265) --------------
+        # Owner, 2026-09-15: "The side with the mountainous stuff does not have a guard
+        # rail and hitting the mountainous stuff is the physical stuff you can bang up
+        # against." The other side is air, and a rock face standing in mid-air beside a
+        # guard rail is the picture this forbids.
+        #
+        # COUNTED, NOT LOOKED AT. `scenerySides` counts the objects the engine actually
+        # drew, per side, so this cannot be satisfied by scenery that is merely hidden -
+        # and the count is taken with the hazard forced BOTH ways, because a mountain that
+        # always emptied the left would pass a check that only ever looked left.
+        print()
+        print('  AND NOTHING STANDS ON A CLIFF')
+        for side in (-1, 1):
+            settle('MOUNTAIN', side)
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.resetScenerySides(); R.setSpd(R.MAX_SPD * 0.10); }")
+            page.wait_for_timeout(700)
+            sc = page.evaluate("() => window.__probe.road.scenerySides()")
+            drop, solid = ((sc['left'], sc['right']) if side < 0
+                           else (sc['right'], sc['left']))
+            print('      hazard %s:  the drop side drew %4d,  the solid side drew %4d'
+                  % ('left ' if side < 0 else 'right', drop, solid))
+            check(solid > 20, 'the solid side of a mountain still carries its rock',
+                  '%d objects' % solid)
+            check(drop == 0, 'and the cliff side carries nothing at all',
+                  '%d objects on the drop' % drop)
+
         errs = page.evaluate("() => window.__probe.errors")
         check(not errs, 'no page errors', '; '.join(errs[:2]))
         browser.close()

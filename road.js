@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.58';
+window.ROAD_BUILD = '0.14.59';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8847,15 +8847,30 @@ const SCENERY = {
   MOUNTAIN: { density:0.85, rowDensity:0.46, rows:3, out:0.35, outFar:8.0,
               w:1.60, h:2.30, spread:2.60, kinds:6,
               build:(g,W2,H2,i)=>ROCKFACE(g, W2, H2, i, 'rock') },
-  TUNDRA:   { density:0.85, rowDensity:0.46, rows:3, out:0.35, outFar:8.0,
-              w:1.60, h:2.30, spread:2.60, kinds:6,
-              /* ---- THE SAME ROCK, PAINTED WHITE (RLG-059) --------------
-                 Owner: the tundra's "mountains will be white and the scenery
-                 rock faces cliff faces and mountain sides would also be white
-                 to match with the ground". So it is not a sixth set of art: it
-                 is mountain's set with a palette, which halves the work and
-                 guarantees the two places read as the same landscape under
-                 different weather. */
+  /* ---- A TUNDRA IS A SNOWY DESERT, NOT A WHITE MOUNTAIN (RLG-265) ----
+     Owner, 2026-09-15: "Tundra I feel could be like a snowy version of the
+     desert - instead of mountainous we can still keep mountains as its
+     skyline."
+
+     THE ART DOES NOT CHANGE AND THE NUMBERS DO. RLG-059 made this mountain's
+     rock in a white palette, and that was right for the rock and wrong for the
+     PLACE: at 0.85 over three ranks a foot from the kerb it built cliff faces
+     down both sides, which is a mountain pass rather than a snowfield. The
+     desert's own figures are what make the desert empty, and emptiness is the
+     thing being asked for - so they are borrowed outright and the rock is
+     brought DOWN to a boulder rather than up to a wall.
+
+     THE MOUNTAINS STAY, AS SKYLINE ONLY. `skyForm:'peak'` on the biome record
+     is untouched: the peaks are miles off where the ruling puts them, and
+     nothing stands beside the road to compete with them.
+
+     SPARSER THAN THE DESERT RATHER THAN EQUAL TO IT WOULD BE WRONG. A desert is
+     the empty one by ruling, and its own note says so - "its emptiness is what
+     makes the others read as full". This sits just above it at 0.10, which is
+     scattered rock on an open plain, and leaves the desert holding its title.
+     ------------------------------------------------------------------ */
+  TUNDRA:   { density:0.10, rows:1, out:1.70, spread:2.00, kinds:6,
+              w:0.78, h:0.92,
               build:(g,W2,H2,i)=>ROCKFACE(g, W2, H2, i, 'snow') },
   /* ---- THE WALLS, WHICH ARE MOUNTAIN'S ROCK STOOD CLOSE (RLG-104) -----
      The ruling calls the walls "the largest possible instance" of the far
@@ -9211,9 +9226,26 @@ function drawScenery(idx, p1, y1, z1, fade){
      later instead of a second one.
      ------------------------------------------------------------------ */
   const water = B.sea ? sideRoll : 0;
+  /* ---- AND A CLIFF IS A DROP, SO NOTHING STANDS ON IT (RLG-265) --------
+     Owner, 2026-09-15: "In mountain we have big mountainous scenery on both
+     sides of the road. I feel like we should pick one side of the road, and the
+     other side is a cliff with a guard rail. The side with the mountainous
+     stuff does not have a guard rail."
+
+     THIS IS THE SEA'S OWN SHAPE, one line further down: a place skips the side
+     it rolled because there is nothing to put there. A coast skips it because
+     it is water; a mountain skips it because it is air. Both read the place's
+     OWN coin - `hazardSide` - so neither can disagree with the rail standing at
+     that same edge, which is the whole point of the two coins being separate.
+
+     IT IS NOT A BRANCH ON THE NAME. Any place that declares a rolled hazard
+     gets an empty hazard side, so the rule arrives with the table rather than
+     with a list of biomes to keep in step. */
+  const drop = B.hazard === 'roll' ? hazardSide(B) : 0;
   for(const side of [-1, 1]){
     const seaSideNow = water && side === water;
     if(seaSideNow && !B.boats) continue;
+    if(drop && side === drop) continue;
     /* ---- THE ROLLED SIDE MAY DRAW SOMETHING ELSE ENTIRELY (RLG-102) ---
        The coast's rolled side draws NOTHING, because it is water. Farmland's
        draws a different spec, because it is a crop. Both are the same question -
