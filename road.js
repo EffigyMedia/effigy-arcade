@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.53';
+window.ROAD_BUILD = '0.14.54';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -290,6 +290,26 @@ const LANE_X = [-0.75,-0.25,0.25,0.75];
    everything downstream widens with them, with nothing to remember.
    -------------------------------------------------------------------------- */
 const LANE_W = Math.abs(LANE_X[1] - LANE_X[0]);
+
+/* ---- THE LIMIT OF TRAVEL, AND IT IS ONE NUMBER NOW (RLG-265) --------------
+   How far out the car may go, in road half-widths. The tarmac edge is 1.00, so
+   this puts the car's centre a fifth of a road-width onto the verge before it
+   stops - hard against the shoulder with a wheel still on the road.
+
+   IT WAS WRITTEN OUT SEVEN TIMES. The same literal `1.18` sat at every site
+   that clamps a lateral position: the player's own steering, the drift and the
+   two scripted-steer paths, the shunt a collision applies, the autopilot's
+   target, and `edgeX`, which is the only one that ever narrows it. Seven copies
+   of a number is fine while nothing reads it - but RLG-265 puts a GUARD RAIL at
+   this limit, and a rail drawn from one copy would disagree with the car at the
+   other six. A rail the car stops short of, or passes through, is worse than no
+   rail at all.
+
+   SO THE RAIL AND THE CAR READ THE SAME CONSTANT, and moving the limit moves
+   both together. `edgeX()` is still the function to ASK - it narrows this for a
+   tunnel bore - and this is the open road's value that it starts from.
+   -------------------------------------------------------------------------- */
+const EDGE_X = 1.18;
 
 /* ---- NOTHING ARRIVES IN VIEW --------------------------------------------
    The road is drawn to `DRAW * SEG` - 30,000 units. Anything placed nearer
@@ -11822,7 +11842,7 @@ if (AR && AR.gesture) AR.gesture.onDrag(g => {
      wheels are rolling. Authority fades in from a standstill up to about
      12mph, so crawling gives you a little and stopped gives you none. */
   const grip = clamp(spd / (MAX_SPD*0.07), 0, 1);
-  targetX = clamp(targetX + (g.dx * grip) / (W*0.26), -1.18, 1.18);
+  targetX = clamp(targetX + (g.dx * grip) / (W*0.26), -EDGE_X, EDGE_X);
 });
 
 cv.addEventListener('contextmenu',e=>e.preventDefault());
@@ -17669,7 +17689,7 @@ if(wheelCv){
     const dx = e.clientX - wheelGrab.x;
     /* no roll, no steering — the same rule the rest of the car obeys */
     const grip = clamp(spd / (MAX_SPD*0.07), 0, 1);
-    targetX = clamp(targetX + (dx * grip) / (W*0.26), -1.18, 1.18);
+    targetX = clamp(targetX + (dx * grip) / (W*0.26), -EDGE_X, EDGE_X);
     /* the wheel is NOT driven from here — see stepWheel(). Winding it from
        the finger meant it kept turning after the car had hit the edge of the
        road and stopped responding. */
@@ -17888,7 +17908,7 @@ function step(dt){
      not, so `camX` keeps converging and arrives at GO already settled */
   if(kd && !held){
     setInputSource(true);
-    targetX = clamp(targetX + kd*STEER_SWING*dt*clamp(spd/(MAX_SPD*0.07),0,1), -1.18, 1.18);
+    targetX = clamp(targetX + kd*STEER_SWING*dt*clamp(spd/(MAX_SPD*0.07),0,1), -EDGE_X, EDGE_X);
   }
   /* a harness sweeping the wheel to a mark over a stated time (RLG-048). It
      writes `targetX` and nothing else, so everything downstream cannot tell it
@@ -17896,7 +17916,7 @@ function step(dt){
   if(steerLeft > 0){
     steerLeft = Math.max(0, steerLeft - dt);
     const done = steerToT > 0 ? 1 - steerLeft / steerToT : 1;
-    targetX = clamp(steerFromX + (steerToX - steerFromX) * done, -1.18, 1.18);
+    targetX = clamp(steerFromX + (steerToX - steerFromX) * done, -EDGE_X, EDGE_X);
   }
 
   // right trigger / A holds the nitrous down
@@ -20638,7 +20658,7 @@ function impactWith(o){
   /* ---- AND ACROSS IT, where a rub does its work ------------------------ */
   const push  = Math.sign(playerX - o.x || 1);
   const apart = (0.10 + Math.min(1, Math.abs(rel) / MAX_SPD) * 0.34) * flank * IMPACT.apart;
-  playerX = clamp(playerX + push * apart * share * 2, -1.18, 1.18);
+  playerX = clamp(playerX + push * apart * share * 2, -EDGE_X, EDGE_X);
   targetX = playerX;
   /* the slip offset goes with the car: a shunt is not something you steered */
   if(typeof slideX !== 'undefined') slideX = 0;
@@ -22145,8 +22165,8 @@ function inBore(){
   return !!s && pos + PLAYER_Z >= s.z0;
 }
 function edgeX(){
-  if(!inBore()) return 1.18;
-  return Math.min(1.18, boreWallX() - playerW() / 2 - BORE.skin);
+  if(!inBore()) return EDGE_X;
+  return Math.min(EDGE_X, boreWallX() - playerW() / 2 - BORE.skin);
 }
 function boreMouth(){
   /* the near end of what exists: the tunnel's own start, or the camera once it
@@ -30780,7 +30800,7 @@ requestAnimationFrame(frameLoop);
      the same trap that once had this project believing Raceway's tyres died in
      twenty seconds. */
   API.steerOver = function(to, secs){
-    steerToX = clamp(to, -1.18, 1.18);
+    steerToX = clamp(to, -EDGE_X, EDGE_X);
     steerToT = Math.max(0, secs || 0);
     steerFromX = targetX;
     steerLeft = steerToT;
