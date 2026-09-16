@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.65';
+window.ROAD_BUILD = '0.14.66';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -23580,7 +23580,30 @@ function drawDeckFar(B){
    agreeing with the first the day anyone tuned the wet wash - which this file
    has been caught by four times.
    ------------------------------------------------------------------------ */
-const DECK_FACE = '#4a4a52';
+/* ---- A DECK IS CONCRETE, AND IT WAS NOT (RLG-281) ------------------------
+   Owner, 2026-09-16: "the bridge is concrete. So please check again."
+
+   IT WAS A STRING AND `mixRGB` WANTS AN ARRAY. This is the only mix target in
+   the file that was written as a hex string - `WET_DARK` and `WET_SHEEN` beside
+   it are both arrays - and `mixRGB` reads `T[0]`, `T[1]`, `T[2]` off it. On
+   `'#4a4a52'` those are `'#'`, `'4'` and `'a'`, so the deck's base colour came
+   out `rgb(NaN,14,NaN)`: two channels dead and the middle one an accident of
+   `'4' - 29`.
+
+   AND A CANVAS SILENTLY IGNORES AN INVALID fillStyle, keeping the previous one.
+   So every running surface on every crossing - the windscreen's and the
+   mirror's, both of which mix toward this - has been painted in whatever colour
+   happened to be in force, for as long as the constant has existed. The
+   crossings looked plausible because what precedes them is usually dark.
+
+   IT IS AN ARRAY NOW, AND THE COLOUR IS UNCHANGED: 0x4a4a52 is [74,74,82], so a
+   deck mixes to rgb(57,57,67) - the pale concrete it was always meant to be.
+
+   THIS IS THE FOURTH TIME TODAY that a colour helper's argument types have bitten
+   silently, and the third distinct way of doing it. The owner found this one by
+   knowing what a bridge is made of, which no check was asking.
+   ------------------------------------------------------------------------- */
+const DECK_FACE = [74,74,82];
 function tarmacTone(dark, fade, onDeck){
   const nAmt = nightFall(), gAmt = goldenHour();
   const snowLight = nAmt > 0.5 ? SNOW_NIGHT : gAmt > 0.25 ? SNOW_GOLD : SNOW_DAY;

@@ -154,6 +154,38 @@ SAMPLE = """() => {
 }"""
 
 
+def rgb_of(v):
+    """parse an rgb(...) string, keeping NaN as NaN so a check can report it.
+
+    A first version cast straight to int and died with a traceback on the very defect it
+    was written for, which is not a failure anyone can read."""
+    out = []
+    for x in v[v.index('(') + 1:-1].split(','):
+        try:
+            out.append(float(x))
+        except ValueError:
+            out.append(float('nan'))
+    return out
+
+
+SAMPLE_TONE = """() => {
+  const R = window.__road, fr = R.farRoad();
+  if(!fr || !fr.drew) return null;
+  const cv = document.getElementById('cv'), g = cv.getContext('2d');
+  const dpr = cv.width / cv.clientWidth;
+  const read = (x, y) => { const d = g.getImageData(Math.round(x*dpr),
+                             Math.round(y*dpr), 1, 1).data; return [d[0],d[1],d[2]]; };
+  /* SAMPLED JUST ABOVE THE JOIN, NOT HALF WAY UP. The two meet at the join, so
+     immediately above it the band is as wide as the road itself, while half way
+     to the horizon it is one or two pixels and a sample misses it on a third to
+     two thirds of frames - runs of one correct build read [115,128,84] and
+     [113,127,81], which is the FIELD. The fill is one flat colour over the whole
+     band, so a sample anywhere inside it answers the same question, and this
+     picks the widest place there is. */
+  const y = Math.max(fr.topY + 1, fr.joinY - 3);
+  return { near: read(fr.joinX, fr.joinY + 4), far: read(fr.joinX, y) };
+}"""
+
 def main():
     bad = 0
 
@@ -314,30 +346,68 @@ def main():
             page.evaluate("() => { const R = window.__road;"
                           " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.30); }")
             page.wait_for_timeout(45)
-        tone = page.evaluate("""() => {
-          const R = window.__road, fr = R.farRoad();
-          if(!fr || !fr.drew) return null;
-          const cv = document.getElementById('cv'), g = cv.getContext('2d');
-          const dpr = cv.width / cv.clientWidth;
-          const read = (x, y) => { const d = g.getImageData(Math.round(x*dpr),
-                                     Math.round(y*dpr), 1, 1).data; return [d[0],d[1],d[2]]; };
-          const midY = Math.round((fr.joinY + fr.topY) / 2);
-          return { near: read(fr.joinX, fr.joinY + 4), far: read(fr.vx, midY + 1),
-                   ground: read(fr.vx + 70, midY + 1) };
+        # ---- AND THE WORLD IS HELD STILL BEFORE ANY PIXEL IS READ --------------
+        # `farRoad()` is the bookkeeping the LAST completed frame left behind, and
+        # getImageData reads whatever is on the canvas NOW. With the car moving, the
+        # road has shifted between the two, so a sample placed by the old frame's
+        # joinX lands wherever the new frame put the verge - runs of one correct
+        # build read [112,127,76], [114,127,82] and [185,166,72], the last of which
+        # is a cornfield. `setSpd(0)` is a value the engine moves on from; `holdSpd`
+        # pins it, which is the same lesson hazard-test's own note records.
+        for _ in range(10):
+            page.evaluate("() => { const R = window.__road;"
+                          " R.clearTraffic(); R.holdSpd(0); }")
+            page.wait_for_timeout(45)
+        # ---- DID THE CANVAS ACCEPT THE COLOUR? -------------------------------------
+        # This is the ONE question the code cannot answer for itself. The defect was
+        # that mixRGB produced rgb(NaN,NaN,NaN) and A CANVAS SILENTLY IGNORES AN INVALID
+        # fillStyle, KEEPING THE PREVIOUS ONE - so the computed value was never the
+        # painted one, and nothing anywhere said so.
+        #
+        # ASKED BY A ROUND TRIP, NOT BY SAMPLING A PIXEL. Four placements of a pixel
+        # sample were tried and every one was flaky, because the ribbon is one or two
+        # pixels wide and the scene moves: readings of [115,128,84], [113,127,81],
+        # [112,127,76] and [185,166,72] - grass, grass, grass and a CORNFIELD - all came
+        # off builds whose colours were exactly right. Setting a fillStyle and reading it
+        # back tests the acceptance itself, deterministically, in one line: a canvas
+        # returns the normalised colour if it took it and the PREVIOUS one if it did not.
+        #
+        # AND IT COVERS EVERY TONE THE ROAD CAN HAVE, which a picture of one frame never
+        # could - both parities, a deck and an ordinary road, dry, snow-covered and wet.
+        # The deck is in the list because that is where this last bit, DECK_FACE, was
+        # still a string long after the far band was fixed.
+        print()
+        print('  AND THE CANVAS ACCEPTS EVERY TONE THE ROAD CAN HAVE')
+        bad_tones = page.evaluate("""() => {
+          const R = window.__road;
+          const c = document.createElement('canvas').getContext('2d');
+          const out = [];
+          const weather = [['dry',0,0,0], ['snow-covered',0,0.9,0], ['raining',1,0,0.8]];
+          const places = [['an ordinary road','FARMLAND'], ['a bridge deck','BRIDGE']];
+          for(const [pn, key] of places){
+            R.setBiomePair(key, key);
+            for(const [wn, w, sn, po] of weather){
+              R.setWet(w); R.setSnow(sn); R.setPool(po);
+              const t = R.farRoadTone(1);
+              for(const which of ['far','nearLit','nearDark']){
+                c.fillStyle = '#000000';
+                c.fillStyle = t[which];
+                /* black is what it keeps when it refuses, and no real tone here is black */
+                if(c.fillStyle === '#000000')
+                  out.push(pn + ', ' + wn + ', ' + which + ': ' + t[which]);
+              }
+            }
+          }
+          R.setWet(0); R.setSnow(0); R.setPool(0);
+          return out;
         }""")
-        if not tone:
-            ok(False, 'the far band was drawn so its colour could be read', 'no band')
-        else:
-            gap = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
-            print('  ..    in a FARMLAND: near road %s  far ribbon %s  ground %s'
-                  % (tone['near'], tone['far'], tone['ground']))
-            ok(gap(tone['far'], tone['ground']) > 60,
-               'the road to the horizon is not the colour of the ground beside it',
-               'they differ by %.1f, and 0 is the same pixel'
-               % gap(tone['far'], tone['ground']))
-            ok(gap(tone['far'], tone['near']) < 40,
-               'and it IS the colour of the road it continues',
-               'they differ by %.1f' % gap(tone['far'], tone['near']))
+        print('  ..    18 tones offered to a canvas: 2 parities and the band, over 3'
+              ' weathers, on a road and on a deck')
+        ok(not bad_tones,
+           'the canvas accepts every colour the road computes - none is NaN',
+           '; '.join(bad_tones[:4]) if bad_tones else 'all 18 taken')
+
+        page.evaluate('() => window.__road.holdSpd(null)')
 
         # ---- AND IT TRACKS THE WEATHER, NOT JUST THE DRY CASE (RLG-281) --------
         # Owner, 2026-09-16, on the repaint: does the far road match the near road in
@@ -358,7 +428,7 @@ def main():
         # [21,24,36], a gap of 72 where dry and snow-covered both read under 1.
         print()
         print('  AND IT TRACKS THE WEATHER')
-        rgb = lambda v: [int(float(x)) for x in v[v.index('(') + 1:-1].split(',')]
+        rgb = rgb_of
         for label, (w, sn, po) in (('dry', (0, 0, 0)), ('snow-covered', (0, 0.9, 0)),
                                    ('raining', (1, 0, 0.8))):
             page.evaluate("([w, sn, po]) => { const R = window.__road;"

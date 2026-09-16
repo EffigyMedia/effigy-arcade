@@ -810,6 +810,55 @@ def main():
                       '%d of %d ramp steps are at full slope' % (len(atfull), len(climb)))
 
         errs = page.evaluate("() => window.__probe.errors")
+        # ---- AND THE DECK IS CONCRETE (RLG-281) ------------------------------------
+        # Owner, 2026-09-16: "the bridge is concrete. So please check again." It was not.
+        # DECK_FACE was the one mix target in the engine written as a hex STRING - the two
+        # beside it are arrays - and mixRGB reads T[0], T[1], T[2] off it, so on '#4a4a52'
+        # those are '#', '4' and 'a'. The deck's base came out rgb(NaN,14,NaN): two dead
+        # channels and a middle one that is an accident of '4' - 29. A canvas silently
+        # ignores an invalid fillStyle and keeps the previous one, so every running
+        # surface on every crossing took whatever colour was in force. It looked
+        # plausible because what precedes it is usually dark.
+        #
+        # ASKED OF THE COMPUTED COLOUR, NOT OF PIXELS, and the owner is the reason: they
+        # found this by knowing what a bridge is made of, which is a question about the
+        # code rather than about a picture. The comparison is against the SAME function's
+        # answer for an ordinary road, so it cannot pass by both being broken together.
+        # NaN IS THE ANSWER THIS CHECK EXISTS TO CATCH, so it must survive parsing it.
+        # A first version cast straight to int and died with a traceback on the very
+        # defect it was written for - which is not a failure anyone can read, and a
+        # crashed harness tells the next person nothing about what was wrong.
+        def rgb(v):
+            out = []
+            for x in v[v.index('(') + 1:-1].split(','):
+                try:
+                    out.append(float(x))
+                except ValueError:
+                    out.append(float('nan'))
+            return out
+        real = lambda c: all(v == v and 0 <= v <= 255 for v in c)   # v == v is False for NaN
+        def tone(k):
+            page.evaluate("(k) => { const R = window.__road;"
+                          " R.setBiomePair(k, k); R.setWet(0); R.setSnow(0); R.setPool(0);"
+                          " R.setPhase(0.75); }", k)
+            page.wait_for_timeout(180)
+            return rgb(page.evaluate('() => window.__road.farRoadTone(1)')['nearLit'])
+        deck, road = tone('BRIDGE'), tone('FARMLAND')
+        print('      the deck reads %s against ordinary asphalt at %s' % (deck, road))
+        # ASKED FIRST, because a brightness comparison against a NaN is meaningless and
+        # would report some arbitrary verdict rather than the real fault.
+        res.check(real(deck) and real(road),
+                  'the deck and the road are both real colours rather than NaN',
+                  'deck %s, road %s' % (deck, road))
+        if real(deck) and real(road):
+            lift = (sum(deck) - sum(road)) / 3.0
+            res.check(lift > 12,
+                      'a deck is CONCRETE - measurably paler than the asphalt beside it',
+                      '%.1f levels paler, and 0 would be the same surface' % lift)
+        else:
+            res.check(False, 'a deck is CONCRETE - measurably paler than the asphalt beside it',
+                      'not asked: a channel is NaN, so a brightness comparison means nothing')
+
         res.check(not errs, 'no page errors', '; '.join(errs[:3]))
         browser.close()
     httpd.shutdown()
@@ -819,8 +868,9 @@ def main():
         print('FAILED: ' + '; '.join(res.fails))
         return 1
     print('all checks passed')
-    print('  whether the ironwork reads as the Golden Gate at speed is not measured here,')
-    print('  and neither is the deck surface, which is not built. See tools/biome-shot.py')
+    print('  whether the ironwork reads as the Golden Gate at speed is not measured here.')
+    print('  The deck SURFACE is now checked for being concrete rather than asphalt, but')
+    print('  whether that grey is the right grey is still the owner call on a device.')
     return 0
 
 
