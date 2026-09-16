@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.54';
+window.ROAD_BUILD = '0.14.55';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -13016,6 +13016,9 @@ const BIOMES = {
                  painter is left standing and is now unused, so restoring the
                  headlands is this one word going back. Bring them back only
                  with an answer to the vertical cut. */
+              /* the sea is the hazard and `sideRoll` already puts it on one side,
+                 so the rail reads that same coin and the dunes stay open (RLG-265) */
+              hazard:'water',
               sky:'#2f4a63', city:0.08, trees:0.20, skyForm:'none' },
   /* ---- THE FLATTEST PLACE ON THE BOARD (RLG-102) ----------------------
      Owner, 2026-08-31: "I want to add another biome farmland. This one would
@@ -13129,6 +13132,9 @@ const BIOMES = {
   SWAMP:    { name:'SWAMP',    temp:0.80, vary:0.10, precip:0.64, bias:1.10,
               hill:0.15, bend:0.70,
               grassLo:'#22301f', grassHi:'#33422a',
+              /* the standing water is the hazard, and it is drawn on `sideRoll` -
+                 so the rail reads the same coin or it fences the wrong side */
+              hazard:'water',
               sky:'#2c3a2e', city:0.06, trees:0.70, skyForm:'wetTree' },
   /* ---- THE JUNGLE, WHICH SHARES A CLIMATE AND NOTHING ELSE (RLG-113) --
      Owner, 2026-08-31: "let's add a jungle biome."
@@ -13170,6 +13176,9 @@ const BIOMES = {
   MOUNTAIN: { name:'MOUNTAIN', temp:0.15, vary:0.15, precip:0.45, bias:1.00,
               hill:1.00, bend:1.00,
               grassLo:'#2b3a33', grassHi:'#3c4f45',
+              /* the cliff is the hazard and it has no water to agree with, so it
+                 reads `hazardRoll` and the rock face stands opposite (RLG-265) */
+              hazard:'roll',
               sky:'#33405e', city:0.10, trees:0.55, skyForm:'peak' },
   /* ---- A CITY HAS NO CLIMATE OF ITS OWN, SO IT ROLLS ONE (RLG-109) ----
      `vary` at 0.45 is the widest on the board and it is doing the work a
@@ -13181,6 +13190,12 @@ const BIOMES = {
   CITY:     { name:'CITY',     temp:0.45, vary:0.45, precip:0.38, bias:1.00,
               hill:0.30, bend:0.30,
               grassLo:'#2c2f36', grassHi:'#3b3f48',
+              /* the one place with a drawn limit on BOTH sides, and it is concrete
+                 rather than steel because that is what a city road carries. Neither
+                 side is a hazard - there is no drop - but a kerbside wall is what
+                 stands between a carriageway and a building, so it is not the
+                 furniture RLG-264 deleted (RLG-265) */
+              edge:'barrier',
               sky:'#2a2438', city:1.00, trees:0.10, skyForm:'tower' },
   /* ---- TUNDRA IS WHITE BEFORE ANYTHING FALLS (RLG-059, RLG-109) --------
      Owner, 2026-08-29: "let's make the tundra automatically snow covered
@@ -14061,7 +14076,63 @@ let seaStraight = false;
    one side while the GAME was rolling it correctly. A hook that takes a
    different path from the thing it is standing in for proves less than it looks
    like it proves. Both call this. */
-function rollSide(){ sideRoll = Math.random() < 0.5 ? -1 : 1; return sideRoll; }
+/* ---- AND WHICH SIDE THE DROP IS ON, WHICH IS NOT ALWAYS THE SAME ANSWER
+       (RLG-265) -----------------------------------------------------------
+   `sideRoll` is the side a place puts its OWN THING on - the sea, the crops -
+   and where the hazard IS that thing, the rail has to agree with it. A coast
+   railed on the landward side would fence you off from the dunes and leave the
+   water open, which is the furniture RLG-264 deleted, pointing the wrong way.
+
+   A MOUNTAIN HAS NO SEA TO AGREE WITH. Owner, 2026-09-15: "Mountain will spawn
+   the cliff on one side or the other with the mountain scenery on the opposing
+   side." Nothing already rolled answers that, and READING `sideRoll` FOR IT
+   WOULD BE WRONG rather than merely untidy: it would tie a cliff to a coin that
+   other places turn for other reasons, so the day a mountain grows a second
+   thing with a side, the two would be welded together and neither could move.
+
+   So a second coin, turned in the same function on the same event, and
+   `hazardSide()` is the one place that decides which of the two a place reads.
+   ------------------------------------------------------------------------- */
+let hazardRoll = 1;
+function rollSide(){
+  sideRoll = Math.random() < 0.5 ? -1 : 1;
+  hazardRoll = Math.random() < 0.5 ? -1 : 1;
+  return sideRoll;
+}
+
+/* ---- WHAT STANDS AT THE LIMIT OF TRAVEL, PER SIDE (RLG-265) --------------
+   Owner, 2026-09-15: "At the furthest extent where the car stops moving we need
+   to put guard rails", and then, on the biomes: "the side with the mountainous
+   stuff does not have a guard rail and hitting the mountainous stuff is the
+   physical stuff you can bang up against just like coastal and farmland."
+
+   SO EACH SIDE IS A HAZARD OR A SOLID, and that is the whole rule. A HAZARD is
+   a drop or open water - nothing is there, so a rail is the only thing that can
+   stop you, and it earns its place. A SOLID is rock, trees, a fence line or a
+   bank: the car bangs against it, and a rail in FRONT of it is road furniture
+   standing between the player and scenery that already does the job.
+
+   THREE PLACES HAVE A HAZARD SIDE AND NINE DO NOT. A coast has the sea, a swamp
+   has its water, and a mountain has its cliff. Everything else is solid on both
+   sides - the canyon walls, the tree line in a forest or jungle, farmland's
+   fence line, the desert's berm, tundra's snow bank, the deck parapet and the
+   bore wall. A city is the one place with a drawn limit on BOTH sides, and it
+   is a concrete barrier rather than steel, because that is what a city road has.
+
+   `side` is -1 for the left and +1 for the right, the same sign `sideRoll`
+   carries. It answers null where nothing is drawn, and the CAR STILL STOPS at
+   `edgeX()` either way: a side with no rail is not a side you can drive off.
+   ------------------------------------------------------------------------- */
+function hazardSide(B){
+  /* where the hazard IS the water, the rail goes on the water's own side */
+  if(!B || !B.hazard) return 0;
+  return B.hazard === 'water' ? sideRoll : hazardRoll;
+}
+function edgeAt(B, side){
+  if(!B) return null;
+  if(B.edge) return B.edge;                    /* a city, both sides */
+  return hazardSide(B) === side ? 'rail' : null;
+}
 
 /* ---- WEATHER BELONGS TO A PLACE, SO IT HAS TO LEAVE WITH IT ---------------
    The biome decided what MIGHT fall, and then nothing checked it again. A front
@@ -30311,6 +30382,25 @@ requestAnimationFrame(frameLoop);
      distance from the tarmac. -1 left, 1 right (RLG-059). */
   API.seaSide  = function(){ return sideRoll; };   /* the old name, kept: harnesses use it */
   API.sideRoll = function(){ return sideRoll; };
+  /* ---- WHAT STANDS AT EACH LIMIT, FOR A NAMED PLACE (RLG-265) -----------
+     Exposed because the TABLE is the thing that can be wrong, and a picture
+     cannot check it. A rail drawn on the landward side of a coast is a rail
+     correctly drawn as far as any screenshot is concerned, so which SIDE it
+     lands on has to be assertable as a number.
+
+     `hazardRoll` comes out beside it for the same reason. A mountain's cliff
+     must be able to fall on either side across stretches, and a coin that is
+     STUCK reads exactly like a coin that is working if you only ever look at
+     one stretch - which is the fault `rollSide`'s own note already records
+     being caught by, 40 out of 40 on one side. */
+  API.hazardRoll = function(){ return hazardRoll; };
+  /* turning the coins is exposed so a check can turn them MANY times. One stretch
+     cannot tell a working coin from a jammed one, and this is the only way to ask
+     the GAME's own roll rather than a harness's imitation of it - which is the
+     fault `rollSide`'s own note records. */
+  API.rollSide = function(){ return rollSide(); };
+  API.edgeOf = function(k, side){ return edgeAt(BIOMES[k], side); };
+  API.hazardSideOf = function(k){ return hazardSide(BIOMES[k]); };
   /* what a place puts on its horizon, stated rather than inferred from its name
      (RLG-102/RLG-105). A check reads this to prove nothing falls through to the
      tower default, which is what put a city skyline on a farmland. */
