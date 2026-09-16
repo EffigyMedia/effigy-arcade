@@ -46,6 +46,10 @@ WALL = 1.13          # where the off-road block pins the car
 OFF_SPD = 4200       # the verge's speed ceiling, from road.js
 
 
+# the railing's line on a bridge deck, in road half-widths - TRUSS.out in the engine
+TRUSS_OUT = 1.13
+
+
 def main():
     bad = 0
 
@@ -107,6 +111,32 @@ def main():
         ok(held_spd <= OFF_SPD * 1.02,
            'and the verge still costs the speed it always did',
            f'{held_spd:.0f} against the off-road ceiling of {OFF_SPD}')
+        # ---- AND A DECK STOPS YOU AT ITS PARAPET (RLG-265) ----------------------
+        # Owner, 2026-09-15: "On the bridge and in the tunnel, we need to stop the car at
+        # the natural physical boundary that they draw." The tunnel already did; the
+        # bridge did not. TRUSS.out is 1.13 and the open road's limit is 1.18, so the car
+        # ran past the railing it could see.
+        #
+        # THE SAME PRESS, IN A DIFFERENT PLACE, so the only thing that changed is the
+        # place. A check that measured the deck alone would pass on a build that had
+        # narrowed every road.
+        page.evaluate("() => { const R = window.__road;"
+                      " R.setBiomePair('BRIDGE','BRIDGE'); R.setSpd(5000); }")
+        for _ in range(24):
+            page.evaluate("() => { const R = window.__road;"
+                          " R.setTarget(1.18); R.setSpd(5000); }")
+            page.wait_for_timeout(50)
+        deck = page.evaluate("() => window.__road.playerX")
+        print(f'  ..    on a deck the car pins at {deck:.4f}, the parapet is {TRUSS_OUT}')
+        ok(abs(deck) < TRUSS_OUT,
+           'a deck stops the car INSIDE its parapet',
+           f'{abs(deck):.4f} against a parapet at {TRUSS_OUT}')
+        # AND NOT SO FAR INSIDE THAT THE DECK IS A LANE. Half the widest car plus a skin
+        # is the whole of the gap; anything more means the limit was narrowed twice.
+        ok(abs(deck) > TRUSS_OUT - 0.22,
+           'and not so far inside that the deck reads as a single lane',
+           f'{abs(deck):.4f}, a gap of {TRUSS_OUT - abs(deck):.4f}')
+
         ok(errs == [], 'no page errors', errs[0][:100] if errs else '')
         ctx.close()
         b.close()

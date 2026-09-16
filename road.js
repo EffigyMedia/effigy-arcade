@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.57';
+window.ROAD_BUILD = '0.14.58';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15284,6 +15284,28 @@ function postIn(za, zb, every){
    parapet really is three times the height of a crash barrier.
    ------------------------------------------------------------------------- */
 const RAIL = {
+  /* ---- WHERE THE LINE IS, AND IT IS DERIVED (RLG-265) ----------------
+     The ruling puts the rail "at the furthest extent where the car stops
+     moving", and the thing that stops is the car's FLANK, not its centre.
+     Drawn at `EDGE_X` the rail ran straight THROUGH the car: the centre rests
+     at about 1.145 and the widest body is 0.2994 across, so the flank reaches
+     1.295 - eleven hundredths of a road half-width past a rail at 1.18. A
+     screenshot of the car hard over on a beach shows the posts crossing the
+     bodywork.
+
+     SO IT IS COMPUTED FROM THE SAME TERMS THE CAR IS, and the WIDEST body is
+     the one it clears - a rail that a supercar passes through but a hatchback
+     does not would move with the garage, which is the shape [[RLG-058]] spent a
+     unit taking out of the collider. `widestHalf` reads the painter's own
+     table, so a new body cannot silently start clipping it.
+
+     THE ALTERNATIVE WAS TO MOVE THE CAR, and it was rejected: narrowing the
+     drivable road to meet a rail already drawn changes how much lateral room
+     the player has, in four biomes out of twelve, which is a gameplay change
+     the owner did not ask for. Moving the rail changes a picture. Moving the
+     limit changes the game.
+     ---------------------------------------------------------------- */
+  skin:  0.015, /* daylight between the flank and the rail, in road half-widths */
   h:      63,   /* the steel beam's top, in world units above the road          */
   deep:   26,   /* how deep the beam itself is, world units                     */
   post:    2,   /* a post every N segments                                      */
@@ -15294,12 +15316,27 @@ const RAIL = {
 /* which way the light falls on the beam, so the two sides of the road are not
    the same flat strip. The sun is over the road rather than behind the player,
    so the INSIDE face is what is lit and the outside is in its own shade. */
+/* the widest body in the garage, in road half-widths. Cached: it walks a table
+   that cannot change at runtime, and it is asked once per slice per side. */
+let widestW = 0;
+function widestHalf(){
+  if(!widestW) for(const k of Object.keys(BODY)) {
+    const w = playerWidthOf(k);
+    if(w > widestW) widestW = w;
+  }
+  return widestW / 2;
+}
+/* the rail's line, in road half-widths: just outside where the widest car's
+   flank comes to rest. `EDGE_X - 0.03` is where the engine holds the car -
+   see the barrier block - and it is read from the constant rather than typed. */
+function railX(){ return EDGE_X - 0.03 + widestHalf() + RAIL.skin; }
 function drawRail(p1, p2, y1, y2, za, zb, side, kind, vh){
   const wall = kind === 'barrier';
   const pal  = wall ? RAIL.stone : RAIL.steel;
   const top1 = trussTop(p1, y1, wall ? RAIL.wallH : RAIL.h, vh);
   const top2 = trussTop(p2, y2, wall ? RAIL.wallH : RAIL.h, vh);
-  const a1 = p1.x + side * p1.w * EDGE_X, a2 = p2.x + side * p2.w * EDGE_X;
+  const rx = railX();
+  const a1 = p1.x + side * p1.w * rx, a2 = p2.x + side * p2.w * rx;
 
   if(wall){
     /* solid to the ground: a concrete barrier has nothing under it */
@@ -22189,6 +22226,10 @@ const IRON = { face:'#c0362c', lit:'#d95b3f', dark:'#8a2620' };
    ------------------------------------------------------------------------- */
 const TRUSS = {
   out:   1.13,  /* the rail line, in road half-widths - the rumble's own edge   */
+  /* the gap between the car's flank and the ironwork when it is hard over. Zero
+     welds the sprite to the rail; this reads as the car being INSIDE it. It is the
+     same idea as `BORE.skin` and it is deliberately the same size (RLG-265). */
+  skin:  0.02,
   h:      260,  /* the top rail, in world units above the deck                  */
   post:     3,  /* a stanchion every N segments                                 */
   rope:     6,  /* a suspender rope every N segments                            */
@@ -22447,9 +22488,37 @@ function inBore(){
   const s = boreSpan();
   return !!s && pos + PLAYER_Z >= s.z0;
 }
+/* is the car standing on a bridge deck right now? `bioAt` answers per SEGMENT, and
+   the segment that matters is the one under the CAR rather than under the camera -
+   the camera trails by PLAYER_Z, so asking it would let the limit widen a car's
+   length before the deck ended and narrow a car's length after it began. */
+function onDeckNow(){
+  const B = bioAt(Math.floor((pos + PLAYER_Z) / SEG));
+  return !!(B && B.truss);
+}
+/* ---- AND A DECK STOPS YOU AT ITS PARAPET (RLG-265) -----------------------
+   Owner, 2026-09-15: "On the bridge and in the tunnel, we need to stop the car at
+   the natural physical boundary that they draw."
+
+   THE TUNNEL ALREADY DID AND THE BRIDGE DID NOT. `TRUSS.out` is 1.13 and the open
+   road's limit is 1.18, so the car ran five hundredths of a road half-width PAST
+   the railing it can see - not far, and unmistakable, because the thing you are
+   outside of is drawn right there beside the car.
+
+   IT IS THE SAME SUM THE BORE USES and deliberately so: the structure's own line,
+   less half the car, less a skin. Read off the drawn geometry rather than written
+   down, so a wider car or a wider road keeps its gap and nothing has to be kept in
+   step by hand. `TRUSS.skin` is the gap that stops the sprite's edge touching the
+   ironwork, which reads as the car being inside the rail rather than welded to it.
+
+   AND IT NEVER WIDENS THE LIMIT. Both branches are a `Math.min` against the open
+   road, so a structure can only ever bring the car in.
+   ------------------------------------------------------------------------- */
 function edgeX(){
-  if(!inBore()) return EDGE_X;
-  return Math.min(EDGE_X, boreWallX() - playerW() / 2 - BORE.skin);
+  let x = EDGE_X;
+  if(inBore()) x = Math.min(x, boreWallX() - playerW() / 2 - BORE.skin);
+  if(onDeckNow()) x = Math.min(x, TRUSS.out - playerW() / 2 - TRUSS.skin);
+  return x;
 }
 function boreMouth(){
   /* the near end of what exists: the tunnel's own start, or the camera once it
