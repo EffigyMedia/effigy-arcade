@@ -77,31 +77,68 @@ ARM = """async (a) => {
     };
     requestAnimationFrame(wait);
   });
-  const t0 = performance.now(); const mph = [];
-  let moved = false;
+  const t0 = performance.now(); const mph = []; const blocker = [];
+  let moved = false, inZone = 0;
   await new Promise((done) => {
     const tick = () => {
       const t = (performance.now() - t0) / 1000;
-      /* ---- THE CRUISER IS RE-PLACED EVERY FRAME, and that is deliberate.
-         Mutating one placed object drifted twice: a cruiser that gives up becomes a PARKED
-         TRAP, which is not a blocker (RLG-173), so the arm went on moving a trap around and
-         read "no drag" on a build that drags correctly. `placeCop` writes a fresh chasing
-         cruiser, 1,500 ahead, at the player's own speed, in lane centre - the same staged
-         situation every frame, with nothing of its own to decide. */
+      /* ---- THE CRUISER IS RE-PLACED EVERY FRAME, AT A SPEED OF ITS OWN ------
+         It is re-placed because mutating one placed object drifted twice: a cruiser that gives
+         up becomes a PARKED TRAP, which is not a blocker (RLG-173), so the arm went on moving
+         a trap around and read "no drag" on a build that drags correctly. Leaving it in the
+         engine's hands instead was tried when the floor landed and is worse - it brakes itself
+         out of its own station, the pinned player goes past, and it was measured 27,000 units
+         BEHIND the player having spent 0 of 331 samples inside the zone.
+
+         WHAT CHANGED IS THE SPEED IT IS GIVEN. It used to be handed the PLAYER'S OWN speed
+         every frame, which was harmless while the zone ramped to zero and became the whole
+         measurement once the zone gained a floor at the BLOCKER's speed (RLG-271): the floor
+         sat exactly on top of the car it was supposed to be slowing, so the drag could never
+         be more than one frame's worth. It read 108 of a 120mph pin on the same build that had
+         just been measured taking the same car to 59.
+
+         `blockAt` is a speed of its own, below the player's pin, and that is the situation the
+         rule is actually about - a slower police car in front of you. The player should be
+         dragged DOWN TO IT and no further, which is both halves of the ruling in one arm and
+         neither of them recomputed here (RLG-065). */
       R.placeCop(1500, 0);
       const cop = R.cops()[0];
       cop.grace = 99; cop.cool = 99;
-      cop.spd = R.pursuit().mph / 200 * R.MAX_SPD;
+      cop.spd = a.blockAt * R.MAX_SPD;
+      /* ---- AND THE LINE IS HELD EVERY FRAME, NOT SET ONCE (RLG-271) --------
+         `setLane(0)` before the loop was the whole of it, and the car did not stay there: it
+         wandered to x 1.12 - the barrier - over six seconds, so the blocker kept dropping out
+         of the zone and the drag kept being released and re-seeded. That is what made this arm
+         swing between 66 and 100mph on one unchanged build. The aside arm has always re-issued
+         its lane every frame; the lined arm now does the same, which is the only way the
+         question it asks stays the question it asks. */
       if(a.aside) R.setLane(Math.max(-0.95, Math.min(0.95, a.gap)));
       else if(a.moveAt && t > a.moveAt) moved = true;
       if(moved) R.setLane(Math.max(-0.95, Math.min(0.95, a.gap)));
+      else if(!a.aside) R.setLane(0);
       mph.push(Math.round(R.pursuit().mph));
+      /* WHAT THE BLOCKER WAS DOING, sampled alongside the speed it was supposed to be taking.
+         "no drag" and "no blocker" look identical in a column of mph and are completely
+         different failures - one is a broken rule and the other is a broken arm. */
+      const k = R.stagedCop();
+      if(k){
+        /* IN THE ZONE IS ASKED HERE, not afterwards. The player's x is part of the test and it
+           MOVES - the release arm swings out half way through - so asking at the end of the
+           run scores every earlier sample against a position the car was not in. It read 0 of
+           331 that way on an arm that was plainly being dragged down. */
+        const z = R.pursuitStop();
+        if(k.dz > 0 && k.dz < z.near && Math.abs(k.dx - z.playerX) < z.wide) inZone++;
+        k.px = +z.playerX.toFixed(3);
+        blocker.push(k);
+      }
       if(t < a.secs) requestAnimationFrame(tick); else done();
     };
     requestAnimationFrame(tick);
   });
   R.holdSpd(null);
-  return { mph, first: mph[0], last: mph[mph.length - 1], low: Math.min.apply(null, mph) };
+  const last = blocker[blocker.length - 1] || null;
+  return { mph, first: mph[0], last: mph[mph.length - 1], low: Math.min.apply(null, mph),
+           blocker: last, sawBlocker: blocker.length, inZone: inZone };
 }"""
 
 RIVAL = """async (a) => {
@@ -110,8 +147,15 @@ RIVAL = """async (a) => {
      the roles reversed - the owner's own words. The rival is held 1,500 behind the player, in
      the player's line or aside from it, and the field is pinned with `holdField` so a rival
      racing or lifting for traffic cannot be mistaken for the zone. */
+  /* ---- THE RIVAL IS PINNED FASTER THAN THE PLAYER (RLG-271) ---------------
+     The zone's floor is the BLOCKER's own speed, and on shift the blocker is the
+     player's police car. Pinning both cars at the same speed leaves the rival
+     already sitting on its own floor, so the arm measured a drag of nothing on a
+     build that drags correctly - it read 9200 of 9200. The rival is held ABOVE
+     the player now, which is the situation the mode is actually about: a racer
+     coming up behind a police car that is slower than it. */
   R.holdSpd(a.hold * R.MAX_SPD);
-  R.holdField(a.hold * R.MAX_SPD);
+  R.holdField((a.fieldHold === undefined ? a.hold : a.fieldHold) * R.MAX_SPD);
   R.parkRivals(0, 60000);
   R.setLane(0);
   /* THE WINGMEN ARE CLEARED, and that is not tidying up. On shift the player has friendly
@@ -135,7 +179,9 @@ RIVAL = """async (a) => {
     requestAnimationFrame(tick);
   });
   R.holdField(null); R.holdSpd(null);
-  return { sp, first: sp[0], last: sp[sp.length - 1], low: Math.min.apply(null, sp) };
+  return { sp, first: sp[0], last: sp[sp.length - 1], low: Math.min.apply(null, sp),
+           /* what the floor is supposed to be, read off the car that sets it */
+           player: Math.round(a.hold * R.MAX_SPD) };
 }"""
 
 
@@ -186,9 +232,17 @@ def main():
             a.setdefault('aside', False)
             a.setdefault('gap', wide + 0.2)
             a.setdefault('moveAt', None)
+            # the blocker's own pace: a third of the fleet's top, against a 60 % pin. It is
+            # BELOW the player because that is what a car you are stuck behind is.
+            a.setdefault('blockAt', 0.33)
             got = pg.evaluate(ARM, a)
+            k = got.get('blocker')
             print('      %-8s pinned %dmph: started %d, lowest %d, ended %d'
                   % (name, pinned, got['first'], got['low'], got['last']))
+            print('               blocker %s, in the zone for %d of %d samples'
+                  % (('none' if not k else 'dz %d, dx %.2f, player x %.2f'
+                      % (k['dz'], k['dx'], k.get('px', 0))),
+                     got.get('inZone', 0), got.get('sawBlocker', 0)))
             return got
 
         g = arm('LINED')
@@ -196,8 +250,20 @@ def main():
         # what BUSTED counts (RLG-247), and when it fires the run leaves 'driving', the zone
         # lets go, and a pinned throttle takes the car back to the pin within a second. The
         # same arm ended at 0 on one run and at the pin on the next, having been to 0 in both.
-        ok(g['low'] < pinned * 0.2, "a cruiser in the player's line drags the car to a near stop",
-           'the lowest it reached was %dmph of a %dmph pin' % (g['low'], pinned))
+        #
+        # ---- AND IT IS TWO CHECKS NOW, NOT ONE (owner, 2026-09-16, RLG-271) -----------------
+        # This asserted the car reached a FIFTH of the pin, and it did: it reached zero, from a
+        # 120mph pin that writes the speed every frame. The owner ruled that the defect - "the
+        # amount of deceleration that's forced upon you is way too much. You can't get out of
+        # it." The zone must still take a real bite out of the car, and must no longer hold it
+        # at a standstill, so BOTH ends are now asserted. A single check on the low point
+        # cannot tell a zone that was tuned from one that was switched off.
+        blocker_mph = 0.33 * 200
+        ok(g['low'] < pinned * 0.75, "a cruiser in the player's line takes a real bite out of "
+           "the car", 'the lowest it reached was %dmph of a %dmph pin' % (g['low'], pinned))
+        ok(g['low'] > blocker_mph * 0.7, 'and drags it down to the cruiser rather than through '
+           'it to a standstill',
+           'it reached %dmph behind a cruiser doing %dmph' % (g['low'], blocker_mph))
 
         g = arm('ASIDE', aside=True)
         ok(g['low'] > pinned * 0.7, 'a player already out of the line keeps its speed',
@@ -245,21 +311,34 @@ def main():
             # STOP_HOLD (2.5 s) and a stopped rival leaves the race (RLG-203), which disturbs
             # the shift for whatever runs next - measured, the aside arm inherited that and
             # read zero. Two seconds is inside the hold, so nothing is stopped by it.
-            got = pg.evaluate(RIVAL, {'hold': 0.60, 'secs': 2, 'aside': True, 'gap': wide + 0.2})
+            got = pg.evaluate(RIVAL, {'hold': 0.60, 'fieldHold': 0.85, 'secs': 2,
+                                      'aside': True, 'gap': wide + 0.2})
             print('      RIVAL ASIDE  started %d, lowest %d, ended %d'
                   % (got['first'], got['low'], got['last']))
             ok(got['low'] > got['first'] * 0.7, 'a rival out of the line keeps its speed',
                'it fell to %d of %d' % (got['low'], got['first']))
 
-            got = pg.evaluate(RIVAL, {'hold': 0.60, 'secs': 6, 'aside': False, 'gap': wide + 0.2})
-            print('      RIVAL        started %d, lowest %d, ended %d'
-                  % (got['first'], got['low'], got['last']))
-            # The low point, for the same reason the player's arm reads it: a rival held under
-            # the stop speed is put out of the race, and this arm's own `placeRival` then puts
-            # it back on the road at the pinned pace.
-            ok(got['low'] < got['first'] * 0.25,
-               "and a rival behind the player's police car is dragged down the same way",
+            got = pg.evaluate(RIVAL, {'hold': 0.60, 'fieldHold': 0.85, 'secs': 6,
+                                      'aside': False, 'gap': wide + 0.2})
+            print('      RIVAL        started %d, lowest %d, ended %d, the police car ahead %d'
+                  % (got['first'], got['low'], got['last'], got['player']))
+            # ---- WHAT THE ZONE DOES TO A RIVAL NOW (owner, 2026-09-16, RLG-271) -------------
+            # This asserted the rival reached a QUARTER of its own speed, which was the old rule
+            # taking every blocked car to zero. The floor is the BLOCKER's speed now, and on
+            # shift the blocker is the player's own police car - so the mode's verb has become
+            # what the owner described it as: "it's up to YOU! to get in front and slow them
+            # down." A rival is brought down to the police car's pace and no further, and going
+            # slower than that is something the PLAYER has to do.
+            #
+            # The rival is pinned above the player for this arm. With both pinned at the same
+            # speed the rival starts on its own floor and nothing can be measured - that read
+            # 9200 of 9200 on a build that works.
+            ok(got['low'] < got['first'] * 0.85,
+               "and a rival behind the player's police car is dragged down toward it",
                'the lowest it reached was %d of %d' % (got['low'], got['first']))
+            ok(got['low'] > got['player'] * 0.75,
+               'but no further than the police car it is stuck behind',
+               'it reached %d against a police car doing %d' % (got['low'], got['player']))
 
         ok(not errs, 'no page errors', errs[0][:120] if errs else '')
         b.close()

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.47';
+window.ROAD_BUILD = '0.14.49';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -478,16 +478,56 @@ const STOP_WIDE = 0.55;   /* and roughly in front, not two lanes over */
              be and still count as in front.
      spd     0.20 - Intercept's STOP_SPD: under this the player is stopped.
      decel   how hard a lined-up cruiser in front brakes, as a fraction of
-             MAX_SPD per second. 0.35 takes 200mph to nothing in about three
-             seconds, which is a hard stop that a thumb can still react to.
+             MAX_SPD per second.
+
+   ---- AND ALL THREE OF THEM MOVED (owner, 2026-09-16, RLG-271) -------------
+   Owner: "When a cop gets in front of you the amount of deceleration that's
+   forced upon you is way too much. You can't get out of it."
+
+   MEASURED BEFORE ANYTHING CHANGED. `stop-zone-test` pins the player at 120mph
+   with `holdSpd` - a stronger throttle than a thumb can hold, because it writes
+   the speed every frame - and a cruiser in the player's line still took the car
+   to ZERO: started 120, lowest 0, ended 0. Three separate terms were stacked to
+   produce that, and the owner chose to move all three.
+
+     decel   0.35 -> 0.18. RLG-259's own word is that the zone should force the
+             car "slowly to a stop"; 0.35 took 70mph away every second, which is
+             200mph to a dead stop in under three seconds and the hardest
+             braking anywhere in this game. 0.18 is about five and a half
+             seconds over the same range - long enough to be a thing you react
+             to rather than a thing that has already happened.
+     floor   NEW. The cap ramped to ZERO and kept going, so the player was
+             dragged THROUGH the blocker's speed rather than down to it - two
+             brakes stacked, because the cruiser in front is separately braking
+             itself at this same rate through `forceSpd`. The cap now stops at
+             the blocker's own speed: you settle behind a car instead of being
+             pinned by a field, and the blocker's own braking is what still
+             brings you to a stop if you stay there.
+     wide    0.55 -> 0.32. This is the escape and it goes DOWN, which is the
+             opposite of what it looks like: `wide` is how far off the line a
+             car may be and STILL be blocked, so a wider zone is a zone that is
+             harder to leave. At 0.55 the escape did not exist against a full
+             box at all - the flanking stations sit at 0.42 either side of the
+             player, so clearing 0.55 from the car in front meant steering into
+             a car that was already there. 0.32 is just over the width of the
+             cars themselves (a cruiser is 0.27 across), which is the ruling's
+             own description of the condition: a police car "directly in front
+             of you". It is reachable before the flanker is.
+
+   WHAT A HARNESS CANNOT JUDGE, and it is the owner's on a device: whether five
+   and a half seconds reads as pressure or as a nuisance, and whether settling
+   behind the blocker rather than being stopped by it still feels like being
+   caught. Both are single numbers here.
 
    WHAT THE STOP DOES IS A BUST. It adds to the existing BUSTED count, so the
    three-second hold, the bar on screen and the result are the ones a pursuit
    already has. No new outcome is invented.
 
    THEY ARE THEIR OWN NUMBERS, not references to Intercept's. The two modes
-   start equal by choice, and tuning one must not silently retune the other. */
-const PURSUIT_STOP = { wide: 0.55, near: 3200, spd: 0.20, decel: 0.35 };
+   start equal by choice, and tuning one must not silently retune the other -
+   which is what makes the three changes above safe: Intercept's STOP_WIDE and
+   STOP_SPD are untouched. */
+const PURSUIT_STOP = { wide: 0.32, near: 3200, spd: 0.20, decel: 0.18 };
 /* ---- HOW MANY WINGMEN THE SHIFT TRIES TO KEEP (RLG-203) ----------------
    Owner: "maybe we should always try to have at least two cruisers as wingmen
    in this mode." A floor rather than a cap, and "try" is the owner's own hedge.
@@ -15795,10 +15835,32 @@ function stopBlockerAhead(z, x, self){
   return null;
 }
 /* `prev` is the cap this car carried last frame, `undefined` when it was free */
+/* ---- AND IT STOPS AT THE BLOCKER, NOT AT ZERO (owner, 2026-09-16, RLG-271) --
+   Owner: "the amount of deceleration that's forced upon you is way too much.
+   You can't get out of it."
+
+   THIS RAMPED TO ZERO AND KEPT GOING, so the car behind was dragged THROUGH the
+   blocker's speed and on to a standstill. That stacked two brakes on one car:
+   the cruiser in front is separately braking ITSELF at this same rate through
+   `forceSpd` in its box station, and the cap here is seeded from the speed of
+   the car BEHIND, which is the higher of the two - so the two ramps never met
+   and the gap between the cars grew while the player was pinned.
+
+   The floor is the blocker's own speed. You are dragged down to the car in
+   front and no further, which is the shape the owner asked for: it is a car you
+   are stuck behind rather than a field that holds you still. Staying there
+   still stops you, because the blocker goes on braking itself - the stop is now
+   something the police car does rather than something the zone does.
+
+   A FLOOR ABOVE THE CURRENT SPEED IS HARMLESS. The cap is applied as `if faster
+   than the cap, clamp` , so a cap the car is already under changes nothing, and
+   it is what lets the car pick back up when the blocker accelerates away.
+   ---------------------------------------------------------------------- */
 function stopZoneCap(prev, cur, blocked, dt){
   if(!blocked) return undefined;
   const from = prev === undefined ? cur : prev;
-  return Math.max(0, from - MAX_SPD * PURSUIT_STOP.decel * dt);
+  const floor = blocked === 'player' ? spd : Math.max(0, blocked.spd || 0);
+  return Math.max(floor, from - MAX_SPD * PURSUIT_STOP.decel * dt);
 }
 function stepRacers(dt){
   const k = Math.min(2.4, dt*60);

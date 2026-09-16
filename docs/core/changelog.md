@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-49"></a>
+## [0.14.49] - 2026-09-16
+- Changed: **a police car in front slows you to its own pace instead of pinning you.** The zone
+  behind a cruiser ramped to a dead stop at 70mph a second and beat a pinned throttle - measured
+  120mph to zero. It brakes at half that rate now, stops at the blocker's own speed, and the
+  lateral gap that frees you is a car's width rather than most of a lane, so swinging out works
+  against a full box. [RLG-271](../fragments/RLG-271.md)
+
 <a id="v0-14-48"></a>
 ## [0.14.48] - 2026-09-16
 - Fixed: **leaving a run stops the run's engine note.** Every held sound was turned off when a run
