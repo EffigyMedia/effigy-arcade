@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-47"></a>
+## [0.14.47] - 2026-09-16
+- Changed: **a speed trap pulls out of its lay-by.** It was handed a speed above yours the instant it
+  engaged, so it passed you and sat in front. It now leaves from rest, on the verge, and drives itself
+  up to speed - which means a trap you pass at 190 will not catch you.
+  [RLG-269](../fragments/RLG-269.md)
+
 <a id="v0-14-46"></a>
 ## [0.14.46] - 2026-09-16
 - Fixed: **police cars collide with each other, and drive around each other.** They drove through one

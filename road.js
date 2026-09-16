@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.46';
+window.ROAD_BUILD = '0.14.47';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -604,6 +604,10 @@ const TRAP_GAP_MIN  = 0.50;     /* and the most heat can ever take */
 /* ---- HOW MANY POLICE ONE CAR CAN HOLD (owner, 2026-09-15, RLG-256) --------
    A trap engages a car only into an open slot. Ordinary cruisers: stars + 1,
    "no max". Interceptors: their own two, separate from those. */
+/* how long a trap that has just left its post drives on its own engine before
+   it may take a station in the box (RLG-269). Long enough to read as pulling
+   out, short enough that the box still closes on a slow player. */
+const TRAP_LAUNCH = 2.5;
 const TRAP_SLOTS_BASE     = 1;  /* at no stars */
 const TRAP_SLOTS_PER_STAR = 1;  /* and one more for every star */
 const SUPER_SLOTS         = 2;  /* Interceptors on one car, at four stars and up */
@@ -11119,11 +11123,26 @@ function trapEngage(k, o){
   k.engaged = true; k.commits = (k.commits || 0) + 1;
   if(o === null){
     k.grace = 0.35;
-    /* the figure every other cruiser starts a chase at (see the woken patrol
-       above). It was 0.55 of the player's speed, which only worked while the
-       trap engaged from AHEAD: from behind, a car at half your speed is a car
-       in the mirror for a moment and then gone (RLG-247). */
-    k.spd = spd * 0.95 + 1800;
+    /* ---- IT PULLS OUT, IT DOES NOT APPEAR AT SPEED (owner, 2026-09-16, RLG-269)
+       "When I passed, it was instantly passing me, and then in front of me."
+
+       IT WAS HANDED `spd * 0.95 + 1800`, a speed ABOVE the player's, on the
+       frame it left the verge. RLG-247 chose that figure because a cruiser
+       entering from behind at half the player's speed is a car in the mirror
+       for a moment and then gone - but the owner has now seen what it costs
+       and ruled the other way: "it needs to get rebalanced".
+
+       A TRAP STARTS FROM REST, like any other car pulling out of a lay-by, and
+       `aiAccel` does the rest through its own gearbox - the standing rule that
+       one physics serves every car (RLG-042). What it keeps is the CHASE
+       target, which is the station logic further down; catching a fast player
+       is now a thing the car has to do rather than a number it is given.
+
+       WHAT THAT COSTS, and it is the owner's to weigh on the device: a trap
+       you pass at 190 will not catch you, and the pursuit has to come from the
+       patrol cars and the Interceptors instead. */
+    k.spd = Math.max(0, k.spd || 0);
+    k.launchT = TRAP_LAUNCH;           /* it drives itself up to speed - see the box */
     k.tgt = null; k.onPlayer = true;
     k.tz = pos + PLAYER_Z; k.tx = playerX; k.tSpd = spd;
   } else {
@@ -19115,6 +19134,7 @@ function step(dt){
     }
     if(k.grace>0) k.grace -= dt;
     if(k.cool>0)  k.cool  -= dt;
+    if(k.launchT > 0) k.launchT -= dt;      /* pulling out of a lay-by (RLG-269) */
 
     /* ---- A PARKED TRAP IS SCENERY, AND IT WAS NOT (RLG-173) -------------
        THE DEFECT THIS RULING WAS ACTUALLY ABOUT, and it is not where the
@@ -19588,7 +19608,27 @@ function step(dt){
       /* It must be able to REVERSE. Clamping to zero left a cruiser that had
          overshot frozen four thousand units up the road, unable to come back,
          so the box never closed. */
-      k.spd = spd + clamp((holdDz - dz)*1.6, -2600, 2600);
+      /* ---- BUT NOT WHILE IT IS STILL PULLING OUT (owner, 2026-09-16, RLG-269)
+         "When I passed, it was instantly passing me, and then in front of me."
+
+         REMOVING THE TRAP'S LAUNCH SPEED WAS NOT ENOUGH: this line ASSIGNS a
+         speed built from the player's, so a car that had just left the verge at
+         rest was at 0.79 of the player's pace on the very next frame - measured.
+
+         PUTTING THE WHOLE STATION THROUGH `aiAccel` WAS TRIED AND REVERTED. It
+         is the tidier rule and it broke the stop: the cruiser in front could no
+         longer shed speed the way PURSUIT_STOP.decel asks, so a player being
+         dragged down by the zone (RLG-259) drove into the back of it and
+         pursuit-stop-test read WRECKED where it expects BUSTED, twice.
+
+         So the gate is on the LAUNCH only. `launchT` is set when a trap leaves
+         its post and runs down; while it lasts the car accelerates through its
+         own gearbox like any other, and after it the station works exactly as it
+         did. A cruiser that did not come off a verge never has it. */
+      if((k.launchT || 0) > 0)
+        k.spd += aiAccel(k.spd, copTop(k), dt, k.superc ? 'SUPERCRUISER' : 'CRUISER');
+      else
+        k.spd = spd + clamp((holdDz - dz)*1.6, -2600, 2600);
       /* ---- AND THE ONE IN FRONT IS A ROLLING BLOCK (RLG-158) ----------
          "Slow you down so that you get arrested." Holding station ahead at
          exactly your speed slows nobody: it is a car you follow. Once it is
