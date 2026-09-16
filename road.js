@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.37';
+window.ROAD_BUILD = '0.14.38';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -606,7 +606,8 @@ const TRAP_GAP_MIN  = 0.50;     /* and the most heat can ever take */
    "no max". Interceptors: their own two, separate from those. */
 const TRAP_SLOTS_BASE     = 1;  /* at no stars */
 const TRAP_SLOTS_PER_STAR = 1;  /* and one more for every star */
-const SUPER_SLOTS         = 2;  /* Interceptors on one car */
+const SUPER_SLOTS         = 2;  /* Interceptors on one car, at four stars and up */
+const SUPER_TWO_AT        = 4;  /* below it, one: three stars allows a single Interceptor */
 
 /* ---- THE CLOCK ------------------------------------------------------------
    Out Run's spine: you are always running out of time, and the only thing that
@@ -11157,9 +11158,13 @@ function superWatch(dt){
   fastFor = fast ? fastFor + dt : 0;
   if(nextSuperT > 0) nextSuperT -= dt;
   if(!optEasy && heat >= 3 && supersEarned && nextSuperT <= 0){
-    /* two slots for Interceptors, separate from the cruisers' (RLG-256). It
-       was up to four. */
-    const want = Math.min(SUPER_SLOTS, Math.ceil(heat / 1.5));
+    /* ---- ONE AT THREE STARS, TWO AT FOUR (owner, 2026-09-15, RLG-262) -----
+       "Three stars allows one interceptor on you, four stars allows two."
+
+       The Interceptors' slots are separate from the cruisers' (RLG-256) and
+       SUPER_SLOTS is the most a car ever holds. `Math.ceil(heat / 1.5)` gave
+       TWO at three stars, which is the line this ruling corrects. */
+    const want = heat >= SUPER_TWO_AT ? SUPER_SLOTS : 1;
     const have = cops.filter(k => k.superc && k.wreck <= 0).length;
     if(have < want){
       spawnSuper();

@@ -19,6 +19,11 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-38"></a>
+## [0.14.38] - 2026-09-15
+- Changed: **three stars allow one Interceptor, four allow two.** Three stars allowed two, because the
+  old count rounded up. The trigger is unchanged. [RLG-262](../fragments/RLG-262.md)
+
 <a id="v0-14-37"></a>
 ## [0.14.37] - 2026-09-15
 - Changed: **an Interceptor is earned by the pass, not by holding a speed.** Three stars and going
