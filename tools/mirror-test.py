@@ -38,7 +38,7 @@ PORT = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f'http://127.0.0.1:{PORT}'
 
-NAMES = {'t': 'traffic', 'k': 'police', 'b': 'a roadblock', 's': 'a sign',
+NAMES = {'t': 'traffic', 'k': 'police', 'b': 'a roadblock',
          'c': 'a checkpoint board', 'w': 'a bridge tower', 'g': 'a rival',
          'r': 'a repair crate', 'f': 'the finish line'}
 

@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-42"></a>
+## [0.14.42] - 2026-09-15
+- Removed: **the yellow turning signs, for good.** Their spawner went in 0.13.x and the array, the
+  culls, both view branches and the painter stayed behind, filled by nothing.
+  [RLG-264](../fragments/RLG-264.md)
+
 <a id="v0-14-41"></a>
 ## [0.14.41] - 2026-09-15
 - Changed: **the mirror sweep is honest.** Every cull now reads the mirror's own range rather than a

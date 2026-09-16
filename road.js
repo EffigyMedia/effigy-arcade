@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.41';
+window.ROAD_BUILD = '0.14.42';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1901,7 +1901,6 @@ let landCache = [], lgradCache = [];
 let bendZ0 = 0, curveSegs = [], hillSegs = [];
 
 /* the sequence of bends, generated ahead as the road is consumed */
-let signs = [];
 /* ---- NO SEGMENT MAY STRADDLE A PLACE BOUNDARY (RLG-150) ----------------
    A segment is scaled by the place at its START, so a segment that begins in
    one place and ends in the next carries the wrong factor for its whole tail.
@@ -1959,11 +1958,17 @@ function pushCurve(){
      boards were written for. A sign warning of a hairpin the road can no longer
      make is furniture.
 
-     THE SPAWN GOES, NOT THE PAINTER. `drawSign` and the sprite stay where they
-     are and the array is still walked and still culled, so nothing downstream
-     has to change and the boards can come back by restoring these five lines.
-     Deleting a painter to remove a feature is how a feature stops being
-     recoverable.
+     THE SPAWN WENT FIRST AND THE PAINTER STAYED, so the boards could come back
+     by restoring five lines: `drawSign`, the `signs` array and a branch in each
+     view were all kept. Nothing ever filled the array again.
+
+     ---- AND NOW THE WHOLE THING IS GONE (owner, 2026-09-15, RLG-264) -----
+     The mirror sweep found the array dead - declared, culled every frame at
+     4,000 and pushed to both views, with nothing anywhere writing to it - and
+     the owner settled it: "I believe I asked to remove the yellow turning road
+     signs a long time ago. I don't want them anymore." So `signs`, its cull,
+     both view branches, the mirror's own board painter and `drawSign` are
+     deleted. The reasoning above is kept as the record of why they went.
      ------------------------------------------------------------------ */
   curveSegs.push({ k, len });
   if(k !== 0)
@@ -2051,7 +2056,6 @@ function rebuildBend(){
      the road swings right off the side of the glass. Same for hills, only
      vertically.
      ------------------------------------------------------------------------ */
-  signs = signs.filter(sg => sg.z > pos - 4000);
   bendCache = []; slopeCache = []; hillCache = []; gradCache = [];
   landCache = []; lgradCache = [];
   let dx = 0, x = 0, dy = 0, y = 0, dyL = 0, yL = 0;
@@ -11406,7 +11410,7 @@ function reset(){
   spd = startSpeed();
   if(CFG.onReset) CFG.onReset();
   racers=[]; place=12; finished=false; hasMoved=false;
-  curveSegs=[]; hillSegs=[]; signs=[]; bendZ0=0; bendCache=[]; bendT=0; skySmooth=0; pushK=0;
+  curveSegs=[]; hillSegs=[]; bendZ0=0; bendCache=[]; bendT=0; skySmooth=0; pushK=0;
   /* the sky's own clock starts again with the road, so the first frame of a run
      measures one frame rather than the gap since the last one (RLG-096) */
   skyLast=0;
@@ -15145,89 +15149,6 @@ function drawGantry(cp){
   }
 }
 
-function drawSign(sg){
-  /* ---- A SIGN IS ROADSIDE, NOT ROAD (RLG-024, RLG-073) -----------------
-     Two faults, both of them the ones this pair of rulings is about.
-
-     It stood at 1.34 ROAD WIDTHS from the centre and was sized by the road's
-     width, so widening the road would have walked the chevron boards away from
-     the kerb and grown them. A sign is the size of a car door on a waist-high
-     post whatever the carriageway behind it is doing.
-
-     And its occlusion was `overBrow`, which returns false on its first line and
-     has been dead since `crestY` was re-enabled - the same dead call the lamps
-     were found behind. So a sign drew straight through a hill.
-     -------------------------------------------------------------------- */
-  const p1 = proj(0, sg.z);
-  if(!p1.ok) return;
-  const sc = p1.scale * SCENE_UNIT * W;
-  /* These were billboard-sized — a third of a road width across on a post half
-     a road width tall, which at close range filled the screen like an
-     interstate hoarding. A real chevron board is about the size of a car door
-     on a waist-high post, so: a seventh of a road width, and CAPPED so a sign
-     you are about to pass cannot dominate the frame. */
-  let bw = Math.min(sc * 0.145, W * 0.115);
-  const bh = bw * 0.74;
-  /* measured from the tarmac edge, and put through the cars' crest gate */
-  const sx = p1.x + sg.side * roadsideAt(p1, 0.34);
-  const sgate = crestGate(sg.z, p1.y, p1.y - bh * 2.4, 'sign');
-  if(sgate.hide){ crestDid('sign', 'hidden'); return; }
-  ctx.save();
-  if(sgate.clip !== null){
-    crestDid('sign', 'clipped');
-    ctx.beginPath(); ctx.rect(0, 0, W, sgate.clip); ctx.clip();
-  } else crestDid('sign', 'drawn');
-  p1.x = sx;
-  if(bw < 2.5) return;
-  const postH = Math.min(sc * 0.24, H * 0.10);
-  const bx = p1.x, by = p1.y - postH - bh;
-
-  /* the post */
-  ctx.fillStyle = '#4a4f57';
-  ctx.fillRect(bx - Math.max(0.5, bw*0.055), p1.y - postH, Math.max(1, bw*0.11), postH);
-  /* the board: yellow diamond-ish plate with a dark border */
-  ctx.fillStyle = '#141821';
-  ctx.beginPath(); ctx.roundRect(bx - bw/2, by, bw, bh, Math.max(1, bw*0.08)); ctx.fill();
-  ctx.fillStyle = '#f2c53d';
-  ctx.beginPath();
-  ctx.roundRect(bx - bw/2 + bw*0.07, by + bh*0.09, bw*0.86, bh*0.82, Math.max(1, bw*0.06));
-  ctx.fill();
-
-  /* the chevrons, pointing the way the road goes */
-  if(bw > 6){
-    const n = sg.mag;
-    const cw = bw*0.20, gap = bw*0.055;
-    const total = n*cw + (n-1)*gap;
-    let cx0 = bx - total/2;
-    ctx.strokeStyle = '#141821';
-    ctx.lineWidth = Math.max(1, bw*0.055);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for(let i=0;i<n;i++){
-      const x0 = cx0 + i*(cw+gap);
-      ctx.beginPath();
-      if(sg.dir > 0){
-        ctx.moveTo(x0, by + bh*0.28);
-        ctx.lineTo(x0 + cw, by + bh*0.50);
-        ctx.lineTo(x0, by + bh*0.72);
-      } else {
-        ctx.moveTo(x0 + cw, by + bh*0.28);
-        ctx.lineTo(x0, by + bh*0.50);
-        ctx.lineTo(x0 + cw, by + bh*0.72);
-      }
-      ctx.stroke();
-    }
-  }
-  /* a lit reflective sheen at night, as a real sign has */
-  const lit = lampsOn();
-  if(lit > 0.01 && bw > 6){
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(255,240,190,' + (0.13*lit) + ')';
-    ctx.beginPath(); ctx.roundRect(bx - bw/2, by, bw, bh, Math.max(1, bw*0.08)); ctx.fill();
-    ctx.restore();
-  }
-  ctx.restore();   /* the crest clip */
-}
 
 function drawRubber(){
   for(const s2 of skids){
@@ -23692,7 +23613,6 @@ function drawWorld(){
   for(const c of traffic) items.push({z:c.z, kind:'t', o:c});
   for(const k of cops)    items.push({z:k.z, kind:'k', o:k});
   for(const b of blocks)  items.push({z:b.z, kind:'b', o:b});
-  for(const sg of signs)  items.push({z:sg.z, kind:'s', o:sg});
   for(const cp of cpGantries) items.push({z:cp.z, kind:'c', o:cp});
   /* ---- AND THE FINISH LINE, WHICH WAS OUTSIDE ALL OF THIS (RLG-179) ----
      Owner, 2026-09-08: "the finish line renders before vehicles."
@@ -23863,8 +23783,6 @@ function paintBucket(list, onRoad){
       drawFinish();
     } else if(it.kind==='w'){
       drawTower(it.o);
-    } else if(it.kind==='s'){
-      drawSign(it.o);
     } else if(it.kind==='g'){
       /* a rival: your car, in its own paint, with its number on the boot */
       const r = it.o;
@@ -26154,8 +26072,6 @@ function drawMirrorFull(mx, my, mw, mh){
      `mirror-test` now compares the two lists rather than trusting this comment,
      so a ninth kind added to the road cannot quietly miss the glass.
      ------------------------------------------------------------------- */
-  for(const sg of signs)
-    if(sg.z < pos && sg.z > pos - MIRROR_BACK) back.push({ o:sg, sign:true, kind:'s' });
   for(const cr of crates)
     if(!cr.got && cr.z < pos && cr.z > pos - MIRROR_BACK)
       back.push({ o:cr, crate:true, kind:'r' });
@@ -26191,26 +26107,6 @@ function drawMirrorFull(mx, my, mw, mh){
         const chh = cw * SP.repair.height / SP.repair.width;
         const cp = rproj(it.o.x * ROAD, it.o.z);
         if(cp) ctx.drawImage(SP.repair, cp.x - cw/2, cp.y - chh, cw, chh);
-      }
-      continue;
-    }
-    if(it.sign){
-      /* a sign stands beside the road, so it takes its own lateral position and
-         the glass's own scale. `drawSign` paints a forward-facing board from the
-         main projection and cannot be reused here. */
-      const sp = rproj(it.o.x * ROAD, it.o.z);
-      const gw = sp ? sp.scale * 0.30 * CAR_UNIT * mw : 0;
-      if(sp && gw >= 1.2){
-        const gh = gw * 1.35;
-        ctx.fillStyle = '#5b6472';
-        ctx.fillRect(sp.x - gw*0.06, sp.y - gh*0.62, gw*0.12, gh*0.62);
-        ctx.fillStyle = '#123a1e';
-        ctx.beginPath();
-        ctx.roundRect(sp.x - gw/2, sp.y - gh, gw, gh*0.44, Math.max(0.5, gw*0.08));
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(226,240,228,.72)';
-        ctx.lineWidth = Math.max(0.4, gw*0.05);
-        ctx.stroke();
       }
       continue;
     }
