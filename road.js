@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.55';
+window.ROAD_BUILD = '0.14.56';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16399,7 +16399,9 @@ function stepRacers(dt){
        you are the only one keeping a health bar.
        --------------------------------------------------------------------- */
     const pRdz = r.z - (pos + PLAYER_Z), pRdx = Math.abs(r.x - playerX);
-    if(iframe <= 0 && Math.abs(pRdz) < ((r.len || 380) + 380)/2 && pRdx < ((r.w || 0.30) + 0.26)/2){
+    /* a rival is a body before it is an opponent (RLG-277) */
+    contactHold(r, dt);
+    if(contactFires(r)){
       /* ---- THE SAME COLLISION AS EVERYTHING ELSE (RLG-131) -------------
          What was here pushed both cars apart and took speed off both, which was
          closer to right than the traffic path - and it still read no geometry,
@@ -19413,7 +19415,11 @@ function step(dt){
     if((c.iframe || 0) > 0) c.iframe -= dt;
     const dz = c.z - pz, dx = Math.abs(c.x - playerX);
     const overlap = carW(c.w + playerW())/2;
-    if(iframe<=0 && Math.abs(dz) < (c.len+380)/2 && dx < overlap){
+    /* SOLID FIRST, AND ALWAYS (RLG-277). This runs inside the mercy window too -
+       the window silences the crash, it does not delete the car. */
+    contactHold(c, dt);
+    /* and the crash fires once when contact begins, not on every frame of it */
+    if(contactFires(c)){
       /* where it landed decides everything, and both cars move (RLG-131) */
       const sev = impactWith(c);
       /* ---- WHAT THE THING YOU HIT DOES TO YOU (owner, 2026-09-08) -----
@@ -20182,7 +20188,10 @@ function step(dt){
        Measured: one hit logged at nearestCop 3793.
        ------------------------------------------------------------------ */
     const pdz = k.z - pz;
-    if(iframe<=0 && Math.abs(pdz) < (k.len+380)/2 && Math.abs(k.x-playerX) < carW(k.w+playerW())/2){
+    /* a cruiser is a body too, and it was the easiest one to drive through -
+       a pursuit hit sets the LONGEST mercy window on the road at 1.0s (RLG-277) */
+    contactHold(k, dt);
+    if(contactFires(k)){
       /* ---- THE PIT IS GONE (owner, 2026-09-07) ---------------------------
          "I don't think there is enough collision granularity to really do the
          PIT justice reliably. We could get rid of the PIT manoeuvre and just
@@ -20752,6 +20761,123 @@ function impactWith(o){
   const nose  = dz > 0;                  /* the other car is ahead: your front */
   if(o && typeof o === 'object') o.hitSev = clamp(endFactor(square, !nose) * force, 0, 1);
   return clamp(endFactor(square, nose) * force, 0, 1);
+}
+
+/* ---- CONTACT, AND WHY IT IS TWO THINGS RATHER THAN ONE (RLG-277) --------
+   Owner, 2026-09-16: "When you collide with a car you are then allowed to just
+   drive through them. We can't allow that to happen but I also don't want it to
+   machine gun fire collisions."
+
+   BOTH HALVES OF THAT REPORT WERE ONE LINE. Every collision test read
+   `if(iframe <= 0 && ...overlapping...)`, so the mercy window that stops a hit
+   repeating every frame ALSO stopped the overlap being noticed at all. For the
+   0.9 seconds after a hit the other car was not merely silent, it was not there:
+   you drove through it. The window that prevents the machine gun IS the window
+   that lets you pass through, seen from the other end.
+
+   SO SOLIDITY AND RESPONSE ARE SEPARATED. `contactHold` runs whenever two bodies
+   overlap, mercy window or not, and does nothing but keep them apart - no
+   damage, no sound, no sparks. The RESPONSE - the damage, the noise, the shove -
+   fires once when contact BEGINS and then holds off while it lasts. A car you
+   are leaning on stays solid the whole time and costs you one hit, not sixty.
+
+   CONTACT THAT IS BROKEN AND REMADE IS A NEW EVENT, which is what the latch on
+   the object is for, and it clears with HYSTERESIS: a body exactly on the edge
+   of overlap jitters in and out of it at frame rate, and a latch that cleared on
+   the first frame of daylight would machine-gun in a different way.
+
+   ALONG THE ROAD, THE LEVER IS SPEED and not position. `pos` is the world's
+   own clock - dragging it back to resolve an overlap would rubber-band the whole
+   road - so a car in front caps your speed at its own, which is the same thing a
+   solid body does and was already half-written here for rear-end hits.
+   ------------------------------------------------------------------------ */
+const CONTACT = {
+  /* how fast two overlapping bodies push apart, in road half-widths a second.
+     Fast enough that you cannot sit inside a car, slow enough that leaning on
+     one reads as leaning rather than as being flicked away. */
+  rate: 1.30,
+  /* how much daylight ends a contact, as a fraction of the overlap width. Zero
+     would re-fire on the jitter of a body sitting exactly on the boundary. */
+  clear: 0.22,
+  /* how square a hit must be before the speed cap applies. Fully alongside, two
+     cars at different speeds are passing, not blocking. */
+  square: 0.35
+};
+function contactWidth(o){ return carW(((o && o.w) || 0.30) + playerW()) / 2; }
+function contactSquare(o){
+  const dz = (o.z || 0) - (pos + PLAYER_Z);
+  const reach = (((o && o.len) || 380) + 380) / 2;
+  return { dz: dz, square: clamp(Math.abs(dz) / reach, 0, 1),
+           within: Math.abs(dz) < reach };
+}
+/* is the player's body inside this one's, right now */
+function touching(o){
+  const g = contactSquare(o);
+  return g.within && Math.abs((o.x || 0) - playerX) < contactWidth(o);
+}
+/* KEEP THEM APART. No damage, no sound - this is the body, not the crash. */
+function contactHold(o, dt){
+  const g = contactSquare(o);
+  if(!g.within) return;
+  const wide = contactWidth(o);
+  const gap  = Math.abs(playerX - (o.x || 0));
+  if(gap >= wide) return;
+
+  /* ALONG: you cannot drive through the car in front, and it cannot drive
+     through you. The heavier body keeps its speed. */
+  if(g.square > CONTACT.square && o.spd !== undefined){
+    if(g.dz > 0) spd = Math.min(spd, o.spd);
+    else         o.spd = Math.min(o.spd, spd);
+  }
+
+  /* ACROSS: two bodies cannot occupy one strip of road. Resolved at a rate
+     rather than instantly - a full resolve on one frame throws the player a
+     lane sideways, which reads as a hit rather than as a body. */
+  const push  = Math.sign(playerX - (o.x || 0) || 1);
+  const need  = wide - gap;
+  const step  = Math.min(need, CONTACT.rate * dt);
+  const mA = playerMass(), mB = massOf(o);
+  const share = mB / (mA + mB);              /* the lighter body gives way more */
+  playerX = clamp(playerX + push * step * share, -EDGE_X, EDGE_X);
+  targetX = playerX;
+  if(typeof slideX !== 'undefined') slideX = 0;
+  if(o.x !== undefined) o.x = clamp(o.x - push * step * (1 - share), -0.92, 0.92);
+}
+/* ---- IS THIS CONTACT NEW? -----------------------------------------------
+   The latch lives on the object, so two cars touching you at once are two
+   events and one car touched for a second is one. It is cleared with daylight
+   rather than with a timer: a rub that lasts eight seconds is still one rub,
+   and the owner's "machine gun" is exactly what a timer would bring back. */
+/* ---- AND WHETHER THE CRASH ACTUALLY FIRES -------------------------------
+   `iframe` still exists and still has a job, but it is no longer the same job.
+   It is a blanket hush over the whole road for the cases that want one - the
+   count-in, where nothing may hit a car nobody is driving yet, and the seconds
+   after a roadblock - rather than a per-car tangibility switch.
+
+   A HIT IT SILENCES IS DELAYED, NOT LOST. Without this the latch would be set
+   while the hush was on and the contact would then be old for as long as it
+   lasted, so a second car touched half a second after the first would cost
+   nothing at all, ever. Clearing the latch instead means the crash fires on the
+   frame the hush ends, if the two bodies are still touching. Once. Then it
+   latches like any other.
+   ------------------------------------------------------------------------ */
+function contactFires(o){
+  if(!contactBegan(o)) return false;
+  if(iframe > 0){ o.touch = false; return false; }
+  return true;
+}
+function contactBegan(o){
+  const wide = contactWidth(o), g = contactSquare(o);
+  const gap  = Math.abs((o.x || 0) - playerX);
+  const on   = g.within && gap < wide;
+  if(!on){
+    /* hysteresis: only real daylight ends it */
+    if(o.touch && (!g.within || gap > wide * (1 + CONTACT.clear))) o.touch = false;
+    return false;
+  }
+  if(o.touch) return false;
+  o.touch = true;
+  return true;
 }
 
 function burst(o,color){
@@ -32835,6 +32961,25 @@ requestAnimationFrame(frameLoop);
      and then asks the probe is comparing its measurement against a different vehicle.
      This takes the width it is asking about. */
   API.hitHalfWith = function(w){ return +(carW(w + playerW()) / 2).toFixed(5); };
+  /* ---- WHERE THE TWO BODIES ARE, THIS FRAME (RLG-277) ------------------
+     The gap between the player's centre and a traffic car's, and the width at
+     which the two overlap. A check for SOLIDITY has to read both: a gap alone
+     says nothing without the width it is being compared against, and the width
+     is derived from the two cars rather than written down.
+
+     It reports rather than asserts. A car passed through shows up as the gap
+     collapsing to nothing with `within` still true, and then `dz` changing sign
+     - which no single number says on its own. */
+  API.contactState = function(i){
+    const c = traffic[i || 0];
+    if(!c) return null;
+    const g = contactSquare(c);
+    return { gap: +Math.abs(c.x - playerX).toFixed(5),
+             x: +c.x.toFixed(5), me: +playerX.toFixed(5),
+             wide: +contactWidth(c).toFixed(5),
+             dz: Math.round(g.dz), square: +g.square.toFixed(3),
+             within: g.within, touch: !!c.touch };
+  };
   /* ---- STAGING A CROSSING, FOR A CHECK (RLG-152) ------------------------
      One forest in ten carries a deer, which is a number chosen so a player
      almost never meets one - and a harness that waited for the odds would be
