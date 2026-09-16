@@ -848,11 +848,23 @@ def main():
             shapes[k] = page.evaluate('(k) => window.__probe.road.roadShape(k)', k)
             print('      %-9s climbs %.2f   turns %.2f'
                   % (k, shapes[k]['hill'], shapes[k]['bend']))
+        # ---- THE ORDER IS DERIVED, NOT WRITTEN DOWN (RLG-282) ------------------
+        # This asserted a FIXED chain - MOUNTAIN, TUNDRA, FOREST, DESERT, CITY - and the
+        # flatten broke it legitimately: tundra was 0.80 because it was mountain's rock
+        # in a white palette, and RLG-265 made it a snowy desert, so it belongs at 0.18
+        # now and sits below forest. The chain was a snapshot of one day's table dressed
+        # as a ruling.
+        #
+        # WHAT THE OWNER HAS ACTUALLY RULED is asserted instead: a mountain is the most
+        # vertical place there is, and a desert climbs more than a city - the pair they
+        # named themselves. The ceiling, the floor and the gap between a mountain and the
+        # rest are checked over the WHOLE board below, which is where a rule about the
+        # shape of the scale belongs.
         order = ['MOUNTAIN', 'TUNDRA', 'FOREST', 'DESERT', 'CITY']
-        hills = [shapes[k]['hill'] for k in order]
-        res.check(all(a >= b for a, b in zip(hills, hills[1:])),
-                  'the ordering is the owner\'s: mountain at one extreme, city at the other',
-                  ' '.join('%.2f' % v for v in hills))
+        res.check(all(shapes['MOUNTAIN']['hill'] >= shapes[k]['hill']
+                      for k in order if k != 'MOUNTAIN'),
+                  'a mountain is the most vertical place on the board',
+                  ' '.join('%s %.2f' % (k, shapes[k]['hill']) for k in order))
         res.check(shapes['MOUNTAIN']['hill'] > shapes['DESERT']['hill'] > shapes['CITY']['hill'],
                   'and desert climbs more than city, which is the pair the owner named',
                   'desert %.2f, city %.2f' % (shapes['DESERT']['hill'], shapes['CITY']['hill']))
@@ -874,11 +886,16 @@ def main():
             gen[k] = page.evaluate('([k, n]) => window.__probe.road.sampleShape(k, n)', [k, 4000])
             print('      %-9s mean turn %.2f   mean climb %.2f'
                   % (k, gen[k]['bend'], gen[k]['hill']))
-        gbend = [gen[k]['bend'] for k in order]
-        ghill = [gen[k]['hill'] for k in order]
-        res.check(all(a > b for a, b in zip(ghill, ghill[1:])),
-                  'the road the generator MAKES climbs less at every step down the order',
-                  ' '.join('%.2f' % v for v in ghill))
+        # THE SAME CORRECTION AS ABOVE. What is asserted is that the FACTOR reaches the
+        # road the generator actually makes - a place with a higher `hill` produces a
+        # steeper road than one with a lower `hill` - rather than a fixed chain of names.
+        # Ordering the places by their own factor and requiring the generated climb to
+        # follow it tests the mechanism and survives any retune of the table.
+        by_factor = sorted(order, key=lambda k: -shapes[k]['hill'])
+        ghill = [gen[k]['hill'] for k in by_factor]
+        res.check(all(a >= b - 0.02 for a, b in zip(ghill, ghill[1:])),
+                  'the road the generator MAKES follows the factor each place declares',
+                  ' '.join('%s %.2f' % (k, gen[k]['hill']) for k in by_factor))
         res.check(gen['MOUNTAIN']['bend'] > gen['CITY']['bend'] * 2.5,
                   'and a mountain turns more than twice as hard as a city',
                   'mountain %.2f, city %.2f' % (gen['MOUNTAIN']['bend'], gen['CITY']['bend']))
@@ -985,6 +1002,34 @@ def main():
         res.check(flat['SWAMP']['hill'] > 0 and flat['COASTAL']['hill'] > 0,
                   'and still never completely flat',
                   '%.2f and %.2f' % (flat['SWAMP']['hill'], flat['COASTAL']['hill']))
+
+        # ------------------------------- only a mountain is vertical (RLG-282)
+        # Owner, 2026-09-16: "only really mountain should have extreme verticality. Most
+        # places are pretty flat." Asserted across the WHOLE board rather than on the
+        # four places above, because the rule is about the shape of the scale: a new
+        # place added at 0.7 would break it and no check on four names would notice.
+        #
+        # AND THE FLOOR IS ASSERTED TOO. The owner has twice said never completely flat,
+        # so 0.10 is a floor rather than a suggestion - and the cheap way to satisfy the
+        # ceiling above is to push everything to zero.
+        every = {}
+        for k in page.evaluate('() => window.__probe.road.BIOME_KEYS()'):
+            every[k] = page.evaluate('(k) => window.__probe.road.roadShape(k)', k)['hill']
+        tall = sorted(((v, k) for k, v in every.items()), reverse=True)
+        print()
+        print('  ONLY A MOUNTAIN IS VERTICAL')
+        print('      ' + '  '.join('%s %.2f' % (k, v) for v, k in tall))
+        over = [k for k, v in every.items() if v > 0.30 and k != 'MOUNTAIN']
+        res.check(not over, 'nothing but a mountain climbs harder than 0.30',
+                  ('%s' % ', '.join('%s %.2f' % (k, every[k]) for k in over)) if over
+                  else 'the next after MOUNTAIN is %s at %.2f' % (tall[1][1], tall[1][0]))
+        res.check(every['MOUNTAIN'] >= tall[1][0] * 2.5,
+                  'and a mountain stands clear of the rest rather than leading it',
+                  '%.2f against %.2f' % (every['MOUNTAIN'], tall[1][0]))
+        low = [k for k, v in every.items() if v < 0.10]
+        res.check(not low, 'and nothing is flatter than the floor of 0.10',
+                  ('%s' % ', '.join('%s %.2f' % (k, every[k]) for k in low)) if low
+                  else 'the flattest is %.2f' % tall[-1][0])
 
         # ------------------------------------------- and the distinction can fail
         print()

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.61';
+window.ROAD_BUILD = '0.14.62';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12943,6 +12943,41 @@ let steerToX = 0, steerToT = 0, steerFromX = 0, steerLeft = 0;
    exist: MOUNTAIN declared rain 0.30 AND snow 0.34, two independent rolls
    summing to 0.64, so the place was asked twice whether it had weather at all.
    =========================================================================== */
+/* ---- THE BOARD IS FLAT EXCEPT WHERE IT IS A MOUNTAIN (RLG-282) ----------
+   Owner, 2026-09-16, after driving a city: "it went up and down way too much. I
+   think we need to flatten it... a lot of it across-the-board, only really
+   mountain should have extreme verticality. Most places are pretty flat."
+
+   `hill` IS A PLAIN MULTIPLIER ON THE ROAD'S CLIMB RATE. `makeHill` rolls a
+   gradient of 0, or 1.2 to 2.8, or 3.4 to 5.6, and scales it by the place's own
+   `hill` - so halving the figure halves the climb, with nothing else in the
+   chain. There is no global term, which is why a flatten is twelve numbers
+   rather than one.
+
+   WHAT CHANGED, and MOUNTAIN did not: TUNDRA 0.80 to 0.18, FOREST 0.70 to 0.30,
+   JUNGLE 0.55 to 0.30, DESERT 0.45 to 0.20, CANYON 0.40 to 0.15, CITY 0.30 to
+   0.12, SWAMP 0.15 to 0.10. COASTAL, FARMLAND, TUNNEL and BRIDGE were already
+   on the floor. MOUNTAIN stays at 1.00 and is now more than three times the
+   next place on the board, which is the ruling stated as a number.
+
+   THE CITY IS THE REPORT AND IT WAS ALREADY THIRD LOWEST. That is the thing
+   worth keeping: at 0.30 the city sat below nine of the twelve places and the
+   owner still called it too much, so the fault was the SCALE rather than that
+   one entry, and trimming proportionally would not have fixed it.
+
+   AND TUNDRA'S 0.80 WAS SIMPLY STALE. It was set when the place was mountain's
+   rock in a white palette; [[RLG-265]] made it a snowy desert the same day this
+   was measured, and a snowy desert climbing harder than a mountain range is a
+   figure nobody had revisited.
+
+   0.10 IS THE FLOOR AND NOTHING GOES BELOW IT. The owner has twice said never
+   completely flat, and FARMLAND's own note claims that figure as the thing it
+   is - the flattest place there is.
+
+   `bend` IS UNTOUCHED. Sinuosity was not what the owner reported, and the two
+   are separate axes: a canyon floor turns constantly and climbs little, which
+   is the pair its own note is about.
+   ------------------------------------------------------------------------- */
 const BIOMES = {
   /* ---- TWO MORE PLACES (RLG-059) --------------------------------------
      Owner, 2026-08-30: "can we add ocean and swamp biomes?"
@@ -12965,9 +13000,15 @@ const BIOMES = {
      are the flattest of all biomes I suspect." They are, and for a reason a
      player will feel without being told: both are places at sea level. A city
      is graded flat by people and still runs over whatever hills were there; a
-     swamp and a shoreline have no hills to run over. So they sit at 0.15 and
-     0.18 against the city's 0.30 - still not zero, because the owner has twice
-     said never completely flat.
+     swamp and a shoreline have no hills to run over. Both sit at the board's
+     floor of 0.10 now - still not zero, because the owner has twice said never
+     completely flat.
+
+     THE FIGURES IN THIS NOTE WERE 0.15 AND 0.18 AGAINST A CITY'S 0.30, and
+     [[RLG-282]] flattened the whole board underneath them: the city came down
+     to 0.12, so the GAP this note is about has very nearly closed. The claim it
+     makes is unchanged and is now made by the floor rather than by a margin -
+     nothing is flatter than these two because nothing may go below 0.10.
      ------------------------------------------------------------------ */
   COASTAL:    { name:'COASTAL',    temp:0.55, vary:0.25, precip:0.38,
               /* ---- 0.10, AND IT IS ONLY HALF THE ANSWER (RLG-145) -------
@@ -13162,7 +13203,7 @@ const BIOMES = {
               grassLo:'#6b655a', grassHi:'#8c8578',
               sky:'#0a0c10', city:0.00, trees:0.00, skyForm:'none' },
   SWAMP:    { name:'SWAMP',    temp:0.80, vary:0.10, precip:0.64, bias:1.10,
-              hill:0.15, bend:0.70,
+              hill:0.10, bend:0.70,
               grassLo:'#22301f', grassHi:'#33422a',
               /* the standing water is the hazard, and it is drawn on `sideRoll` -
                  so the rail reads the same coin or it fences the wrong side */
@@ -13193,16 +13234,16 @@ const BIOMES = {
      arrived to find two answers to one question.
      ---------------------------------------------------------------- */
   JUNGLE:   { name:'JUNGLE',   temp:0.88, vary:0.06, precip:0.78, bias:1.10,
-              hill:0.55, bend:0.80, dark:0.35,
+              hill:0.30, bend:0.80, dark:0.35,
               grassLo:'#1c3218', grassHi:'#2c4a22',
               skyBase:'#16301b',
               sky:'#24361f', city:0.00, trees:0.95, skyForm:'canopy' },
   FOREST:   { name:'FOREST',   temp:0.45, vary:0.20, precip:0.52, bias:1.00,
-              hill:0.70, bend:0.85,
+              hill:0.30, bend:0.85,
               grassLo:'#1d3a24', grassHi:'#2a4f31',
               sky:'#3a2c52', city:0.18, trees:0.85, skyForm:'tree' },
   DESERT:   { name:'DESERT',   temp:0.95, vary:0.10, precip:0.04, bias:1.00,
-              hill:0.45, bend:0.40,
+              hill:0.20, bend:0.40,
               grassLo:'#6b5330', grassHi:'#8a6d42',
               sky:'#5a3520', city:0.05, trees:0.05, skyForm:'mesa' },
   MOUNTAIN: { name:'MOUNTAIN', temp:0.15, vary:0.15, precip:0.45, bias:1.00,
@@ -13220,7 +13261,7 @@ const BIOMES = {
      Drive into one city and it is under snow, into the next and it is warm
      rain. Nothing in the code names any of them. */
   CITY:     { name:'CITY',     temp:0.45, vary:0.45, precip:0.38, bias:1.00,
-              hill:0.30, bend:0.30,
+              hill:0.12, bend:0.30,
               grassLo:'#2c2f36', grassHi:'#3b3f48',
               /* the one place with a drawn limit on BOTH sides, and it is concrete
                  rather than steel because that is what a city road carries. Neither
@@ -13256,7 +13297,7 @@ const BIOMES = {
      says so. It keeps every instance inside 0.01 to 0.09, which the ground
      cover reads as 0.77 to 1.00 (RLG-145). */
   TUNDRA:   { name:'TUNDRA',   temp:0.05, vary:0.04, precip:0.15, bias:0.90,
-              hill:0.80, bend:0.75,
+              hill:0.18, bend:0.75,
               grassLo:'#3e4a52', grassHi:'#54626c',
               /* ice rather than rock, and it is STATED now - it used to be a
                  name branch inside `buildSkyline` (RLG-104) */
@@ -13279,8 +13320,10 @@ const BIOMES = {
 
      HIGH ON BEND AND MODERATE ON HILL, and the ruling says why: a canyon floor
      follows the water that cut it, so the road turns constantly and climbs
-     little. Nothing else on the board is that pair - MOUNTAIN is 1.00 on both
-     and FOREST is 0.85 over 0.70. NOT 1.00 on bend: the corner cap in this
+     little. Nothing else on the board is that pair. THE RELIEF HALF OF THIS NOTE
+     IS SUPERSEDED BY [[RLG-282]] - the board was flattened and this place went
+     from 0.40 to 0.15, which only makes the claim truer: a canyon floor follows
+     the water that cut it. The SINUOSITY is untouched. NOT 1.00 on bend: the corner cap in this
      renderer is a limit rather than a taste, and the ruling's own warning is
      that this place must not become a corridor the player cannot leave.
 
@@ -13289,7 +13332,7 @@ const BIOMES = {
      0.55 keeps the sky open between the rare showers.
      ------------------------------------------------------------------ */
   CANYON:   { name:'CANYON',   temp:0.85, vary:0.15, precip:0.10, bias:0.55,
-              hill:0.40, bend:0.90,
+              hill:0.15, bend:0.90,
               /* ---- THE FLOOR IS THE SAME STONE AS THE WALLS (RLG-104) --
                  Owner, 2026-09-01: the far ground should be the same colour as
                  the canyon walls themselves. It was a brown picked to sit
