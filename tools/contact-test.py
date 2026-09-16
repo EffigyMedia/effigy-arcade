@@ -210,7 +210,11 @@ def main():
         print('      %d frames, %d of them with the two bodies overlapping'
               % (len(log2), len(touch)))
         print('      %d crash response(s)' % res2['hits'])
-        check(len(touch) > 20, 'the wheel held into it really does hold them together',
+        # THE BAR IS MEASURED, NOT CHOSEN. A lean that fails to make contact at all
+        # reads 0 to 5 frames; one that holds reads 20 to 46. A first version at 20 sat
+        # ON the lower edge of the working band and failed a run at exactly 20 - the
+        # same mistake as a threshold drawn on the noise, made from the other side.
+        check(len(touch) > 12, 'the wheel held into it really does hold them together',
               '%d frames of contact' % len(touch))
         check(res2['hits'] >= 1, 'leaning on a car costs a hit at all', '%d' % res2['hits'])
         # A MACHINE GUN IS ONE PER FRAME. A handful is contact broken and remade, which IS

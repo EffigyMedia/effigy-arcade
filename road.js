@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.60';
+window.ROAD_BUILD = '0.14.61';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -21019,9 +21019,18 @@ function contactHold(o, dt){
    frame the hush ends, if the two bodies are still touching. Once. Then it
    latches like any other.
    ------------------------------------------------------------------------ */
+/* ---- WHAT THE CONTACT PATH ACTUALLY DID, FOR A HARNESS (RLG-279) --------
+   A staged collision that produces no DAMAGE is not the same thing as a staged
+   collision that did not happen, and `collide-test` could not tell the two
+   apart - it reads a damage total, so every question it asks about the
+   COLLIDER is answered through the severity model. This counts the three
+   outcomes separately so a check can ask the question it means. */
+let contactLog = { fired: 0, hushed: 0, seen: 0 };
 function contactFires(o){
+  if(touching(o)) contactLog.seen++;
   if(!contactBegan(o)) return false;
-  if(iframe > 0){ o.touch = false; return false; }
+  if(iframe > 0){ o.touch = false; contactLog.hushed++; return false; }
+  contactLog.fired++;
   return true;
 }
 function contactBegan(o){
@@ -33311,6 +33320,12 @@ requestAnimationFrame(frameLoop);
      It reports rather than asserts. A car passed through shows up as the gap
      collapsing to nothing with `within` still true, and then `dz` changing sign
      - which no single number says on its own. */
+  API.contactStats = function(reset){
+    const out = { fired: contactLog.fired, hushed: contactLog.hushed,
+                  seen: contactLog.seen };
+    if(reset) contactLog = { fired: 0, hushed: 0, seen: 0 };
+    return out;
+  };
   API.contactState = function(i){
     const c = traffic[i || 0];
     if(!c) return null;
