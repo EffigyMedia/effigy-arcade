@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.42';
+window.ROAD_BUILD = '0.14.43';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -920,6 +920,11 @@ let countIn = 0, countPip = -1, countFrom = 0;
    is a test affordance and nothing in the game sets it.
    -------------------------------------------------------------------- */
 let spdHold = null;
+/* the player's own slow-down cap while a police car is in front - see
+   `stopBlockerAhead`. Declared here with the rest of the run's state because
+   `reset` clears it, and a `let` further down the file would be in its dead
+   zone if a reset ever ran during load. */
+let zoneCap;
 /* a run after the first can be started with a tap rather than sat through. It
    SHORTENS rather than cancels, because the start is still a start - and it is
    the second run onward, so the first one is always seen whole. */
@@ -11426,7 +11431,7 @@ function reset(){
   const pw = document.getElementById('placeWrap');
   if(pw) pw.hidden = (mode !== 'race');
   dist=0; score=0; combo=0; comboTime=0; heat=0; heatPts=0; heatWhy=''; heatT=0; runTopMph=0; nextChaseT=6; lastWreck='';
-  coolT=0; supersEarned=false;
+  coolT=0; supersEarned=false; zoneCap=undefined;
   /* the ambulance clock is a per-run thing like the rest of these (RLG-176).
      Left out of this list, it was module state that survived every restart -
      and started at zero, so the first run always opened with a siren. */
@@ -15688,6 +15693,54 @@ function endShift(won){
     ? 'SHIFT CLEAR · ' + stopped + ' OF ' + FIELD + ' STOPPED'
     : 'THEY GOT THROUGH · ' + stopped + ' OF ' + FIELD + ' STOPPED'), 700);
 }
+/* ---- THE SLOW-DOWN ZONE IN FRONT OF A POLICE CAR (owner, 2026-09-15, RLG-259)
+   "We are also missing the proper functionality for them to slow you down if a
+   cruiser or interceptor is directly in front of you. It should force your car
+   slowly to a stop and it's up to the player or other racers NPCs - cause they
+   should all function the same - to quickly swing to the side to get out from
+   behind their slow down triggering zone so you can speed up and go around
+   them." And: "the same implementation that should be used during the intercept
+   game when the player is playing as police, except obviously the roles are
+   reversed."
+
+   SO THE ZONE BELONGS TO THE POLICE CAR, NOT TO WHO IS CHASED. A cruiser or an
+   Interceptor drags down whatever is behind it in its line; in INTERCEPT the
+   player drives the police car and drags down the racer behind it. One rule,
+   read by the player and by every rival.
+
+   WHAT WAS THERE BEFORE. RLG-247 made the cruiser in front BRAKE, which slows
+   the player only if the player chooses not to go round it, and RLG-203 made a
+   rival lift for the player's car on shift. Neither takes hold of the car
+   behind. This does: the cap falls from the speed the car had at the rate
+   PURSUIT_STOP.decel and the car cannot out-throttle it.
+
+   GETTING OUT IS LATERAL, which is the owner's own escape: at PURSUIT_STOP.wide
+   or more across, the blocker is no longer in the line, the cap is dropped, and
+   the car accelerates normally again.
+
+   IT OVERRIDES A HELD SPEED, including `spdHold`, because a forced stop that a
+   pinned throttle beats is not a forced stop - and a harness pinning a speed is
+   standing in for a player holding the throttle down. */
+function stopBlockerAhead(z, x, self){
+  for(const k of cops){
+    /* a parked trap is watching the road, not blocking it (RLG-173) */
+    if(k.wreck > 0 || k.trap) continue;
+    const dz = k.z - z;
+    if(dz > 0 && dz < PURSUIT_STOP.near && Math.abs(k.x - x) < PURSUIT_STOP.wide) return k;
+  }
+  /* on shift the player IS a police car, and this is the same zone reversed */
+  if(playerIsPolice() && self !== 'player'){
+    const dz = (pos + PLAYER_Z) - z;
+    if(dz > 0 && dz < PURSUIT_STOP.near && Math.abs(playerX - x) < PURSUIT_STOP.wide) return 'player';
+  }
+  return null;
+}
+/* `prev` is the cap this car carried last frame, `undefined` when it was free */
+function stopZoneCap(prev, cur, blocked, dt){
+  if(!blocked) return undefined;
+  const from = prev === undefined ? cur : prev;
+  return Math.max(0, from - MAX_SPD * PURSUIT_STOP.decel * dt);
+}
 function stepRacers(dt){
   const k = Math.min(2.4, dt*60);
   const pz = pos + PLAYER_Z;
@@ -15908,6 +15961,15 @@ function stepRacers(dt){
        out, and the check it fed swung between 4, 8 and 11 run to run. The
        player's own `spdHold` assigns `spd` outright for exactly this reason. */
     if(fieldHold !== null) r.spd = fieldHold;
+    /* ---- AND A POLICE CAR IN FRONT DRAGS A RIVAL DOWN TOO (RLG-259) -----
+       The same zone the player is read against, and the owner's reason for one
+       rule: "it's up to the player or other racers NPCs - cause they should all
+       function the same - to quickly swing to the side". In a pursuit that is a
+       cruiser in front of a rival; on shift it is the player's own police car,
+       which is the mode's whole verb. After `fieldHold` for the reason the
+       player's is after `spdHold`: the zone beats a pinned speed. */
+    r.zoneCap = stopZoneCap(r.zoneCap, r.spd, stopBlockerAhead(r.z, r.x, r), dt);
+    if(r.zoneCap !== undefined && r.spd > r.zoneCap) r.spd = r.zoneCap;
     const rDec = (rWas - r.spd) / Math.max(dt, 1/240);
     if(rDec > 900) r.brakeT = 0.35; else if(r.brakeT > 0) r.brakeT -= dt;
     r.braking = (r.brakeT || 0) > 0;
@@ -18221,6 +18283,16 @@ function step(dt){
       shake = Math.max(shake, 0.34 * roughness);
     }
   }
+
+  /* ---- AND A POLICE CAR IN FRONT DRAGS YOU DOWN (RLG-259) -------------
+     The zone, read for the player. It is applied here - after the throttle,
+     the brake, NOS and `spdHold` - because it beats all of them; see
+     `stopBlockerAhead`. Pursuit off, or the player driving the police car, and
+     there is nothing to be caught by. */
+  if(!optEasy && !playerIsPolice() && state === 'driving'){
+    zoneCap = stopZoneCap(zoneCap, spd, stopBlockerAhead(pos + PLAYER_Z, playerX, 'player'), dt);
+    if(zoneCap !== undefined && spd > zoneCap) spd = zoneCap;
+  } else zoneCap = undefined;
 
   pos += spd*dt;
   /* held: `spd` is pinned so `pos` does not move anyway, but distance unlocks
@@ -31300,6 +31372,20 @@ requestAnimationFrame(frameLoop);
   API.holdField = function(v){
     fieldHold = (v === null || v === undefined) ? null : v;
     return fieldHold;
+  };
+  /* ---- ONE RIVAL, PUT WHERE A CHECK NEEDS IT (RLG-259) ------------------
+     `stageField` moves the whole grid and `parkRivals` clears it out of the
+     way; neither can hold ONE car at a chosen place, which is what the stop
+     zone has to be measured against - a rival sitting in the zone behind a
+     police car, frame after frame. `dz` is signed the way the road thinks:
+     negative is behind the player. It writes the real racer, so what is
+     measured is the car the field built. */
+  API.placeRival = function(i, dz, dx){
+    const r = racers[i]; if(!r) return null;
+    r.out = false; r.wreck = 0; r.stopT = 0;
+    r.z = pos + PLAYER_Z + (dz === undefined ? -1500 : dz);
+    if(dx !== undefined) r.x = dx;
+    return { dz: Math.round(r.z - (pos + PLAYER_Z)), x: +r.x.toFixed(3), spd: Math.round(r.spd || 0) };
   };
   API.parkRivals = function(except, dz){
     let n = 0;
