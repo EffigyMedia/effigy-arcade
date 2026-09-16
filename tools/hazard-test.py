@@ -314,6 +314,47 @@ def main():
             check(drop == 0, 'and the cliff side carries nothing at all',
                   '%d objects on the drop' % drop)
 
+        # ---- AND THE GROUND STOPS AT THE RIM (RLG-278) -----------------------------
+        # Owner, 2026-09-16: "that sheer cliff face on the mountain biome does not read
+        # as a cliff down." Emptying the side left ORDINARY GROUND running away to the
+        # horizon, so the rail said there was a fall and the ground said there was a
+        # field.
+        #
+        # SAMPLING THE VERGE WAS TRIED AND IT MEASURED THE SCENERY. A strip at a fixed
+        # row read 69.0 over the drop against 68.7 over the solid side, and the FARMLAND
+        # control - which has no drop at all - swung 19 levels between its own two sides.
+        # So the drop is found the way the rail is: render it away, and diff.
+        print()
+        print('  AND THE GROUND STOPS AT THE RIM')
+
+        def drop_of(k, side):
+            settle(k, side)
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.dropOff(true); }")
+            page.wait_for_timeout(90)
+            off = page.screenshot()
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.dropOff(false); }")
+            page.wait_for_timeout(90)
+            on = page.screenshot()
+            return rail_pixels(on, off)
+
+        for k in ('MOUNTAIN', 'FARMLAND'):
+            nL, xL = drop_of(k, -1)
+            nR, xR = drop_of(k, 1)
+            print('      %-9s hazard left: %5d px at x=%5.1f    hazard right: %5d px at x=%5.1f'
+                  % (k, nL, xL, nR, xR))
+            if WANT.get(k) is None:
+                check(nL < BARE and nR < BARE, '%s has no drop to draw' % k,
+                      '%d and %d pixels changed' % (nL, nR))
+            else:
+                check(nL > BARE and nR > BARE, '%s paints a drop beside the road' % k,
+                      '%d and %d pixels' % (nL, nR))
+                # AND ON THE SIDE THE HAZARD IS. Same differential as the rail: the drop's
+                # mean position must move when the coin turns.
+                check(xR - xL > 60, '%s puts the drop on the side the hazard is' % k,
+                      'x=%.1f with the hazard left, x=%.1f with it right' % (xL, xR))
+
         errs = page.evaluate("() => window.__probe.errors")
         check(not errs, 'no page errors', '; '.join(errs[:2]))
         browser.close()

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.59';
+window.ROAD_BUILD = '0.14.60';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -13868,6 +13868,8 @@ function mixRGB(a, t, to){
                 + Math.round(c[2] + (T[2]-c[2])*t) + ')';
 }
 const SNOW_DAY = [238,238,238], SNOW_GOLD = [236,214,190], SNOW_NIGHT = [150,162,186];
+/* what a cliff face is made of, and what catches the light on its rim (RLG-278) */
+const DROP_DARK = [16,18,24], RIM_LIT = [236,240,248];
 /* what rain does to a surface, as a colour to mix toward rather than as a black
    sheet over the frame */
 const WET_DARK = [12,18,30];
@@ -14127,6 +14129,7 @@ let seaStraight = false;
    ------------------------------------------------------------------------- */
 let hazardRoll = 1;
 let railsOff = false;   /* debug: draw no rail, so a check can diff the two frames */
+let dropOff = false;    /* debug: no cliff either - the ground runs straight across */
 function rollSide(){
   sideRoll = Math.random() < 0.5 ? -1 : 1;
   hazardRoll = Math.random() < 0.5 ? -1 : 1;
@@ -23733,7 +23736,34 @@ function drawRoad(){
          relationship to the road's line - and a plane you cannot see the
          near edge of reads as a plane a long way below.
          ---------------------------------------------------------- */
-      if(!bioAt(idx).overWater) ctx.fillRect(0, y2, W, H - y2);
+      /* ---- AND IT STOPS AT THE RIM ON A HAZARD SIDE (RLG-278) --------
+         A BRIDGE ALREADY SOLVED THIS AND ITS ANSWER IS THE ONE THAT WORKS.
+         The note above says why the deck has no ground beside it: "a plane you
+         cannot see the near edge of reads as a plane a long way below". A cliff
+         is the same picture. Painting a dark FACE beyond the rim was tried
+         first and reads as a shadow on a field, because the drop is mostly
+         DISTANCE in this projection rather than wall - so the honest move is to
+         stop painting ground there at all and let what lies beyond show.
+         ---------------------------------------------------------- */
+      if(!bioAt(idx).overWater){
+        const gB = bioAt(idx);
+        const gDrop = (gB.hazard === 'roll' && !dropOff) ? hazardSide(gB) : 0;
+        if(!gDrop) ctx.fillRect(0, y2, W, H - y2);
+        else {
+          /* the ground runs out to the rim and no further. The rim's own line
+             carries the slope down to the bottom of the screen for the nearest
+             slice, which is the shoreline's trick and is here for its reason. */
+          const rx1 = p1.x + gDrop * p1.w * railX();
+          const rx2 = p2.x + gDrop * p2.w * railX();
+          ctx.beginPath();
+          ctx.moveTo(gDrop < 0 ? W : 0, y2);
+          ctx.lineTo(rx2, y2);
+          ctx.lineTo(rx1, H);
+          ctx.lineTo(gDrop < 0 ? W : 0, H);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
       /* ---- AND THE SEA, IF THIS PLACE HAS ONE (RLG-059) ----------------
          Painted with the ground and on ONE side of it, from a shoreline that
          is a fixed distance out from the tarmac - so the sand between the road
@@ -23745,6 +23775,98 @@ function drawRoad(){
          over the last: that is what builds the shoreline's shape over crests
          and round bends without any of it being computed.
          -------------------------------------------------------------- */
+      /* ---- AND ON THE HAZARD SIDE THE GROUND STOPS (RLG-278) -----------
+         Owner, 2026-09-16: "that sheer cliff face on the mountain biome does
+         not read as a cliff down."
+
+         EMPTYING THE SIDE WAS HALF THE JOB. [[RLG-265]] took the rock face out
+         of mid-air beside the guard rail and put nothing in its place, so the
+         drop was painted as ORDINARY GROUND running away to the horizon - the
+         same grass the solid side stands on. The rail said there was a fall
+         beside you and the ground said there was a field, and the ground won,
+         because it is the larger surface and it runs continuously out of the
+         verge under your own wheels.
+
+         A CLIFF DOWN IS AN EDGE, NOT AN ABSENCE. So the ground is cut at the
+         rail's own line and what lies beyond it is painted as a face falling
+         away: the place's own ground, shaded hard, because rock in shadow
+         under a rim IS the place's rock with the light taken off it.
+
+         IT IS THE SHORELINE'S SHAPE, one block below this one, and
+         deliberately so. A quad from a line out to the edge of the screen,
+         filled to the bottom, painted per slice far to near - which is what
+         builds the rim's shape over crests and round bends with none of it
+         computed. The coast solved this exact geometry for water.
+
+         AND THE RIM IS A LIT LINE, which is the part that makes it read. A
+         dark band alone is a shadow; a dark band with a BRIGHT TOP EDGE is a
+         lip you are looking over. The sea has the same tell - its own record
+         says water that does not recede reads as a painted floor - and the
+         bridge's water is proved to read as depth by being HAZED. Both are the
+         same lesson: depth is a difference between near and far, not a colour.
+         ------------------------------------------------------------- */
+      const dB = bioAt(idx);
+      const dropSide = (dB.hazard === 'roll' && !dropOff) ? hazardSide(dB) : 0;
+      if(dropSide){
+        const dx1 = p1.x + dropSide * p1.w * railX();
+        const dx2 = p2.x + dropSide * p2.w * railX();
+        const edge = dropSide < 0 ? 0 : W;
+        /* ---- THE COLOURS GO THROUGH `mixRGB`, AND THAT IS NOT A STYLE
+               CHOICE. `shade` takes `#rrggbb` ONLY - it regex-matches and
+               returns a grey fallback for anything else - and `groundTone`
+               returns an `rgb(...)` string, so `shade(groundTone(...))`
+               silently paints the fallback. And `hexRGB` calls `.charAt` on
+               its argument, so handing it an array throws INSIDE the road
+               pass, which aborts the rest of the frame: the first build of
+               this block painted bare ground with no road, no rail and no
+               car on it. `mixRGB` takes a string and an ARRAY, in that
+               order, and handles both string forms. */
+        const faceN = mixRGB(groundTone(idx, true), 0.84, DROP_DARK);
+        /* AND IT HAZES WITH DISTANCE - the far end of a drop is a valley miles
+           away, not more of the wall at your elbow. This is the sea's own
+           lesson: water that does not recede reads as a painted floor. */
+        const faceF = mixRGB(faceN, 0.30 * (1 - fade), hexRGB(dB.sky || '#2a3550'));
+        const g3 = ctx.createLinearGradient(0, y2, 0, H);
+        g3.addColorStop(0, faceF);
+        g3.addColorStop(1, faceN);
+        ctx.fillStyle = g3;
+        /* the rim runs from the slice's far end to its near end, and the fill
+           carries on down to the bottom of the screen - the shoreline's shape,
+           for the same reason it has it: the pass walks far to near, so the
+           NEAREST slice is the one nothing paints over and it has to end on the
+           rim's own angle rather than dropping vertically. */
+        /* ---- THE VOID IS FILLED, AND THE CHECK IS WHY --------------------
+           A NARROW LIP WITH THE FAR FIELD SHOWING BEYOND IT WAS TRIED AND
+           MEASURED, and it did not work: `hazard-test` samples the ground just
+           outside the rail and read 69.0 over the drop against 68.7 over the
+           solid side. What shows past the rim when nothing paints there is the
+           FAR FIELD's own ground band, which is the same landscape in the same
+           light - so the eye gets no signal at all. The bridge's trick works
+           over WATER, which is a different colour from land; a cliff has the
+           same rock on both sides of it and needs its own darkness.
+
+           So the drop is painted, out to the edge of the screen and down to the
+           bottom, and it is dark. `fade` still lightens the far end, because a
+           valley miles off IS hazier - but it can no longer wash the whole
+           thing out to the colour of the field beside it.
+           ------------------------------------------------------------ */
+        ctx.beginPath();
+        ctx.moveTo(dx2, y2);
+        ctx.lineTo(dx1, y1);
+        ctx.lineTo(dx1, H);
+        ctx.lineTo(edge, H);
+        ctx.lineTo(edge, y2);
+        ctx.closePath();
+        ctx.fill();
+        /* THE LIP, which is the part that makes it read. A dark band alone is a
+           shadow; a dark band with a BRIGHT TOP EDGE is a lip you are looking
+           over. */
+        const lipW = Math.max(1.4, p1.w * 0.042);
+        ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52, RIM_LIT);
+        quad(dx1, y1, dx1 + dropSide * lipW, y1,
+             dx2 + dropSide * lipW, y2, dx2, y2);
+      }
+
       const sB = bioAt(idx);
       if(sB.sea){
         /* ---- AND THE WATER'S EDGE IS A LINE (RLG-059) ---------------
@@ -30726,6 +30848,12 @@ requestAnimationFrame(frameLoop);
      This is the same shape as `seaStraight`: a switch whose only job is to
      produce the other picture. */
   API.railsOff = function(on){ railsOff = !!on; return railsOff; };
+  /* debug: paint the ground straight across a hazard side, as it was before
+     RLG-278. The same shape as `railsOff` and for the same reason - the honest
+     way to find the drop's pixels is to render the frame without it. Sampling a
+     strip of the verge was tried and it measured the scenery: the FARMLAND
+     control, which has no drop at all, swung 19 levels between its two sides. */
+  API.dropOff = function(on){ dropOff = !!on; return dropOff; };
   /* debug: put the hazard on a NAMED side, so a check can render the same place
      twice and watch the rail move. Absolute positions cannot settle this on their
      own - a rail converging on the vanishing point crosses the middle of the
