@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.51';
+window.ROAD_BUILD = '0.14.52';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -23622,13 +23622,34 @@ function drawRoad(){
        kerb the same colour gives it nothing. Grey concrete is also what is
        actually there.
        ------------------------------------------------------------- */
+    /* ---- AND ON AN ORDINARY ROAD THERE IS NO KERB AT ALL (RLG-265) ----
+       Owner, 2026-09-15: "We also need to remove the white and red road edge
+       and replace them with whatever the natural ground for that biome is."
+
+       NOTHING REPLACES IT, AND THAT IS THE WHOLE CHANGE. The biome's ground is
+       already painted across the full width of the screen further up this same
+       function, far edge to the bottom, and the road is laid on top of it - so
+       the kerb was covering ground that was there the whole time. Not drawing
+       it uncovers exactly what the owner asked for, in every biome, with no new
+       colour table to keep in step with the twelve that already exist.
+
+       THE ROAD EDGE IS STILL MARKED. The white shoulder line inside the tarmac
+       at 0.965 is untouched, so the carriageway keeps a drawn boundary - the
+       red-and-white strip was never what said "the tarmac ends here", it said
+       "this is an ordinary roadway", which is the thing the owner is removing.
+
+       A DECK KEEPS ITS KERB, for the reason RLG-112 gave it one: a bridge's
+       railing needs something to stand up from, and that kerb is concrete that
+       is actually there rather than road furniture. A tunnel needs no exception
+       - `drawBore` paints the bore over this road afterwards.
+       ------------------------------------------------------------- */
     const deckB = bioAt(idx);
-    ctx.fillStyle = mixRGB(mixRGB(deckB.truss ? (dark ? '#8e8a80' : '#6f6b62')
-                                              : (dark ? '#c9c3b4' : '#8c3346'),
-                                  snowRumble, snowLight),
-                           rainDark * 0.20, WET_DARK);
-    quad(p1.x-r1, y1, p1.x-p1.w, y1, p2.x-p2.w, y2, p2.x-r2, y2);
-    quad(p1.x+p1.w, y1, p1.x+r1, y1, p2.x+r2, y2, p2.x+p2.w, y2);
+    if(deckB.truss){
+      ctx.fillStyle = mixRGB(mixRGB(dark ? '#8e8a80' : '#6f6b62', snowRumble, snowLight),
+                             rainDark * 0.20, WET_DARK);
+      quad(p1.x-r1, y1, p1.x-p1.w, y1, p2.x-p2.w, y2, p2.x-r2, y2);
+      quad(p1.x+p1.w, y1, p1.x+r1, y1, p2.x+r2, y2, p2.x+p2.w, y2);
+    }
 
     // asphalt
     /* ---- WET TARMAC IS DARK NEAR AND BRIGHT FAR -------------------------

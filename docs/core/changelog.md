@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-52"></a>
+## [0.14.52] - 2026-09-16
+- Changed: **the road edge is the biome's own ground.** The red-and-white kerb is gone and the tarmac
+  now meets grass, sand, snow or concrete directly - the ground was already painted underneath it the
+  whole time. The white shoulder line still marks the carriageway, and a bridge deck keeps its
+  concrete kerb for the railing to stand up from. First part of
+  [RLG-265](../fragments/RLG-265.md); the guard rails are not built yet.
+
 <a id="v0-14-51"></a>
 ## [0.14.51] - 2026-09-16
 - Changed: **a tournament round lines you up where the championship put you.** Every round put the
