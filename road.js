@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.56';
+window.ROAD_BUILD = '0.14.57';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14094,6 +14094,7 @@ let seaStraight = false;
    `hazardSide()` is the one place that decides which of the two a place reads.
    ------------------------------------------------------------------------- */
 let hazardRoll = 1;
+let railsOff = false;   /* debug: draw no rail, so a check can diff the two frames */
 function rollSide(){
   sideRoll = Math.random() < 0.5 ? -1 : 1;
   hazardRoll = Math.random() < 0.5 ? -1 : 1;
@@ -15253,6 +15254,91 @@ function trussTop(p, y, h, vh){ return y - p.scale * h * (vh === undefined ? H :
 function postIn(za, zb, every){
   const s = SEG * every;
   return Math.floor(za / s) !== Math.floor(zb / s);
+}
+/* ---- THE GUARD RAIL AT THE LIMIT OF TRAVEL (RLG-265) --------------------
+   Owner, 2026-09-15: "At the furthest extent where the car stops moving we need
+   to put guard rails."
+
+   IT STANDS AT `EDGE_X` AND THAT IS THE WHOLE POINT. The car's clamp and the
+   rail's line are the same constant, so the rail is where the car stops rather
+   than near it. A rail drawn at its own number would be a rail you stop short
+   of, or drive through, and the ruling would be worse than not building it.
+
+   DRAWN THE WAY THE BRIDGE RAILING IS, because a bridge railing is what it is:
+   a beam at a height in WORLD units above the road, per slice, in the road pass
+   where a crest occludes it for nothing. `trussTop` does the projection and
+   `postIn` spaces the posts in the world rather than on the screen - spacing
+   them by pixels would crowd them at the horizon and stretch them at the
+   bumper. That distinction cost the tunnel three builds and is not re-learnt
+   here.
+
+   A STEEL RAIL IS A W-BEAM AND A CONCRETE ONE IS A WALL, which is why the two
+   are one function with a kind rather than two functions. The steel has a gap
+   under it and posts you see between; the concrete is solid to the ground,
+   lower, and has no posts. Getting that wrong makes a motorway of a city street.
+
+   THE HEIGHTS ARE FROM THE REAL THING, on this engine's own anchor: a car is
+   380 units and about four and a half metres, so a metre is close to 84 units.
+   A W-beam guard rail stands about 0.75 m, which is 63; a concrete barrier is
+   about 1.05 m, which is 88. `TRUSS.h` is 260 for comparison, and a bridge
+   parapet really is three times the height of a crash barrier.
+   ------------------------------------------------------------------------- */
+const RAIL = {
+  h:      63,   /* the steel beam's top, in world units above the road          */
+  deep:   26,   /* how deep the beam itself is, world units                     */
+  post:    2,   /* a post every N segments                                      */
+  wallH:  88,   /* a concrete barrier's top                                     */
+  steel:  { face:'#9aa0a6', lit:'#c3c9cf', dark:'#5d6369', post:'#4a4f55' },
+  stone:  { face:'#8e8a80', lit:'#a8a49a', dark:'#5f5c55', post:'#5f5c55' }
+};
+/* which way the light falls on the beam, so the two sides of the road are not
+   the same flat strip. The sun is over the road rather than behind the player,
+   so the INSIDE face is what is lit and the outside is in its own shade. */
+function drawRail(p1, p2, y1, y2, za, zb, side, kind, vh){
+  const wall = kind === 'barrier';
+  const pal  = wall ? RAIL.stone : RAIL.steel;
+  const top1 = trussTop(p1, y1, wall ? RAIL.wallH : RAIL.h, vh);
+  const top2 = trussTop(p2, y2, wall ? RAIL.wallH : RAIL.h, vh);
+  const a1 = p1.x + side * p1.w * EDGE_X, a2 = p2.x + side * p2.w * EDGE_X;
+
+  if(wall){
+    /* solid to the ground: a concrete barrier has nothing under it */
+    ctx.fillStyle = pal.face;
+    quad(a1, top1, a1 + side * Math.max(0.6, p1.w * 0.045), top1,
+         a2 + side * Math.max(0.5, p2.w * 0.045), top2, a2, top2);
+    quad(a1, top1, a1, y1, a2, y2, a2, top2);
+    /* the cap, which is the only thing that separates it from a painted stripe */
+    ctx.fillStyle = pal.lit;
+    const c1 = top1 + (y1 - top1) * 0.10, c2 = top2 + (y2 - top2) * 0.10;
+    quad(a1, top1, a1, c1, a2, c2, a2, top2);
+    return;
+  }
+
+  /* ---- THE BEAM, WHICH IS THE PART YOU SEE AT SPEED -------------------
+     A W-beam is a horizontal ribbon with a bright top edge and a dark under
+     edge, and those two lines are what make it read as pressed steel rather
+     than as a grey bar. The ribbon is `RAIL.deep` world units tall, so it keeps
+     its proportion into the distance instead of thinning to a wire. */
+  const bot1 = trussTop(p1, y1, RAIL.h - RAIL.deep, vh);
+  const bot2 = trussTop(p2, y2, RAIL.h - RAIL.deep, vh);
+  ctx.fillStyle = pal.face;
+  quad(a1, top1, a1, bot1, a2, bot2, a2, top2);
+  const lip1 = top1 + (bot1 - top1) * 0.22, lip2 = top2 + (bot2 - top2) * 0.22;
+  ctx.fillStyle = pal.lit;
+  quad(a1, top1, a1, lip1, a2, lip2, a2, top2);
+  const und1 = bot1 - (bot1 - top1) * 0.20, und2 = bot2 - (bot2 - top2) * 0.20;
+  ctx.fillStyle = pal.dark;
+  quad(a1, und1, a1, bot1, a2, bot2, a2, und2);
+
+  /* ---- AND THE POSTS, WHICH ARE WHAT GIVE IT A SPEED ------------------
+     A beam alone slides past at no particular rate. The posts are the thing
+     that ticks, and they are spaced in the world for that reason. Below a few
+     pixels of road half-width there is nothing left to draw them into. */
+  if(p1.w > 2 && postIn(za, zb, RAIL.post)){
+    const m = Math.max(0.8, p1.w * 0.026);
+    ctx.fillStyle = pal.post;
+    ctx.fillRect(a1 - m * 0.5, bot1, m, Math.max(1, y1 - bot1));
+  }
 }
 function drawTruss(p1, p2, y1, y2, za, zb, vh){
   /* how thick a member is on screen, from the slice's own scale */
@@ -23944,6 +24030,16 @@ function drawRoad(){
     /* the deck's ironwork, over its own slice's markings and under everything
        the sprite pass draws (RLG-112) */
     if(deckB.truss) drawTruss(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, H);
+    /* ---- AND THE LIMIT OF TRAVEL, WHERE THE PLACE PUTS ONE (RLG-265) ----
+       After the truss, so a deck's own railing is never doubled by one of
+       these - a bridge stops the car at its parapet and declares no hazard
+       side, so `edgeAt` answers null for it and this draws nothing. */
+    if(!deckB.truss && !railsOff){
+      for(const rs of [-1, 1]){
+        const kind = edgeAt(deckB, rs);
+        if(kind) drawRail(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, rs, kind, H);
+      }
+    }
 
     maxy = y2;
 
@@ -30520,6 +30616,22 @@ requestAnimationFrame(frameLoop);
      one stretch - which is the fault `rollSide`'s own note already records
      being caught by, 40 out of 40 on one side. */
   API.hazardRoll = function(){ return hazardRoll; };
+  /* ---- DEBUG ONLY, AND IT EXISTS TO TAKE THE RAIL AWAY (RLG-265) ------
+     A check that hunts for the rail's own colours is guessing: steel grey has
+     to be told from a white shoulder line, from wet tarmac and from a
+     concrete-toned city ground, and every one of those guesses is a way to
+     report a rail that is not there. Rendering the SAME frame with the rails
+     off and diffing gives the rail's pixels exactly, whatever colour it is.
+     This is the same shape as `seaStraight`: a switch whose only job is to
+     produce the other picture. */
+  API.railsOff = function(on){ railsOff = !!on; return railsOff; };
+  /* debug: put the hazard on a NAMED side, so a check can render the same place
+     twice and watch the rail move. Absolute positions cannot settle this on their
+     own - a rail converging on the vanishing point crosses the middle of the
+     screen whichever side it is on - but the DIFFERENCE between the two answers
+     can, and it shares every other term. */
+  API.setHazardSide = function(s){ hazardRoll = s < 0 ? -1 : 1; return hazardRoll; };
+  API.setSeaSide = function(s){ sideRoll = s < 0 ? -1 : 1; return sideRoll; };
   /* turning the coins is exposed so a check can turn them MANY times. One stretch
      cannot tell a working coin from a jammed one, and this is the only way to ask
      the GAME's own roll rather than a harness's imitation of it - which is the

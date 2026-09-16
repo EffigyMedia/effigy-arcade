@@ -14,8 +14,15 @@ line or a bank, and a rail in front of one is the road furniture RLG-264 deleted
 WHY THIS IS A NUMBER CHECK AND NOT A SCREENSHOT. A rail drawn on the landward side of a coast
 is a rail correctly drawn as far as any picture is concerned: it is the right object, the right
 colour, in the right place on the screen. Only the SIDE is wrong, and the side is the whole
-ruling. So the table is read off `API.edgeOf` and asserted, and the drawing is checked
-elsewhere.
+ruling. So the table is read off `API.edgeOf` and asserted as numbers.
+
+AND THE DRAWING IS MEASURED DIFFERENTIALLY, in the second half. The same place is rendered
+with the rails off and then on, and the difference IS the rail - whatever colour it is, with
+no guessing at steel grey against a white shoulder line or a concrete-toned city ground. Then
+the same place is rendered again with the hazard forced to the other side, and the rail's mean
+position must MOVE. An absolute left-or-right test cannot settle this: a rail converges on the
+vanishing point, so its far end crosses the middle of the screen whichever side it stands on,
+and that read as 101 pixels of phantom rail on a coast's landward side.
 
 AND IT ASSERTS THE COIN IS NOT STUCK. A mountain's cliff falls on either side per stretch. One
 stretch cannot tell a working coin from a jammed one, and `rollSide`'s own note records exactly
@@ -73,6 +80,15 @@ WANT = {
 }
 
 
+# ---- WHERE THE BAR BETWEEN "NO RAIL" AND "A RAIL" SITS, MEASURED ---------------------
+# A place with no rail is not a dead-still picture: a few pixels move between the two frames
+# whatever is pinned, and FARMLAND has been seen at 0, 2, 6, 8, 14, 15 and 41. A place WITH
+# one reports 233 to 1,401. The two are separated by an empty band of more than five to one,
+# and this sits in the middle of it rather than against either edge. A first version at 40
+# failed one run in three on a farmland reading 41, which is a threshold drawn on the noise.
+BARE = 120
+
+
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -84,6 +100,35 @@ def serve(root):
     httpd.allow_reuse_address = True
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, httpd.socket.getsockname()[1]
+
+
+def rail_pixels(a, b):
+    """where the pixels that changed between two frames sit, and how many there are.
+
+    Returns (count, mean x). ABSOLUTE POSITION CANNOT SETTLE WHICH SIDE A RAIL IS ON: a rail
+    converging on the vanishing point crosses the middle of the screen whichever side of the
+    road it stands on, and the first version of this check read that as 101 pixels of rail on
+    a coast's landward side, where there is none. So the caller renders the SAME place with
+    the hazard forced to each side and compares the two means. Every other term - the road,
+    the light, the scenery, the vanishing point's own offset - is shared and cancels.
+    """
+    import io
+    from PIL import Image
+    ia = Image.open(io.BytesIO(a)).convert('RGB')
+    ib = Image.open(io.BytesIO(b)).convert('RGB')
+    w, h = ia.size
+    pa, pb = ia.load(), ib.load()
+    n = 0
+    sx = 0
+    # the lower half only: the mirror at the top carries its own copy of the road, and a
+    # change up there is the mirror agreeing rather than a second rail.
+    for y in range(int(h * 0.42), h, 2):
+        for x in range(0, w, 2):
+            ca, cb = pa[x, y], pb[x, y]
+            if abs(ca[0]-cb[0]) + abs(ca[1]-cb[1]) + abs(ca[2]-cb[2]) > 24:
+                n += 1
+                sx += x
+    return n, (sx / n if n else w / 2.0)
 
 
 def main():
@@ -163,6 +208,85 @@ def main():
               '%.0f%% agreement - one coin read twice would be 100%%'
               % (100.0 * agree / len(rolls)))
 
+        # ---- AND THE RAIL IS ACTUALLY DRAWN, ON THAT SIDE --------------------------
+        # NOT BY HUNTING FOR ITS COLOUR. Steel grey has to be told from a white shoulder
+        # line, from wet tarmac and from a city's concrete-toned ground, and every one of
+        # those guesses is a way to report a rail that is not there. The same frame is
+        # rendered with the rails OFF and the two are differenced: whatever changed IS the
+        # rail, whatever colour it happens to be.
+        #
+        # AND THE SIDE IS MEASURED DIFFERENTIALLY. The same place is rendered with the
+        # hazard forced left and then forced right, and the rail's mean position must MOVE
+        # between them. An absolute left-or-right test cannot work: the rail converges on
+        # the vanishing point, so its far end crosses the middle of the screen whichever
+        # side it is on, and that read as a phantom rail on a coast's landward side.
+        print()
+        print('  AND IT IS DRAWN, ON THE SIDE THE TABLE NAMES')
+        page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
+        page.click('[data-act="play"]')
+        page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=8000)
+        page.click('[data-act="drive"]')
+        page.wait_for_timeout(1600)
+        for _ in range(40):
+            st = page.evaluate("() => window.__probe.road.startLine()")
+            if st['left'] <= 0 and st['go'] <= 0:
+                break
+            page.wait_for_timeout(90)
+
+        def settle(k, side):
+            """pin the place, the light, the curve and the car, with the hazard on `side`"""
+            page.evaluate("([k, s]) => { const R = window.__probe.road;"
+                          " R.setTimed(false); R.holdCurve(0); R.holdSpd(null);"
+                          " R.setBiomePair(k, k); R.setPhase(0.75);"
+                          " R.setWet(0); R.setSnow(0); R.setPool(0); R.clearTraffic();"
+                          " R.setHazardSide(s); R.setSeaSide(s);"
+                          " R.setSpd(R.MAX_SPD * 0.35); }", [k, side])
+            for _ in range(14):
+                page.evaluate("() => { const R = window.__probe.road;"
+                              " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.35); }")
+                page.wait_for_timeout(40)
+            for _ in range(12):
+                page.evaluate("() => { const R = window.__probe.road;"
+                              " R.clearTraffic(); R.holdSpd(0); R.setPhase(0.75); }")
+                page.wait_for_timeout(40)
+
+        def rail_of(k, side):
+            settle(k, side)
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.railsOff(true); }")
+            page.wait_for_timeout(90)
+            off = page.screenshot()
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.railsOff(false); }")
+            page.wait_for_timeout(90)
+            on = page.screenshot()
+            return rail_pixels(on, off)
+
+        for k in ('COASTAL', 'MOUNTAIN', 'CITY', 'FARMLAND'):
+            nL, xL = rail_of(k, -1)
+            nR, xR = rail_of(k, 1)
+            print('      %-9s hazard left: %4d px at x=%5.1f    hazard right: %4d px at x=%5.1f'
+                  % (k, nL, xL, nR, xR))
+            want = WANT.get(k)
+            if want is None:
+                check(nL < BARE and nR < BARE, '%s draws no rail at all' % k,
+                      '%d and %d pixels changed' % (nL, nR))
+            elif want == 'barrier':
+                # A CITY IGNORES THE COIN, so its two renders must be the SAME picture.
+                check(nL > BARE and nR > BARE,
+                      '%s draws its barrier down both sides' % k,
+                      '%d and %d pixels' % (nL, nR))
+                check(abs(xL - xR) < 30,
+                      '%s does not move when the coin turns - a barrier is not a hazard' % k,
+                      'x=%.1f against x=%.1f' % (xL, xR))
+            else:
+                check(nL > BARE and nR > BARE, '%s draws a rail whichever side the hazard is' % k,
+                      '%d and %d pixels' % (nL, nR))
+                # THE RULING IS THE SIDE. The rail must sit further left when the hazard is
+                # left than when it is right, by more than any noise in the picture.
+                check(xR - xL > 60, '%s puts the rail on the side the hazard is' % k,
+                      'x=%.1f with the hazard left, x=%.1f with it right' % (xL, xR))
+
         errs = page.evaluate("() => window.__probe.errors")
         check(not errs, 'no page errors', '; '.join(errs[:2]))
         browser.close()
@@ -172,9 +296,10 @@ def main():
     if fails:
         print('  %d check(s) FAILED' % len(fails))
         return 1
-    print('  the table holds')
-    print('  it says nothing about whether a rail is DRAWN, or drawn well - that is')
-    print('  the next part of RLG-265 and it is settled by looking.')
+    print('  the table holds and the rail follows it')
+    print('  it says nothing about whether the rail is drawn WELL - whether it reads as')
+    print('  steel at speed, and whether it stands at the right height - which is the')
+    print('  owner call on a device.')
     return 0
 
 
