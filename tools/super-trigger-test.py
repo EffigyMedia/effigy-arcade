@@ -12,7 +12,7 @@ RLG-030's two conditions stay: the stars are the standing state, the 170 is the 
 
   TRAP     at three stars, a trap from the road's own spawner is driven past at 88 % (176mph). The
            player then SLOWS to 50 % - under the old 150 condition - and an Interceptor must still
-           arrive within 8 seconds.
+           be sent. A second pass sends no second car, because three stars hold one.
   PATROL   the same with a patrol car, which earned nothing before this ruling.
   STARS    at two stars, with the pass already banked, none arrives.
   CLEAN    at three stars, held at 84 % - 168mph, over the speed limit and under the 170 the rule
@@ -20,10 +20,10 @@ RLG-030's two conditions stay: the stars are the standing state, the 170 is the 
            empty, because the road lays traps of its own and one pass at 190mph fills the bank and
            dispatches in the SAME frame, before a harness could clear it. Without this arm a build
            that sent Interceptors to everybody would pass the two above.
-  SLOTS    three stars allow ONE Interceptor and four allow two (RLG-262; the first build of this
-           ruling allowed two at three). Each arm watches 12 seconds, five times the 2.2 s stagger,
-           so a second would have had time to arrive. At four stars the two must be sent at least a
-           second apart; the stagger used to ride on the held-speed counter this ruling removes.
+  SLOTS    three stars hold ONE Interceptor and four hold two, and that is a CAPACITY: each pass
+           sends at most one car, so four stars with a single pass still send one. Two passes at four
+           stars send two, at least a second apart. Each arm runs 14 seconds, several times the
+           2.2 s stagger, so a second car would have had time to arrive.
 
 WHAT THIS CANNOT SAY. Whether an Interceptor arriving without the held speed reads as fair on the
 device is the owner's verdict.
@@ -48,31 +48,39 @@ from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
 ARM = """async (a) => {
   const R = window.__road;
   R.holdSpd(null); R.copsClear(); R.parkTraffic(9, 60000); R.earnSupers(false); R.heat(a.stars);
-  if(a.what === 'trap'){ R.spawnTrap(); const cs = R.cops();
-                         cs[cs.length - 1].z = R.startLine().pos + R.PLAYER_Z + 1500; }
-  if(a.what === 'patrol') R.placePatrol(1200);
   if(a.banked) R.earnSupers(true);
-  R.holdSpd(a.pass * R.MAX_SPD);
-  /* ONE CLOCK FOR THE WHOLE ARM, and the pass is inside it. The first Interceptor is sent on
-     the frame the 170 is banked - during the pass - so a watch that started afterwards timed
-     the second one against the wrong zero and read a 2.2 s stagger as 0.5. */
-  const t0 = performance.now(); const at = []; let earned = false;
+  /* ONE CLOCK FOR THE WHOLE ARM, and the passes are inside it. An Interceptor is sent on the
+     frame the 170 is banked, so a watch that started after a pass timed the next one against
+     a zero that was already late - it read a 2.2 s stagger as 0.5. */
+  const t0 = performance.now(); const at = []; let pass = 0, passed = 0, placed = -1;
   await new Promise((done) => {
     const tick = () => {
       const t = (performance.now() - t0) / 1000;
       R.heat(a.stars);                                   /* over the limit earns more of it */
-      if(t >= 1.8 && !earned){ earned = R.pursuit().earned; R.holdSpd(a.after * R.MAX_SPD); }
+      /* each pass: put one ahead, hold the pass speed, and give it 1.8 s to go by */
+      if(pass < a.passes && placed < 0){
+        if(a.what === 'trap'){ R.spawnTrap(); const cs = R.cops();
+                               cs[cs.length - 1].z = R.startLine().pos + R.PLAYER_Z + 1500; }
+        if(a.what === 'patrol') R.placePatrol(1200);
+        R.holdSpd(a.pass * R.MAX_SPD);
+        placed = t;
+      } else if(placed >= 0 && t - placed > 1.8){
+        pass++; placed = -1; passed = t;
+        if(pass >= a.passes) R.holdSpd(a.after * R.MAX_SPD);
+      }
       for(const k of R.cops()) if(k.superc && k.__at === undefined){
         k.__at = t; at.push(+t.toFixed(1));
       }
-      if(t < a.secs + 1.8) requestAnimationFrame(tick); else done();
+      if(t < a.secs) requestAnimationFrame(tick); else done();
     };
     requestAnimationFrame(tick);
   });
   R.holdSpd(null);
-  /* THE TOTAL IS WHAT THE SLOT RULE IS ABOUT, and `at` cannot be it: one is always sent in
-     the pass phase above, on the frame the 170 is banked, and those are not arrivals. */
-  return { earned, at, supers: R.cops().filter(k => k.superc && k.wreck <= 0).length,
+  /* HOW MANY WERE SENT is `at.length`, and it is the stable count: the arm starts from an empty
+     road, and an Interceptor that catches a slow player can wreck itself inside the window, so
+     counting what is still alive at the end read 0 for an arm that had correctly sent one. */
+  return { earned: R.pursuit().earned, at, passedAt: +passed.toFixed(1),
+           supers: R.cops().filter(k => k.superc && k.wreck <= 0).length,
            mph: Math.round(R.pursuit().mph) };
 }"""
 
@@ -119,39 +127,41 @@ def main():
                             ' return 2; }')
 
         def arm(name, **a):
-            a.setdefault('secs', 8)
+            a.setdefault('secs', 14)
             a.setdefault('pass', 0.88)
             a.setdefault('after', 0.50)
             a.setdefault('banked', False)
             a.setdefault('what', 'trap')
+            a.setdefault('passes', 1)
             got = pg.evaluate(ARM, a)
-            print('      %-7s earned %-5s  %d Interceptor(s) out; sent at %s'
-                  '  (holding %dmph)' % (name, got['earned'], got['supers'], got['at'], got['mph']))
+            print('      %-8s %d pass(es): %d Interceptor(s) sent at %s; %d still out; banked %s'
+                  % (name, a['passes'], len(got['at']), got['at'], got['supers'], got['earned']))
             return got
 
-        g = arm('TRAP', stars=3, secs=12)
-        ok(g['earned'], 'a pass over 170 past a trap is banked', 'earned %s' % g['earned'])
-        ok(g['supers'] >= 1, 'and an Interceptor is sent without the player holding 150',
-           'none in 12s while holding %dmph' % g['mph'])
-        ok(g['supers'] == 1, 'three stars allow ONE Interceptor, and only one',
-           '%d out after 12s' % g['supers'])
+        g = arm('TRAP', stars=3)
+        ok(len(g['at']) == 1, 'three stars, one pass over 170 past a trap: one Interceptor',
+           '%d sent' % len(g['at']))
+        g = arm('TRAP x2', stars=3, passes=2)
+        ok(len(g['at']) == 1, 'three stars, two passes: still one, because three stars hold one',
+           '%d sent' % len(g['at']))
 
-        g = arm('FOUR', stars=4, secs=12)
-        ok(g['supers'] == slots, 'four stars allow two', '%d out after 12s' % g['supers'])
+        g = arm('FOUR', stars=4)
+        ok(len(g['at']) == 1, 'FOUR stars, one pass: still ONE - the capacity is two, the pass sends one',
+           '%d sent' % len(g['at']))
+        g = arm('FOUR x2', stars=4, passes=2)
+        ok(len(g['at']) == slots, 'four stars, two passes: two', '%d sent' % len(g['at']))
         ok(len(g['at']) >= 2 and g['at'][1] - g['at'][0] >= 1.0,
-           'and the second follows the first rather than sharing its frame',
-           'sent at %s' % g['at'])
+           'and the second follows the first rather than sharing its frame', 'sent at %s' % g['at'])
 
         g = arm('PATROL', stars=3, what='patrol')
-        ok(g['earned'], 'a pass over 170 past a PATROL is banked too', 'earned %s' % g['earned'])
-        ok(g['supers'] >= 1, 'and it sends an Interceptor as well', 'none in 8s')
+        ok(len(g['at']) == 1, 'a pass over 170 past a PATROL sends one too', '%d sent' % len(g['at']))
 
         g = arm('STARS', stars=2, banked=True)
-        ok(g['supers'] == 0, 'two stars sends none, however the pass went', '%d out' % g['supers'])
+        ok(not g['at'], 'two stars sends none, however the pass went', 'sent at %s' % g['at'])
 
         g = arm('CLEAN', stars=3, what='none', **{'pass': 0.84, 'after': 0.84})
-        ok(g['supers'] == 0, 'three stars and 168mph - over the limit, under 170 - sends none',
-           '%d out' % g['supers'])
+        ok(not g['at'], 'three stars and 168mph - over the limit, under 170 - sends none',
+           'sent at %s' % g['at'])
 
         ok(not errs, 'no page errors', errs[0][:120] if errs else '')
         b.close()

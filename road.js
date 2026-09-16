@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.38';
+window.ROAD_BUILD = '0.14.39';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -11158,17 +11158,23 @@ function superWatch(dt){
   fastFor = fast ? fastFor + dt : 0;
   if(nextSuperT > 0) nextSuperT -= dt;
   if(!optEasy && heat >= 3 && supersEarned && nextSuperT <= 0){
-    /* ---- ONE AT THREE STARS, TWO AT FOUR (owner, 2026-09-15, RLG-262) -----
-       "Three stars allows one interceptor on you, four stars allows two."
+    /* ---- FOUR STARS IS A CAPACITY, NOT A DISPATCH (owner, 2026-09-15) -----
+       "I didn't mean the two interceptors are sent at four stars, I meant at
+       four stars the capacity is increased to two interceptors."
 
-       The Interceptors' slots are separate from the cruisers' (RLG-256) and
-       SUPER_SLOTS is the most a car ever holds. `Math.ceil(heat / 1.5)` gave
-       TWO at three stars, which is the line this ruling corrects. */
-    const want = heat >= SUPER_TWO_AT ? SUPER_SLOTS : 1;
+       SO A PASS SENDS ONE CAR, AND THE STARS SAY HOW MANY MAY BE ON YOU. The
+       first build of this read `supersEarned` as a standing state and topped the
+       road up to the capacity on its own, so four stars put two out for a single
+       pass. The pass is an EVENT (RLG-030) and is spent by the car it sends;
+       earning the second one means going past another trap or patrol at 170.
+       The capacity is the Interceptors' own, separate from the cruisers' slots
+       (RLG-256). */
+    const room = heat >= SUPER_TWO_AT ? SUPER_SLOTS : 1;
     const have = cops.filter(k => k.superc && k.wreck <= 0).length;
-    if(have < want){
+    if(have < room){
       spawnSuper();
-      nextSuperT = SUPER_STAGGER;      /* one at a time, not both in a frame */
+      supersEarned = false;            /* the pass is spent on this car */
+      nextSuperT = SUPER_STAGGER;      /* and the next one needs its own pass */
     }
   }
 }

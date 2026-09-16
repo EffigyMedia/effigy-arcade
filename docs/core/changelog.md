@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-39"></a>
+## [0.14.39] - 2026-09-15
+- Fixed: **each 170 pass sends one Interceptor, and the stars are a capacity.** Four stars put two
+  out for a single pass and replaced them as they wrecked; three came from one pass, measured. The
+  second Interceptor now needs a second pass. [RLG-262](../fragments/RLG-262.md)
+
 <a id="v0-14-38"></a>
 ## [0.14.38] - 2026-09-15
 - Changed: **three stars allow one Interceptor, four allow two.** Three stars allowed two, because the
