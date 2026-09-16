@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-36"></a>
+## [0.14.36] - 2026-09-15
+- Changed: **speed traps are far less frequent.** One is laid every 30 to 60 seconds instead of every
+  5 to 10, on a random interval, and five stars halve that rather than cutting it to two seconds. A
+  star sheds in 30 seconds, so cooling down is now possible. [RLG-261](../fragments/RLG-261.md)
+
 <a id="v0-14-35"></a>
 ## [0.14.35] - 2026-09-15
 - Changed: **the police radio is gone.** Only speed traps and patrol cars put cruisers on you now,

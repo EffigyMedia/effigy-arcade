@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.35';
+window.ROAD_BUILD = '0.14.36';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -586,6 +586,21 @@ const COP_GIVE_UP_T = 5.0;
    -------------------------------------------------------------------- */
 const TRAPS_BASE = 4;          /* parked and waiting at no heat at all */
 const TRAPS_MAX  = 8;          /* and the most the road ever holds */
+/* ---- AND FAR APART (owner, 2026-09-15, RLG-261) --------------------------
+   "We need to make the interval between speed traps much longer. They have way
+   too frequently. It would never allow you to cool down. So let's make the
+   interval way longer but also a random range."
+
+   IT WAS 5 TO 10 SECONDS, less heat*0.6, to a floor of 2 - eighteen traps in 90
+   seconds, measured. A star sheds in HEAT_COOL (30 s) of clean driving, so a
+   trap every five seconds is a wanted level that can only climb.
+
+   A HIGHER LEVEL STILL SHORTENS IT, "a little": a tenth per star, to half the
+   range at five stars. The range is random so the road never reads as a
+   metronome, which is the owner's other half of this. */
+const TRAP_GAP     = [30, 60];  /* seconds between traps, at no heat */
+const TRAP_GAP_HEAT = 0.10;     /* the share a star takes off it */
+const TRAP_GAP_MIN  = 0.50;     /* and the most heat can ever take */
 /* ---- HOW MANY POLICE ONE CAR CAN HOLD (owner, 2026-09-15, RLG-256) --------
    A trap engages a car only into an open slot. Ordinary cruisers: stars + 1,
    "no max". Interceptors: their own two, separate from those. */
@@ -18440,10 +18455,12 @@ function step(dt){
   if(roadFurniture && !optEasy && nextCopT <= 0){
     const parked = cops.filter(k => k.trap).length;
     if(parked < Math.min(TRAPS_MAX, TRAPS_BASE + Math.floor(heat/2))) spawnTrap();
-    /* laid more quickly as well as more thickly, or the cap is a number the
-       road never reaches: at nine to sixteen seconds apart a drive is over
-       before the fourth one is down */
-    nextCopT = Math.max(2.0, rnd(5, 10) - heat*0.6);
+    /* RLG-261: a random 30 to 60 seconds, a tenth shorter per star and never
+       under half the range. The comment this replaces argued the opposite - lay
+       them quickly or the cap is never reached - and the owner has ruled that
+       the cap is not worth a road the player cannot cool down on. */
+    nextCopT = rnd(TRAP_GAP[0], TRAP_GAP[1])
+               * Math.max(TRAP_GAP_MIN, 1 - TRAP_GAP_HEAT * heat);
   }
   /* ---- THE THIRD SOURCE, AND IT IS THE ONE HEAT ACTUALLY DRIVES ---------
      Owner, 2026-09-07, settling the first finding of the police audit: "Police
