@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-50"></a>
+## [0.14.50] - 2026-09-16
+- Added: **losing a tournament round offers a retry, and quitting keeps the ladder.** Being busted or
+  running out of time mid-tournament drew the ordinary end card and the tournament was silently
+  neither ended nor acknowledged. It now has its own card with three attempts for the whole
+  tournament; QUIT & SAVE parks it under its vehicle class and any car of that class picks it up
+  again, while a single race still saves nothing. [RLG-268](../fragments/RLG-268.md)
+
 <a id="v0-14-49"></a>
 ## [0.14.49] - 2026-09-16
 - Changed: **a police car in front slows you to its own pace instead of pinning you.** The zone

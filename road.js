@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.49';
+window.ROAD_BUILD = '0.14.50';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -870,11 +870,124 @@ let tourDone = false;
    you already owned, which says nothing rather than announcing it twice. */
 let tourCopNew = false, tourCopHad = false;
 
+/* ---- A TOURNAMENT GETS THREE ATTEMPTS (owner, 2026-09-16, RLG-268) --------
+   Owner: "When you run out of time or get busted, the options should be retry
+   from that race or quit the tournament."
+
+   THREE FOR THE WHOLE TOURNAMENT, not three a round. Chosen by the owner
+   against a pool of one-per-round, two, five, and unlimited: four rounds and
+   three attempts means you can lose one round badly and still recover, and you
+   cannot lose three. Unlimited was the recommendation and was declined, so the
+   count is the tournament's cost of failing rather than decoration.
+
+   A RETRY IS SPENT ON THE PRESS, and the failed round scores nobody: `tourScore`
+   only ever runs at the finish line, so a run that ended on the clock or on a
+   bust never reached it and the standings are untouched. `start()` re-runs the
+   current round on its own, because `tourRound` was never advanced.
+
+   RUNNING OUT ENDS THE TOURNAMENT AND CLEARS ITS SAVE. That is the owner's loss
+   condition and it is the reason the count exists.
+   ---------------------------------------------------------------------- */
+const TOUR_RETRIES = 3;
+let tourRetries = TOUR_RETRIES;
+/* ---- WHICH CLASS THE TOURNAMENT IN MEMORY BELONGS TO (RLG-268) -----------
+   A tournament is saved PER VEHICLE CLASS, so the one held in these variables
+   has an owner and the code has to know who it is. Without it, picking a
+   supercar mid-way through a sports ladder would carry the sports round, points
+   and field straight into the super tournament - the state is a set of bare
+   module variables and nothing about them says which league they came from.
+   `tourSwap` is what reads this. */
+let tourClass = '';
 function tourReset(){
   tourRound = 0; tourPts = 0;
+  tourRetries = TOUR_RETRIES;
   /* eleven rivals who carry their own points between rounds */
   tourField = [];
   for(let i=0;i<11;i++) tourField.push({ n:i, pts:0 });
+}
+/* ---- A QUIT TOURNAMENT IS KEPT, AND THE CLASS IS THE KEY (RLG-268) --------
+   Owner, 2026-09-16: "if you quit the tournament, the state of the tournament is
+   saved for that class of vehicle... if you quit in the middle of a sports
+   tournament, whenever you have a sports car selected in the garage and
+   tournament, you see the last saved state of that tournament and it continues."
+
+   THE CAR IS NOT PART OF THE KEY, and the owner chose that deliberately against
+   two alternatives - remembering the car and putting you back in it, or keying
+   the save on the car itself. Pick ANY sports car and the saved sports
+   tournament continues in the car you just chose, which is the version that can
+   be held in your head and which lets a player change cars mid-ladder when one
+   is not working out.
+
+   IT IS ONE KEY HOLDING A ROW PER CLASS rather than three keys. `AR.save` is
+   namespaced per machine and `ownedBy` matches `<id>-` , so `interstate-tour`
+   is reached by the eraser exactly like `interstate-opts` - that is the rule in
+   CLAUDE.md and a store outside those shapes is invisible to it.
+
+   FORMULA HAS NO LEAGUE (RLG-213) so it can never be a key here; `classOf`
+   answers `formula` for those cars and `raceLegal` keeps them out of a
+   tournament in the first place.
+   ---------------------------------------------------------------------- */
+function tourKey(){ return GAME_ID + '-tour'; }
+function tourAll(){
+  if(!AR || !AR.save) return {};
+  const s = AR.save.get(tourKey());
+  return (s && typeof s === 'object') ? s : {};
+}
+/* what is worth writing down. A tournament nobody has driven a round of is not a
+   saved tournament - it is the same thing as a new one, and writing it would put
+   a row in the save that says nothing. */
+function tourWorthSaving(){
+  return tourRound > 0 || tourPts > 0 || tourRetries < TOUR_RETRIES;
+}
+function tourSave(cls){
+  const key = cls || tourClass;
+  if(!key || key === 'formula' || !AR || !AR.save) return false;
+  if(!tourWorthSaving()) return tourClear(key);
+  const all = tourAll();
+  all[key] = { round: tourRound, pts: tourPts, retries: tourRetries,
+               /* the field's points, and nothing else about it: a rival is
+                  rebuilt from its index, so storing the objects would persist a
+                  shape that `tourReset` owns */
+               field: tourField.map(r => r.pts|0) };
+  return AR.save.set(tourKey(), all);
+}
+function tourClear(cls){
+  const key = cls || tourClass;
+  if(!key || !AR || !AR.save) return false;
+  const all = tourAll();
+  if(!(key in all)) return false;
+  delete all[key];
+  return AR.save.set(tourKey(), all);
+}
+/* put the saved tournament for `cls` into the live variables, or a fresh one if
+   there is nothing saved. Returns true if a save was found. */
+function tourLoad(cls){
+  tourReset();
+  tourClass = cls || '';
+  const s = tourAll()[cls];
+  if(!s) return false;
+  tourRound   = Math.min(Math.max(s.round|0, 0), TOUR_MILES.length - 1);
+  tourPts     = Math.max(s.pts|0, 0);
+  tourRetries = Math.min(Math.max(s.retries === undefined ? TOUR_RETRIES
+                                                          : s.retries|0, 0), TOUR_RETRIES);
+  if(Array.isArray(s.field))
+    for(let i=0;i<tourField.length;i++) tourField[i].pts = Math.max(s.field[i]|0, 0);
+  return true;
+}
+/* ---- AND THE SWAP IS THE ONLY PLACE EITHER OF THEM IS CALLED (RLG-268) ----
+   The garage redraws constantly - every paint swatch, every arrow - and
+   `enforceModeRules` runs on each one. Loading the save on every call would
+   overwrite the tournament the player is part way through with the copy on
+   disk; saving on every call would write a row for a tournament nobody has
+   started. So both are hung off the one event that actually matters: the class
+   under the player CHANGED. The outgoing tournament is parked and the incoming
+   one is fetched, which is exactly the owner's own description of switching
+   from a sports car to a supercar. */
+function tourSwap(){
+  const cls = classOf(optBody);
+  if(cls === tourClass) return;
+  if(tourClass && tourClass !== 'formula') tourSave(tourClass);
+  tourLoad(cls);
 }
 function tourScore(myPlace){
   tourPts += TOUR_PTS[Math.min(myPlace-1, TOUR_PTS.length-1)];
@@ -28078,7 +28191,14 @@ function showGarage(){
            it away here is what cost them INTERCEPT on the walk between the two
            police cars. */
         if(raceMode !== 'race'){ raceMode = 'race'; raceTour = false; }
-        else if(!raceTour){ raceTour = true; tourReset(); }
+        /* ---- TURNING IT ON PICKS THE SAVED LADDER UP (RLG-268) -----------
+           This called `tourReset()`, which was right while a tournament was
+           per-run state and is now the one thing that must not happen: the
+           owner's rule is that selecting a class with a quit tournament in it
+           "continues" it, and the MODE button is exactly where a player asks
+           for that. `tourLoad` resets first and then lays the save over the
+           top, so a class with nothing saved still starts clean. */
+        else if(!raceTour){ raceTour = true; tourLoad(classOf(optBody)); }
         else { raceMode = 'endless'; raceTour = false; }
         enforceModeRules();
         showGarage();
@@ -28289,7 +28409,12 @@ function enforceModeRules(){
   /* ---- THE ONE DOOR BACK (RLG-232) ------------------------------------
      Above every branch, because a police car takes an early return out of this
      function and a player may well walk into one from the trophy screen. */
-  if(tourDone){ tourReset(); tourDone = false; }
+  /* ---- AND A SPENT TOURNAMENT TAKES ITS SAVE WITH IT (RLG-268) ---------
+     A tournament that has PAID OUT is finished, so the row under its class has
+     to go with the in-memory state. Left behind, the next sports car picked
+     would load a completed ladder off disk and the retirement above would have
+     been undone by the save it did not know about. */
+  if(tourDone){ tourClear(tourClass || classOf(optBody)); tourReset(); tourDone = false; }
   if(playerIsPolice()){
     /* on shift: the race machinery on, the tournament off, and the racing car's
        own choice left exactly where it was */
@@ -28318,6 +28443,28 @@ function enforceModeRules(){
   mode = raceMode;
   tourOn = raceTour;
   if(!raceLegal(optBody)){ mode = 'endless'; tourOn = false; }
+  /* ---- AND THE TOURNAMENT FOLLOWS THE CLASS (owner, 2026-09-16, RLG-268) --
+     "If you would have switched to a supercar, the tournament would either show
+     a new state or a saved state of another super tournament that you quit out
+     of without completing."
+
+     THIS IS THE ONE DOOR, for the same reason the retirement above it is: every
+     way into a drive passes the garage, and the garage calls this. Hanging it
+     off the MODE button instead would miss the arrows, which are how a class is
+     actually changed.
+
+     IT ONLY ACTS ON A CHANGE. `tourSwap` returns at once when the class under
+     the player is the one already in memory, which is every redraw but the one
+     that matters - and that guard is load-bearing rather than an optimisation:
+     this function runs on every paint swatch and every arrow press, so a swap
+     that fired each time would overwrite a part-driven ladder with the copy on
+     disk sixty presses running.
+
+     IT RUNS EVEN WHEN THE TOURNAMENT IS OFF, and deliberately. A player who
+     changes from a sports car to a supercar with the mode set to SINGLE RACE
+     has still moved class, and their sports ladder must be parked then rather
+     than the next time they happen to switch the mode on. */
+  tourSwap();
 }
 
 /* ---- WHICH CARS THE GARAGE LISTS -----------------------------------------
@@ -29050,16 +29197,31 @@ function showRound(place){
     '<div class="grid2">' +
       '<div class="gc"><span>YOUR POINTS</span><b>' + tourPts + '</b></div>' +
       '<div class="gc"><span>STANDING</span><b>P' + tourStanding() + '</b></div>' +
-      '<div class="gc"><span>NEXT ROUND</span><b>' + (tourRound+1) + ' OF 4</b></div>' +
+      '<div class="gc"><span>NEXT ROUND</span><b>' + (tourRound+1) + ' OF '
+        + TOUR_MILES.length + '</b></div>' +
       '<div class="gc"><span>DISTANCE</span><b>' + TOUR_MILES[tourRound] + ' MI</b></div>' +
     '</div>' +
     '<div class="gstack">' +
       '<button class="go" data-act="next">NEXT RACE</button>' +
       '<button class="go ghost" data-act="garage">CHANGE CAR</button>' +
-      '<button class="go ghost" data-act="quit">RETIRE</button>' +
+      /* ---- IT SAYS WHAT IT DOES (owner, 2026-09-16, RLG-268) -----------
+         It read RETIRE, which was true when quitting threw the ladder away and
+         is a lie now that it keeps it. The owner named the replacement. This is
+         the case where a label has to change with the behaviour underneath it:
+         a player who reads RETIRE and means it would avoid the one button that
+         does what they want. */
+      '<button class="go ghost" data-act="quit">QUIT &amp; SAVE</button>' +
     '</div>',
+    /* ---- QUITTING KEEPS THE LADDER NOW (owner, 2026-09-16, RLG-268) -----
+       "if you quit the tournament, the state of the tournament is saved for
+       that class of vehicle." This is the OTHER way out of a tournament and it
+       is the one a player who is simply stopping for the night will use, so it
+       saves on exactly the same terms as QUIT THE TOURNAMENT does after a lost
+       round. CHANGE CAR needs nothing added: it goes through the garage, and
+       `enforceModeRules` parks the ladder the moment the class changes. */
     { next: start, garage: showGarage,
-      quit: () => { tourOn = false; showTitle(); } });
+      quit: () => { tourSave(tourClass || classOf(optBody));
+                    tourOn = false; showTitle(); } });
 }
 
 /* ---- the end of the tournament -------------------------------------------
@@ -29322,7 +29484,72 @@ function showTrophy(st){
                      tourOn = false; showTitle(); } });
 }
 
+/* ---- LOSING A TOURNAMENT ROUND (owner, 2026-09-16, RLG-268) ---------------
+   Owner: "When you run out of time or get busted, the options should be retry
+   from that race or quit the tournament."
+
+   THIS SCREEN DID NOT EXIST AND NOTHING NOTICED. `wreck()` and the OUT OF TIME
+   branch both call `showEnd` directly, and `showEnd` had no tournament
+   awareness of any kind - so being busted or running out of time in the middle
+   of a ladder drew the ordinary end card, RUN IT AGAIN / CHANGE CAR / MAIN
+   MENU, while `tourRound` and `tourPts` sat untouched in memory behind it. RUN
+   IT AGAIN called `start()`, which re-ran the current round without saying so.
+   The tournament was neither ended nor acknowledged.
+
+   IT IS ONE BRANCH IN `showEnd` AND NOT TWO FIXES AT TWO CALL SITES. That is
+   the shape RLG-232 was written for: naming every exit is what this codebase
+   has paid for three times, and a third way to end a run added tomorrow is
+   covered here by construction.
+
+   WHAT THE ROUND SCORED IS NOTHING. `tourScore` only ever runs at the finish
+   line, so a run that ended early never reached it - the standings shown here
+   are the ones the player carried in, and a retry starts the same round against
+   the same table.
+   ------------------------------------------------------------------------- */
+function showTourEnd(reason){
+  const left = Math.max(0, tourRetries|0);
+  const out  = left <= 0;
+  /* OUT OF ATTEMPTS IS THE LOSS CONDITION, and the save goes with it. The owner
+     chose this against keeping the tournament saved with no retries left: out of
+     retries ends it, and picking that class again starts fresh. It is cleared
+     HERE rather than on the way out, because every button on this screen leads
+     out of it and the flag must not depend on which one is pressed. */
+  if(out){ tourClear(tourClass || classOf(optBody)); tourOn = false; }
+  openVeil(
+    '<div class="eyebrow">' + reason + '</div>' +
+    '<h1>' + (out ? 'OUT' : 'ROUND ' + (tourRound + 1)) +
+      '<u>' + (out ? 'OF ATTEMPTS' : 'OF ' + TOUR_MILES.length) + '</u></h1>' +
+    '<div class="grid2">' +
+      '<div class="gc"><span>YOUR POINTS</span><b>' + tourPts + '</b></div>' +
+      '<div class="gc"><span>STANDING</span><b>P' + tourStanding() + '</b></div>' +
+      '<div class="gc"><span>DISTANCE</span><b>' + dist.toFixed(1) + ' MI</b></div>' +
+      '<div class="gc"><span>RETRIES</span><b>' + left + '</b></div>' +
+    '</div>' +
+    '<div class="gstack">' +
+      (out ? '' : '<button class="go" data-act="again">RETRY THAT RACE</button>') +
+      '<button class="go' + (out ? '' : ' ghost') + '" data-act="quit">' +
+        /* the same words as the between-rounds screen, because it is the same
+           act: the ladder is kept. Out of attempts there is nothing left to
+           save and the button says where it goes instead. */
+        (out ? 'BACK TO THE GARAGE' : 'QUIT &amp; SAVE') + '</button>' +
+    '</div>',
+    /* ---- AND THE COUNT IS SPENT ON THE PRESS ---------------------------
+       Not when the run ends. A player who quits after failing has not used an
+       attempt, and charging one would mean the tournament they saved is worse
+       than the one they were in a moment earlier. */
+    { again: () => { if(tourRetries > 0) tourRetries--; start(); },
+      quit:  () => { if(!out) tourSave(tourClass || classOf(optBody));
+                     tourOn = false;
+                     /* the garage rather than the title: out of attempts, the
+                        next thing to do is choose another car, and it is the
+                        garage that retires the spent ladder. */
+                     out ? showGarage() : showTitle(); } });
+}
+
 function showEnd(reason){
+  /* the tournament has its own end card - see `showTourEnd`. This is the one
+     door both `wreck()` and the clock come through. */
+  if(tourOn) return showTourEnd(reason);
   openVeil(
     '<div class="eyebrow">'+reason+'</div>'+
     '<h1>'+dist.toFixed(1)+'<u>MILES DRIVEN</u></h1>'+
@@ -30507,7 +30734,15 @@ requestAnimationFrame(frameLoop);
   /* the round and the points are kept when a mode is dropped - this is how a
      check proves the tournament was switched OFF rather than erased */
   API.tourState = function(){ return { on:!!tourOn, round:tourRound, pts:tourPts,
-                                      done:!!tourDone }; };
+                                      done:!!tourDone,
+                                      /* RLG-268: the attempts left, which class the
+                                         ladder in memory belongs to, and every class
+                                         that has one saved. A check for "quitting saved
+                                         it" has to be able to read the row rather than
+                                         infer it from what happens next. */
+                                      retries:tourRetries, cls:tourClass,
+                                      max:TOUR_RETRIES, rounds:TOUR_MILES.length,
+                                      saved:tourAll() }; };
   /* ---- THE FALSIFIER'S HANDLE ON RLG-232 --------------------------------
      `tour-exit-test --falsify` needs the OLD behaviour: a trophy left by the
      menu that retires nothing. Clearing the flag from outside is exactly that
@@ -30515,6 +30750,13 @@ requestAnimationFrame(frameLoop);
      for putting the defect back rather than one the product uses - nothing in
      the game calls it. */
   API.tourClearDone = function(){ tourDone = false; return tourDone; };
+  /* ---- THE OTHER FALSIFIER'S HANDLE (RLG-268) ---------------------------
+     `tour-save-test --selftest` needs the OLD behaviour: a run that ends with
+     `showEnd` knowing nothing about the tournament it was part of. Dropping the
+     flag on the frame the run ends is exactly that build, because the flag is
+     the only thing `showEnd` branches on. A seam for putting the defect back,
+     like `tourClearDone` above it - nothing in the game calls it. */
+  API.tourOff = function(){ tourOn = false; return tourOn; };
   /* THE MODE ITSELF, not the label. The MODE button reads 'TEST DRIVE' for a
      car that cannot race whatever `mode` holds, so the label cannot tell a
      check whether a press got through - it is hardcoded on that branch. A

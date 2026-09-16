@@ -266,6 +266,12 @@ def saves(page, base):
       // so adding a store means adding it to this list.
       A.save.set('inter', { best: 1 });                                  // the save
       A.save.set('inter-opts', { invertY: true });                       // a second slot
+      // RLG-268's per-class tournament store. IT RIDES THE SAME `-suffix` PATH AS
+      // `-opts` ABOVE and cannot fail on its own, so this is a registration rather
+      // than an independent proof - the list is what a reader consults to answer
+      // "what does this machine store", and a store missing from it is a store
+      // nobody thinks about when the eraser changes.
+      A.save.set('inter-tour', { sports: { round: 2, pts: 40 } });
       localStorage.setItem('effigyarcade.inter.tally.v1', '{}');         // its own key
       localStorage.setItem('effigyarcade.inter.opts.v1', '{"mirror":"OFF"}');  // shell options
       localStorage.setItem('effigyarcade.inter.audio.v1', '{"music":false}');  // audio prefs
