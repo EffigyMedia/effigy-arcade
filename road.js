@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.40';
+window.ROAD_BUILD = '0.14.41';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -19008,7 +19008,7 @@ function step(dt){
     /* The mirror can see 34,000 units back, so culling at 1,200 emptied it a
        heartbeat after anything passed you. Everything now lives as far behind
        as the mirror can draw it. */
-    const cullAt = 34000;
+    const cullAt = MIRROR_BACK;
     if(c.z < pos - cullAt){ traffic.splice(i,1); continue; }
     /* ---- AND THE ONES THAT DROVE AWAY -------------------------------------
        There was no forward cull at all. Traffic was only ever removed once it
@@ -19101,7 +19101,7 @@ function step(dt){
     const k = cops[i];
     if(k.wreck>0){
       k.wreck -= dt; k.spd *= (1-1.4*dt); k.ang += dt*7; k.z += k.spd*dt;
-      if(k.wreck<=0 || k.z < pos-34000) cops.splice(i,1);
+      if(k.wreck<=0 || k.z < pos-MIRROR_BACK) cops.splice(i,1);
       continue;
     }
     if(k.grace>0) k.grace -= dt;
@@ -19771,7 +19771,7 @@ function step(dt){
       k.cool = 2.5 - heat*0.15; k.side = -push;
       burst(k, '#8fd0ff');
     }
-    if(k.z < pos - 34000) cops.splice(i,1);
+    if(k.z < pos - MIRROR_BACK) cops.splice(i,1);
   }
 
   // --- repair crates ---
@@ -26169,7 +26169,11 @@ function drawMirrorFull(mx, my, mw, mh){
      no retention of its own - what bounded it before was `drawFinish` refusing
      to paint more than 600 units past, and that is a FORWARD painter's limit. */
   if(mode === 'race' && finishZ < pos && finishZ > pos - MIRROR_BACK)
-    back.push({ o:{ z:finishZ }, finish:true });
+    /* `kind` is what the sweep reads (RLG-177). The finish was the one item in
+       this list without one, so `viewKinds.glass` could never record it and the
+       sweep could not tell a finish line missing from the glass from one the
+       drive never reached. It is drawn from `finish`, not from this. */
+    back.push({ o:{ z:finishZ }, finish:true, kind:'f' });
   back.sort((a,b) => a.o.z - b.o.z);
 
   for(const it of back){

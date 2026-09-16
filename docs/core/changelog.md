@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-41"></a>
+## [0.14.41] - 2026-09-15
+- Changed: **the mirror sweep is honest.** Every cull now reads the mirror's own range rather than a
+  number written out beside it, and the finish line carries the tag the sweep reads. The sweep itself
+  parks a board, a crate and a cruiser behind the car instead of hoping the drive meets one.
+  [AUD-002](../fragments/AUD-002.md)
+
 <a id="v0-14-40"></a>
 ## [0.14.40] - 2026-09-15
 - Fixed: **a roadblock you have passed stays in the mirror.** It was deleted about two car lengths

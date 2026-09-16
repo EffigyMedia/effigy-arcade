@@ -40,7 +40,7 @@ BASE = f'http://127.0.0.1:{PORT}'
 
 NAMES = {'t': 'traffic', 'k': 'police', 'b': 'a roadblock', 's': 'a sign',
          'c': 'a checkpoint board', 'w': 'a bridge tower', 'g': 'a rival',
-         'r': 'a repair crate'}
+         'r': 'a repair crate', 'f': 'the finish line'}
 
 
 def main():
@@ -77,17 +77,46 @@ def main():
         page.evaluate("() => window.__road.watchDraw(true)")
 
         # EVERY KIND HAS TO EXIST BEFORE IT CAN BE MISSED. Heat brings the roadblocks and
-        # the police; driving brings the traffic, the signs and the crates; and one of
-        # each is forced onto the road behind the car so nothing waits on the spawner.
+        # the police, and driving brings the traffic.
+        #
+        # THE BOARD AND THE CRATE ARE PARKED BEHIND, and that is not a shortcut. A
+        # checkpoint stands two miles out and this drive covers a little under that, so the
+        # windscreen was handed a board the car never reached and the glass was marked
+        # "missing" for a board that was still up the road - measured 2026-09-15, and the
+        # engine hands the glass a parked board at 4,000 and at 20,000 behind perfectly
+        # well. A crate has the same problem with the same cause: it depends on one
+        # happening to fall behind the car while the sweep is watching, which is why this
+        # check reported the crate missing on some runs and not others.
         front, glass = set(), set()
         for i in range(150):
             page.evaluate("""() => { const R = window.__road;
                 R.setSpd(0.55 * R.MAX_SPD); R.heat(4);
-                if(!R.roadblocks().length) R.forceRoadblock(); }""")
+                if(!R.roadblocks().length) R.forceRoadblock();
+                if(R.gantries() === 0) R.parkGantry(20000);
+                if(!R.cratesLeft()) R.parkCrate(-20000);
+                /* and a cruiser BEHIND, for the same reason: at four stars the road puts
+                   police on you, but whether one is behind the camera in the frame this
+                   sweep happens to read is chance - measured, one run in several had the
+                   glass handed no police at all while the windscreen had them */
+                const pz = R.startLine().pos + R.PLAYER_Z;
+                if(!R.cops().some(k => k.z < pz - 6000)) R.commitCop('player', -20000); }""")
             page.wait_for_timeout(200)
             vk = page.evaluate("() => window.__road.viewKinds()")
             front |= set(vk['front'])
             glass |= set(vk['glass'])
+
+        # ---- AND THE FINISH LINE, WHICH NEEDS A RACE (RLG-133) -------------------
+        # `parkFinish` puts the run into race mode and drops the line behind the car, for
+        # the same reason the board is parked: driving to one measures the spawner.
+        fin = page.evaluate("""() => { const R = window.__road;
+            const st = R.parkFinish(20000); R.setSpd(0.55 * R.MAX_SPD); return st; }""")
+        for _ in range(8):
+            page.wait_for_timeout(200)
+            vk = page.evaluate("() => window.__road.viewKinds()")
+            front |= set(vk['front'])
+            glass |= set(vk['glass'])
+        print(f"  ..    the finish line was parked {fin['back']} units back (mode {fin['wasMode']}"
+              f" -> {fin['mode']})")
 
         print(f"  ..    the windscreen was handed: {sorted(NAMES.get(k, k) for k in front)}")
         print(f"  ..    the glass was handed:      {sorted(NAMES.get(k, k) for k in glass)}")
