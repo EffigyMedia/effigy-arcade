@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.36';
+window.ROAD_BUILD = '0.14.37';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10875,6 +10875,12 @@ function patrolWatch(){
        pulls a speeding NPC over, and that is the half of it INTERCEPT wants. */
     if(playerIsPolice()) continue;
     if(spd <= MAX_SPD * SPEED_LIMIT) continue;    /* you went by legally */
+    /* ---- AND A PATROL EARNS THE INTERCEPTOR TOO (owner, 2026-09-15, RLG-262) -
+       "Passing a patrol or a speed trap over 170 is the trigger." Only a trap
+       recorded it before. It is set on the PASS, not on the engagement, because
+       a patrol with no open slot does not engage (RLG-257) and the owner named
+       the pass. */
+    if(spd > MAX_SPD * (170/200)) supersEarned = true;
     /* ---- ONLY INTO AN OPEN SLOT, LIKE A TRAP (owner, 2026-09-15, RLG-257) ---
        "Only patrols and speed traps can add to your engaged cruisers, they all
        obey the same slot allotment." The slot is read before the heat goes on,
@@ -11119,9 +11125,14 @@ function trapEngage(k, o){
 }
 
 /* ---- the super cruiser -------------------------------------------------
-   Sent only when you have been genuinely running: above 150 for several
-   seconds with heat already on you. */
+   Sent when you are wanted at three stars and have gone past a trap or a patrol
+   at 170 (RLG-262). `fastFor` is no longer a condition; it is kept because
+   `API.pursuit` reports it and a harness reads it. */
 let fastFor = 0;
+/* the wait between one Interceptor and the next. It was `fastFor = 2.2`, which
+   worked only while `fastFor` was in the dispatch test (RLG-262). */
+const SUPER_STAGGER = 2.2;
+let nextSuperT = 0;
 function superWatch(dt){
   /* ---- A SUPER CRUISER IS EARNED TWICE OVER (RLG-030) ------------------
      Owner, 2026-08-30: "Super cruisers should not be dispatched unless you are
@@ -11133,16 +11144,26 @@ function superWatch(dt){
      than laying more of the ordinary kind. The old rule asked only for heat one
      and four seconds above 150, which any fast car does by accident.
      ------------------------------------------------------------------- */
+  /* ---- AND THE HELD SPEED IS NOT ONE OF THEM (owner, 2026-09-15, RLG-262) --
+     "150 held shouldn't be a condition. Simply having at least three stars and
+     passing a patrol or a speed trap over 170 is the trigger."
+
+     THE PASS IS THE EVENT and the stars are the standing state; holding 150 for
+     four seconds afterwards was a third condition the owner never asked for, and
+     it kept the Interceptor off a driver who had earned it and then slowed for
+     traffic. `supersEarned` is now set by a trap AND by a patrol, both on the
+     pass itself. */
   const fast = spd > MAX_SPD * (SUPER_MPH/200);
   fastFor = fast ? fastFor + dt : 0;
-  if(!optEasy && heat >= 3 && supersEarned && fastFor > SUPER_HOLD){
+  if(nextSuperT > 0) nextSuperT -= dt;
+  if(!optEasy && heat >= 3 && supersEarned && nextSuperT <= 0){
     /* two slots for Interceptors, separate from the cruisers' (RLG-256). It
        was up to four. */
     const want = Math.min(SUPER_SLOTS, Math.ceil(heat / 1.5));
     const have = cops.filter(k => k.superc && k.wreck <= 0).length;
     if(have < want){
       spawnSuper();
-      fastFor = 2.2;                   /* stagger them, do not dump four at once */
+      nextSuperT = SUPER_STAGGER;      /* one at a time, not both in a frame */
     }
   }
 }

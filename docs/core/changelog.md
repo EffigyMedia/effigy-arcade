@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-37"></a>
+## [0.14.37] - 2026-09-15
+- Changed: **an Interceptor is earned by the pass, not by holding a speed.** Three stars and going
+  past a speed trap OR a patrol car over 170mph is the whole trigger; holding 150 for four seconds
+  afterwards is no longer asked for, and a patrol pass now counts. [RLG-262](../fragments/RLG-262.md)
+
 <a id="v0-14-36"></a>
 ## [0.14.36] - 2026-09-15
 - Changed: **speed traps are far less frequent.** One is laid every 30 to 60 seconds instead of every

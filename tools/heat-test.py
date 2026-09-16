@@ -215,26 +215,23 @@ def main():
         # check would be measuring the game undoing its own setup.
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"
                     " R.heat(5); R.earnSupers(false); }")
-        # SIXTEEN SECONDS, AND FOUR OF THEM HAVE TO BE UNBROKEN. An interceptor is
-        # sent after four seconds above the gate, and `spawnSuper` then puts the
-        # counter back to 2.2 so they arrive staggered rather than four at once.
-        # The length was never what was wrong here: the car was too slow, so the
-        # counter kept going back to zero and sixteen seconds bought no more than
-        # nine did. `hold` pins the speed now - see the note on it.
+        # SIXTEEN SECONDS AT FIVE STARS, WITH NOTHING BANKED. The held speed stopped
+        # being a condition with RLG-262: three stars and a pass over 170 past a trap
+        # or a patrol are the whole trigger, so the only thing keeping the road clear
+        # of Interceptors here is `supersEarned`.
         hold(16000, 0.80, clear=False)
         no_ev = pg.evaluate('() => window.__probe.road.pursuit()')
-        print('      heat 5 at %dmph, no trap earned: %d supers  (%.1fs banked above the %dmph gate)'
-              % (no_ev['mph'], no_ev['supers'], no_ev['fastFor'], no_ev['superMph']))
+        print('      heat 5 at %dmph, no 170 pass banked: %d supers'
+              % (no_ev['mph'], no_ev['supers']))
         # ---- AND THE ZERO HAS TO BE THE RULE'S, NOT THE HARNESS'S --------------
-        # A car doing 148 sends no interceptor either, so "0 supers" on its own
-        # cannot tell the two apart - and for months it did not: this check passed
-        # green while the car it was driving never once reached the speed the rule
-        # watches. The precondition is asserted first, so a green below means the
-        # gate was open and only `supersEarned` held the door.
-        ok(no_ev['fastFor'] > no_ev['superHold'],
-           'the car really is over the gate, so a zero below is the rule and not the driving',
-           'only %.2fs banked above %dmph, and %d needed'
-           % (no_ev['fastFor'], no_ev['superMph'], no_ev['superHold']))
+        # "0 supers" on its own cannot tell the rule from a harness that never met
+        # the other conditions, and for months it did not: this check passed green
+        # while the car was too slow for the gate it was testing. Both preconditions
+        # are asserted first - five stars, and nothing banked - so a green below is
+        # `supersEarned` holding the door and nothing else.
+        ok(no_ev['heat'] >= 3 and not no_ev['earned'],
+           'the stars are there and the 170 is not, so a zero below is the rule and not the driving',
+           'heat %s, earned %s' % (no_ev['heat'], no_ev['earned']))
         ok(no_ev['supers'] == 0, 'no super cruiser without the 170 past a trap', str(no_ev))
 
         pg.evaluate("() => { const R = window.__probe.road; R.copsClear();"
