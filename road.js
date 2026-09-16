@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.39';
+window.ROAD_BUILD = '0.14.40';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -19916,7 +19916,21 @@ function step(dt){
   // --- roadblocks ---
   for(let i=blocks.length-1;i>=0;i--){
     const b = blocks[i];
-    if(b.z < pos - 2000){ blocks.splice(i,1); continue; }
+    /* ---- IT HAS TO OUTLIVE THE CAMERA TO BE IN THE MIRROR (RLG-260) -------
+       Owner, 2026-09-15: "the roadblocks disappeared in the mirror as you
+       passed them, which tells me they are despawned too quickly or stop being
+       rendered or whatever."
+
+       THEY WERE DESPAWNED. This was 2,000 units - about two car lengths past
+       the player - and the glass draws to `MIRROR_BACK`, 34,000 back. Measured:
+       the block was off the road 2,844 units behind and the mirror had nothing
+       left to draw.
+
+       THE CRATES AND THE CHECKPOINT BOARDS BOTH HAD THIS and were both fixed
+       this way; `MIRROR_BACK` is the one number every one of them reads, so they
+       cannot drift apart. Running a block is a proximity test that has already
+       happened by here, so this only keeps it drawable. */
+    if(b.z < pos - MIRROR_BACK){ blocks.splice(i,1); continue; }
     if(!b.hit && !held && Math.abs(b.z - pz) < 420){
       iframe = Math.max(iframe, 0.6);
       b.hit = true;

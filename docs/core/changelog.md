@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-40"></a>
+## [0.14.40] - 2026-09-15
+- Fixed: **a roadblock you have passed stays in the mirror.** It was deleted about two car lengths
+  behind you, while the mirror sees 34,000 units back, so there was nothing left to draw. The crates
+  and the checkpoint boards had the same fault and the same fix. [RLG-260](../fragments/RLG-260.md)
+
 <a id="v0-14-39"></a>
 ## [0.14.39] - 2026-09-15
 - Fixed: **each 170 pass sends one Interceptor, and the stars are a capacity.** Four stars put two
