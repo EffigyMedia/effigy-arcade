@@ -102,7 +102,7 @@ def serve(root):
     return httpd, httpd.socket.getsockname()[1]
 
 
-def rail_pixels(a, b):
+def rail_pixels(a, b, band='road'):
     """where the pixels that changed between two frames sit, and how many there are.
 
     Returns (count, mean x). ABSOLUTE POSITION CANNOT SETTLE WHICH SIDE A RAIL IS ON: a rail
@@ -120,9 +120,14 @@ def rail_pixels(a, b):
     pa, pb = ia.load(), ib.load()
     n = 0
     sx = 0
-    # the lower half only: the mirror at the top carries its own copy of the road, and a
-    # change up there is the mirror agreeing rather than a second rail.
-    for y in range(int(h * 0.42), h, 2):
+    # `band` picks WHICH VIEW is being measured. The road pass owns the lower half; the
+    # mirror is its own pane near the top and has to be asked for separately, because a
+    # change up there is the GLASS agreeing rather than a second rail on the road.
+    # RLG-280 is the reason it is asked at all: everything RLG-265 drew was invisible
+    # behind you, and this check passed the whole time by only ever looking forward.
+    y0, y1 = ((int(h * 0.42), h) if band == 'road'
+              else (int(h * 0.045), int(h * 0.125)))
+    for y in range(y0, y1, 2):
         for x in range(0, w, 2):
             ca, cb = pa[x, y], pb[x, y]
             if abs(ca[0]-cb[0]) + abs(ca[1]-cb[1]) + abs(ca[2]-cb[2]) > 24:
@@ -354,6 +359,35 @@ def main():
                 # mean position must move when the coin turns.
                 check(xR - xL > 60, '%s puts the drop on the side the hazard is' % k,
                       'x=%.1f with the hazard left, x=%.1f with it right' % (xL, xR))
+
+        # ---- AND ALL OF IT IS BEHIND YOU TOO (RLG-280) -----------------------------
+        # Owner, 2026-09-16: "all the new boundaries items you just added, are invisible
+        # in the mirror." They were, and this check could not see it: the diff above
+        # reads the lower half of the frame only, so it proved the windscreen and said
+        # nothing about the glass. The mirror is a second road pass with its own walk and
+        # its own scale - anything beside the road has to be drawn twice or it does not
+        # exist behind you, which is why bridge-test asserts its ironwork in both views.
+        print()
+        print('  AND IT IS IN THE MIRROR')
+        for k in ('MOUNTAIN', 'CITY', 'FARMLAND'):
+            settle(k, 1)
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.railsOff(true); R.dropOff(true); }")
+            page.wait_for_timeout(110)
+            off = page.screenshot()
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.holdSpd(0); R.railsOff(false); R.dropOff(false); }")
+            page.wait_for_timeout(110)
+            on = page.screenshot()
+            nRoad, _ = rail_pixels(on, off, 'road')
+            nGlass, _ = rail_pixels(on, off, 'mirror')
+            print('      %-9s windscreen %5d px   mirror %5d px' % (k, nRoad, nGlass))
+            if WANT.get(k) is None:
+                check(nGlass < 30, '%s draws nothing in the glass either' % k,
+                      '%d pixels' % nGlass)
+            else:
+                check(nGlass > 30, '%s carries its boundary into the glass' % k,
+                      '%d pixels in the mirror against %d on the road' % (nGlass, nRoad))
 
         errs = page.evaluate("() => window.__probe.errors")
         check(not errs, 'no page errors', '; '.join(errs[:2]))

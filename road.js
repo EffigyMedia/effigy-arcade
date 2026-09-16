@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.62';
+window.ROAD_BUILD = '0.14.63';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26884,6 +26884,25 @@ function drawMirrorFull(mx, my, mw, mh){
     /* over water the whole pane is already sea - there is no shore to draw a
        strip in from, which is the coast's hard part and a bridge's absence of
        one (RLG-112) */
+    /* ---- AND THE DROP IS BEHIND YOU TOO (RLG-280) -------------------
+       The same omission as the rail and the same shape as the water above: a
+       fill from a line out to the edge of the pane, carried to the bottom,
+       walked far to near so each nearer slice paints over the last. Without it
+       the glass showed a guard rail standing on open ground - which is the
+       exact picture [[RLG-278]] was raised to remove from the windscreen. */
+    if(!mB.truss && !dropOff){
+      const mDrop = mB.hazard === 'roll' ? hazardSide(mB) : 0;
+      if(mDrop){
+        const mdx = a.x + mDrop * a.w * railX();
+        ctx.fillStyle = mixRGB(groundTone(widx, true), 0.84, DROP_DARK);
+        if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, a.y, mdx - mx, my + mh - a.y); }
+        else { if(mdx < mx + mw) ctx.fillRect(mdx, a.y, mx + mw - mdx, my + mh - a.y); }
+        /* the lit lip, which is what makes it an edge rather than a shadow */
+        const mlip = Math.max(0.8, a.w * 0.042);
+        ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52, RIM_LIT);
+        ctx.fillRect(mDrop < 0 ? mdx - mlip : mdx, a.y, mlip, Math.max(1, b2.y - a.y));
+      }
+    }
     if(mB.sea && !mB.overWater){
       const msh = a.x + sideRoll * roadsideAt(a, mB.beach, mw);
       ctx.fillStyle = seaTone(mB);
@@ -26938,6 +26957,25 @@ function drawMirrorFull(mx, my, mw, mh){
        pitch in each view.
        ------------------------------------------------------------- */
     if(mB.truss) drawTruss(a, b2, a.y, b2.y, wz, wz + MSEG, H_M);
+    /* ---- AND THE LIMIT OF TRAVEL IS BEHIND YOU TOO (RLG-280) ---------
+       Owner, 2026-09-16: "all the new boundaries items you just added, are
+       invisible in the mirror." They were. [[RLG-265]] drew the rail, the
+       city's barrier and the cliff in `drawRoad`, which paints the WINDSCREEN
+       ONLY - and the mirror is a second pass with its own walk, its own scale
+       and its own height. Anything beside the road has to be drawn twice or it
+       does not exist behind you.
+
+       THE SAME PAINTER, not a second one, exactly as the ironwork above: it
+       takes the view's vertical scale as an argument, so the glass gets the
+       same beam, the same posts and the same barrier from one definition. And
+       the posts are spaced by WORLD POSITION, which is what makes them tick at
+       the same pitch in a 900-unit walk as in a 200-unit one. */
+    if(!mB.truss && !railsOff){
+      for(const rs of [-1, 1]){
+        const mk = edgeAt(mB, rs);
+        if(mk) drawRail(a, b2, a.y, b2.y, wz, wz + MSEG, rs, mk, H_M);
+      }
+    }
     /* ---- AND WHAT STOOD BESIDE IT (RLG-079) --------------------------
        The same sprites, from the same cache, placed by the same hash of the
        same world segment index - so a tree you have just driven past is in the
