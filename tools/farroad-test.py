@@ -339,6 +339,54 @@ def main():
                'and it IS the colour of the road it continues',
                'they differ by %.1f' % gap(tone['far'], tone['near']))
 
+        # ---- AND IT TRACKS THE WEATHER, NOT JUST THE DRY CASE (RLG-281) --------
+        # Owner, 2026-09-16, on the repaint: does the far road match the near road in
+        # every place, "which also includes snowiness?"
+        #
+        # THE TARMAC HAS NO BIOME TERM - tarmacTone takes a parity, a fade and a deck
+        # flag and nothing else - so the road is one colour everywhere and what differs
+        # between places is the WEATHER and the light they produce. The question is
+        # therefore whether the far band picks those up, and it is asked of the colours
+        # the engine COMPUTES rather than of pixels: at the half-way row the ribbon is
+        # one or two pixels wide, and two runs of one build sampled [33,32,46] and
+        # [73,80,64] from the same place depending on where the bend put it.
+        #
+        # RAIN WAS THE ONE THAT DID NOT MATCH. tarmacTone's last term is the sky coming
+        # back off wet tarmac, scaled by 1 - fade, so it is strongest at the far end of
+        # the draw - which is where this band BEGINS. Painted at fade 0 it took the full
+        # sheen while the slice it joins had lost all of it: [56,66,87] against
+        # [21,24,36], a gap of 72 where dry and snow-covered both read under 1.
+        print()
+        print('  AND IT TRACKS THE WEATHER')
+        rgb = lambda v: [int(float(x)) for x in v[v.index('(') + 1:-1].split(',')]
+        for label, (w, sn, po) in (('dry', (0, 0, 0)), ('snow-covered', (0, 0.9, 0)),
+                                   ('raining', (1, 0, 0.8))):
+            page.evaluate("([w, sn, po]) => { const R = window.__road;"
+                          " R.setWet(w); R.setSnow(sn); R.setPool(po); }", [w, sn, po])
+            page.wait_for_timeout(140)
+            t = page.evaluate('() => window.__road.farRoadTone(1)')
+            far, lit, dark = rgb(t['far']), rgb(t['nearLit']), rgb(t['nearDark'])
+            mid = [(a + b) / 2.0 for a, b in zip(lit, dark)]
+            gap = sum((a - b) ** 2 for a, b in zip(far, mid)) ** 0.5
+            print('  ..    %-13s far %-16s near %s / %s   gap %.1f'
+                  % (label, str(far), str(lit), str(dark), gap))
+            ok(gap < 8, 'the far band matches the road it joins when %s' % label,
+               'they differ by %.1f' % gap)
+        # AND THE SNOW REALLY MOVED IT, or the check above would pass on a band that
+        # ignores the weather as completely as the road does.
+        page.evaluate("() => { const R = window.__road;"
+                      " R.setWet(0); R.setSnow(0.9); R.setPool(0); }")
+        page.wait_for_timeout(140)
+        snowy_far = rgb(page.evaluate('() => window.__road.farRoadTone(1)')['far'])
+        page.evaluate("() => { const R = window.__road;"
+                      " R.setWet(0); R.setSnow(0); R.setPool(0); }")
+        page.wait_for_timeout(140)
+        dry_far = rgb(page.evaluate('() => window.__road.farRoadTone(1)')['far'])
+        moved = sum((a - b) ** 2 for a, b in zip(snowy_far, dry_far)) ** 0.5
+        ok(moved > 80,
+           'and snow really does whiten the far band, so the match is not two constants',
+           'dry %s, under snow %s, apart by %.1f' % (dry_far, snowy_far, moved))
+
         ok(errs == [], 'no page errors', errs[0][:120] if errs else '')
         ctx.close()
         b.close()

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.64';
+window.ROAD_BUILD = '0.14.65';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26302,8 +26302,21 @@ function draw(){
          distance has a deck surface out there rather than asphalt.
          ------------------------------------------------------------ */
       const fDeck = !!bioAt(fFar).overWater;
-      ctx.fillStyle = mixRGB(tarmacTone(false, 0, fDeck), 0.5,
-                             hexRGB(tarmacTone(true, 0, fDeck)));
+      /* ---- AT THE FADE OF THE JOIN, NOT AT ZERO (RLG-281) -------------
+         `tarmacTone`'s LAST term is the sky coming back off wet tarmac at a
+         grazing angle, and it is scaled by `1 - fade` so it is absent at your
+         feet and strongest at the far end of the draw... which is where this
+         band BEGINS. Painted at fade 0 it took the full sheen while the slice
+         it joins, at the far end of the draw, had lost all of it - measured
+         at [56,66,87] against [21,24,36] in rain, a gap of 72 where dry and
+         snow-covered both read under 1.
+
+         SO IT TAKES THE JOIN'S OWN FADE, which is 1: this band is further away
+         than anything the road pass draws, so if the sheen has gone by the last
+         slice it is gone here too. Dry and snow-covered are unaffected - the
+         term is multiplied by `rainDark`, which is zero unless it is wet. */
+      ctx.fillStyle = mixRGB(tarmacTone(false, 1, fDeck), 0.5,
+                             hexRGB(tarmacTone(true, 1, fDeck)));
       ctx.beginPath();
       ctx.moveTo(fa.x - fa.w, fa.y);
       for(const q of pts) ctx.lineTo(q.x - q.w, q.y);
@@ -33424,6 +33437,28 @@ requestAnimationFrame(frameLoop);
      It reports rather than asserts. A car passed through shows up as the gap
      collapsing to nothing with `within` still true, and then `dz` changing sign
      - which no single number says on its own. */
+  /* ---- WHAT THE FAR BAND IS PAINTED WITH, AND WHAT IT JOINS (RLG-281) ---
+     Asked for because a PICTURE cannot answer it. Up at the half-way row the
+     ribbon is one or two pixels wide, so a single sample lands on tarmac or on
+     grass depending on the bend, and a span-median of three catches the ground
+     on both edges - two runs of the same build read [33,32,46] and [73,80,64]
+     from the same place. The colours the engine COMPUTES have no such error.
+
+     `fade` is what the two views disagree about if they disagree at all: the
+     far band is painted at fade 0 and the slice it joins is at the far end of
+     the draw, so any term scaled by `1 - fade` is at full strength on one side
+     of the join and absent on the other. */
+  API.farRoadTone = function(fadeAtJoin){
+    const f = fadeAtJoin === undefined ? 1 : fadeAtJoin;
+    const deck = !!bioAt(Math.floor(pos / SEG) + DRAW).overWater;
+    return {
+      far:      mixRGB(tarmacTone(false, 1, deck), 0.5,
+                       hexRGB(tarmacTone(true, 1, deck))),
+      nearLit:  tarmacTone(false, f, deck),
+      nearDark: tarmacTone(true,  f, deck),
+      settle: +settle.toFixed(3), wet: +wet.toFixed(3), pool: +pool.toFixed(3)
+    };
+  };
   API.contactStats = function(reset){
     const out = { fired: contactLog.fired, hushed: contactLog.hushed,
                   seen: contactLog.seen };
