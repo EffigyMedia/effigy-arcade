@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-45"></a>
+## [0.14.45] - 2026-09-16
+- Fixed: **a parked speed trap is silent.** It was drawn dark but still wailed as you drove past,
+  because the siren counted every police car by distance alone. Patrol cars in traffic were already
+  silent. [RLG-269](../fragments/RLG-269.md)
+
 <a id="v0-14-44"></a>
 ## [0.14.44] - 2026-09-16
 - Fixed: **being busted ends the run.** The bar completed, you paid the two-second crash penalty and

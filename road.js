@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.44';
+window.ROAD_BUILD = '0.14.45';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -20009,6 +20009,16 @@ function step(dt){
   var near = 0;
   for(const k of cops){
     if(k.wreck>0) continue;
+    /* ---- A PARKED TRAP IS SILENT (owner, 2026-09-16, RLG-269) -----------
+       "Speed traps have their sirens on. They should be silent with no
+       emergency lights unless they engage somebody."
+
+       THE LIGHTS WERE FIXED AND THE SOUND WAS NOT. RLG-253 made a parked trap
+       dark in both views, and this loop - which is the whole of how loud the
+       siren is - counts every police car by distance and asks nothing else, so
+       a trap sitting on the verge wailed as the player went past it. It is the
+       same test the painter uses: `copBarLit`, a car that has not engaged. */
+    if(!copBarLit(k)) continue;
     const gap = Math.abs(k.z - pz);
     if(gap < 7000) near = Math.max(near, 1 - gap/7000);
   }
