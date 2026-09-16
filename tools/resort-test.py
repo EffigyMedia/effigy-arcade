@@ -298,9 +298,12 @@ def main():
         seen = {}
         for want in ('production', 'sports', 'super'):
             g = page.evaluate(
+                # `gridEntry`, not `grid`: two API members shared that name and the later
+                # one - this object - was quietly winning (RLG-275). The line-up version
+                # keeps `grid`; this one now says what it answers.
                 "(c) => { const R = window.__road; R.setBody('VECTOR');"
-                " let g = R.grid(); let n = 0;"
-                " while(g.entry !== c && n++ < 6){ R.cycleEntry(); g = R.grid(); }"
+                " let g = R.gridEntry(); let n = 0;"
+                " while(g.entry !== c && n++ < 6){ R.cycleEntry(); g = R.gridEntry(); }"
                 " return g; }", want)
             seen[want] = g
         for want, g in seen.items():
@@ -313,7 +316,7 @@ def main():
         # AND A REAL CLASS STILL FIELDS ITSELF, which is what stops the above
         # passing on a build where every grid is production.
         g = page.evaluate("() => { const R = window.__road;"
-                          " R.setBody('TUNER'); return R.grid(); }")
+                          " R.setBody('TUNER'); return R.gridEntry(); }")
         res.ok(set(g['field']) == set(EXPECT['sports']),
                'a sports car still races sports cars',
                'it faced %s' % ', '.join(g['field']))

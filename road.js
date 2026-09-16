@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.50';
+window.ROAD_BUILD = '0.14.51';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15452,13 +15452,58 @@ let racers = [], place = 12, finished = false, finishZ = 0;
 /* how many of the field this shift has stopped. Reset with the run (RLG-203). */
 let stopped = 0;
 
+/* ---- WHERE YOU LINE UP (owner, 2026-09-16, RLG-274) ----------------------
+   Owner: "when you finish the first race, you start the second race in the
+   position that you earned in, the third race starts in your position, and the
+   fourth race, the same. Is this how it works?"
+
+   IT WAS NOT, AND THE OWNER ASSUMED IT WAS. Every round put the whole field
+   ahead of the player and set `place = 12`, reading nothing from the standings -
+   so the championship was SCORED like a championship and GRIDDED like four
+   unrelated races, and the standings screen between rounds was a scoreboard the
+   next round ignored.
+
+   ONLY IN A TOURNAMENT, AND NEVER IN ROUND ONE. A single race has no standings
+   to grid from, and round one has none yet: both start the player at the back,
+   which is what they did before this existed. `tourStanding()` is the same
+   answer the between-rounds screen prints, so the grid and the screen cannot
+   disagree.
+
+   Returns a 0-based slot: 0 is pole, FIELD is last.
+   ------------------------------------------------------------------------- */
+/* debug only - see `API.gridPin`. Pins the player to the back of the grid, which
+   is the build this ruling replaces. */
+let gridPinLast = false;
+function gridSlot(){
+  if(gridPinLast || !tourOn || tourRound <= 0) return FIELD;
+  return Math.min(Math.max(tourStanding() - 1, 0), FIELD);
+}
 function buildField(){
   racers = [];
+  /* ---- THE LINE IS BUILT AROUND THE PLAYER (RLG-274) --------------------
+     The grid is twelve slots and the player holds one of them, so a rival's
+     place in the line is its own index stepped PAST the player's slot. Laid
+     out from `pos` rather than from `pos + PLAYER_Z` deliberately: `place` is
+     recomputed every frame as the count of rivals with `r.z > pos`, and a grid
+     measured from a different mark than the readout would put cars in a
+     position the HUD disagrees with.
+     ------------------------------------------------------------------- */
+  const slot = gridSlot();
   for(let i=0;i<FIELD;i++){
-    /* strung out ahead of you at the line, quickest at the front */
-    const rank = i;
+    /* strung out either side of you at the line, nearest first */
+    const gslot = i < slot ? i : i + 1;   /* 0 is pole; the player holds `slot` */
+    const away  = slot - gslot;           /* positive is up the road from you */
+    const steps = Math.abs(away);         /* 1 to FIELD; never 0 - that is you */
+    /* THE SAME SPACING IT ALWAYS HAD, mirrored behind. 700 for the car next to
+       you in the order and 520 a slot after that, which reproduces the old
+       line exactly when the player is last. */
+    const rank = steps - 1;
     racers.push({
-      z: pos + 700 + rank*520 + rnd(-120,120),
+      z: pos + Math.sign(away) * (700 + rank*520) + rnd(-120,120),
+      /* how many slots away from the player this car lined up, 0-based. Kept on
+         the car because the speed spread below is set in a second pass and can
+         no longer work it out from the loop index (RLG-274). */
+      rank: rank,
       lane: rint(0, LANES-1),
       x: 0,
       /* each is a shade slower than you, and they differ from each other so
@@ -15481,8 +15526,13 @@ function buildField(){
          and it never changes — a race number, not a placing.
 
          Your own position is the P x/12 readout in the HUD. One is who the car
-         IS, the other is where YOU are. */
-      num: FIELD - rank,
+         IS, the other is where YOU are.
+
+         RLG-274: it is the GRID SLOT that decides it, not the loop index. The
+         two were the same thing while the player was always last, and they stop
+         being the same the moment the player holds a slot in the middle of the
+         line - `gslot + 1` keeps #1 on the car at the front in both cases. */
+      num: gslot + 1,
       /* the same sports car as yours, in whichever paints you did not take */
       paint: null,
       wreck: 0, ang: 0, w: 0.265, len: 390,
@@ -15551,8 +15601,16 @@ function buildField(){
     const B = BODY[r.body];
     r.vmax  = MAX_SPD * B.vmax;
     r.pull  = accelOf(r.body);
-    /* skill spread stays, so the grid is strung out rather than identical */
-    r.base  = r.vmax * (0.99 - i*0.008 + rnd(-0.006,0.006));
+    /* skill spread stays, so the grid is strung out rather than identical.
+       ---- AND IT FOLLOWS THE LINE, NOT THE LOOP (RLG-274) ------------------
+       This read `i`, which was the same as the car's place in the line only
+       because the player was always at the back of it. `r.rank` is how many
+       slots away from the player the car actually is, so the pattern the tuning
+       set up survives being mirrored: the cars nearest you either side are the
+       quickest and the ones at the far end of the line are the slowest, which
+       is what makes a field you can work through. With the player last the two
+       are identical and nothing about a single race changes. */
+    r.base  = r.vmax * (0.99 - r.rank*0.008 + rnd(-0.006,0.006));
     /* ---- THE GRID STARTS FROM REST (RLG-118) --------------------------
        This was `r.base * 0.92` - about 91 per cent of each car's own top
        speed - and the count-in returns from `step()` before `stepRacers`
@@ -15581,7 +15639,13 @@ function buildField(){
   });
   /* a tournament round sets its own distance */
   finishZ = pos + (tourOn ? TOUR_MILES[tourRound] : RACE_MILES) * MILE;
-  place = 12; finished = false;
+  /* ---- AND THE READOUT OPENS ON THE TRUTH (RLG-274) --------------------
+     `place` is recomputed every frame from the cars actually ahead, so a wrong
+     value here corrects itself within a frame - but that frame is the one the
+     player is looking at while the countdown runs, and a grid that says P4 under
+     a HUD that says P12 is the kind of disagreement this codebase has been
+     caught by before. It is the slot, counted from one. */
+  place = slot + 1; finished = false;
 }
 
 /* ---- HOW A RIVAL CHANGES LANE -------------------------------------------
@@ -29940,8 +30004,41 @@ requestAnimationFrame(frameLoop);
   API.grid = function(){
     return racers.map((r, i) => ({ i:i, spd:Math.round(r.spd), base:Math.round(r.base),
                                    q:+(r.launchQ || 1).toFixed(3),
+                                   /* RLG-274: where this car lined up relative to the
+                                      player. `dz` positive is up the road, `num` is the
+                                      number painted on it, `rank` is how many slots away
+                                      it started. A check for "the grid follows the
+                                      standings" has to count the cars BEHIND the player,
+                                      which nothing here could see before. */
+                                   dz:Math.round(r.z - pos), num:r.num, rank:r.rank,
                                    left:+((r.launchT || 0)).toFixed(3) }));
   };
+  /* where the player lines up, 0-based, and what decided it (RLG-274) */
+  API.gridSlot = function(){ return { slot:gridSlot(), place:place,
+                                      standing:tourStanding(), last:FIELD }; };
+  /* ---- THE STATE A FINISHED ROUND WOULD HAVE LEFT (RLG-274) -------------
+     `grid-order-test` asks what the NEXT grid does with a standing. Earning one
+     means driving a whole round to the finish, which measures the race rather
+     than the grid - and `race-test` already drives a finish. This writes the
+     round, the player's points and the field's, which is exactly what
+     `tourScore` leaves behind, and nothing else. It sits with `setBody`,
+     `setWet` and `setTimed`: the CONDITION is staged and the RULE is measured. */
+  API.seedTour = function(o){
+    o = o || {};
+    if(o.round !== undefined) tourRound = Math.min(Math.max(o.round|0, 0),
+                                                   TOUR_MILES.length - 1);
+    if(o.pts !== undefined) tourPts = Math.max(o.pts|0, 0);
+    if(Array.isArray(o.field))
+      for(let i=0;i<tourField.length;i++) tourField[i].pts = Math.max(o.field[i]|0, 0);
+    return API.tourState();
+  };
+  /* ---- THE FALSIFIER'S HANDLE ON RLG-274 --------------------------------
+     `grid-order-test --selftest` needs the OLD behaviour: a tournament round
+     that grids the player last whatever the standings say. Pinning the slot is
+     exactly that build, because the slot is the only thing `buildField` lays
+     the line out around. A seam for putting the defect back, like `tourOff` and
+     `tourClearDone` - nothing in the game calls it. */
+  API.gridPin = function(on){ gridPinLast = !!on; return gridPinLast; };
   API.redline = function(){ return redline(); };
   API.setWet = function(v){ wet = wetTarget = v; };
   /* WHICH KIND of precipitation, forced. `setSky` can make a sky black and
@@ -30726,8 +30823,26 @@ requestAnimationFrame(frameLoop);
   API.playableBodies = function(){ return playableBodies().slice(); };
   /* the grid the selected car would actually face, and which class it entered.
      A formula car has no league of its own (RLG-213), so these two part company
-     only for that car - which is the whole thing worth checking. */
-  API.grid = function(){
+     only for that car - which is the whole thing worth checking.
+
+     ---- IT WAS CALLED `grid` AND IT SILENTLY ATE THE OTHER ONE (RLG-275) ----
+     There were TWO `API.grid` definitions in this file, about 800 lines apart,
+     answering completely different questions - the starting LINE-UP, a row per
+     rival, and this one, a class question about the selected car. The later
+     assignment simply overwrote the earlier, so the line-up version had not
+     existed for as long as both have been here. No error, no warning: the last
+     writer wins and the object is never sealed.
+
+     `launch-test` has been red on it the whole time and said so in a way nobody
+     followed up - "a race grid is eleven rivals: it was 3" - three being the
+     number of KEYS on this object, counted by a check expecting a list of cars.
+     It was found while building RLG-274, whose own harness asked for the
+     line-up and got this.
+
+     THE LINE-UP KEEPS THE NAME because it is what `grid` means on a race track
+     and two harnesses ask it that way. This one says what it actually answers.
+     ------------------------------------------------------------------- */
+  API.gridEntry = function(){
     return { cls: classOf(optBody), entry: entryClass(),
              field: racerBodies().slice() };
   };

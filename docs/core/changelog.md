@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-51"></a>
+## [0.14.51] - 2026-09-16
+- Changed: **a tournament round lines you up where the championship put you.** Every round put the
+  whole field ahead of you and opened the HUD on P12, reading nothing from the standings. From round
+  two on you start where you are lying, with cars behind you for the first time. Round one and a
+  single race are untouched. [RLG-274](../fragments/RLG-274.md)
+- Fixed: **the debug seam that reports the starting line-up.** Two different `API.grid` definitions
+  shared the name and the later silently won, so the whole rolling-start section of `launch-test` had
+  been unreachable behind a type error. [RLG-275](../fragments/RLG-275.md)
+
 <a id="v0-14-50"></a>
 ## [0.14.50] - 2026-09-16
 - Added: **losing a tournament round offers a retry, and quitting keeps the ladder.** Being busted or
