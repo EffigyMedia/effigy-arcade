@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.43';
+window.ROAD_BUILD = '0.14.44';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -11542,7 +11542,23 @@ function wreck(reason){
      depends entirely on how much time was left — which is the tension the
      whole design is built around.
      ------------------------------------------------------------------- */
-  if(clock > 0){
+  /* ---- BEING BUSTED ENDS THE RUN (owner, 2026-09-16, RLG-267) -----------
+     "When the busted bar completes, the race is over and you are busted. Right
+     now that doesn't work... The bar empties, you take some damage, and then it
+     pops full again and then empties again, and repeats and repeats."
+
+     IT WAS SPENDING THE WRECK PENALTY INSTEAD OF ENDING. Everything below this
+     line treats a wreck as a cost against the clock rather than a full stop -
+     two seconds, a fresh car, carry on - which is right for hitting a lorry and
+     wrong for being caught by the police. So the bar filled, the crash penalty
+     was paid, the cruisers were still alongside a car that was now stopped in
+     the middle of the road, and the bar filled again.
+
+     AND IT IS THE INVERSE OF THE SHIFT, which is how the owner put it: a rival
+     the player holds in front of them is STOPPED and is out of the race
+     (RLG-203). Being stopped by the police is the same ending, pointed the
+     other way. The clock has nothing to do with it. */
+  if(clock > 0 && reason !== 'BUSTED'){
     snd.dead();
     shake = 1.4;
     wreckWait = WRECK_SECS;

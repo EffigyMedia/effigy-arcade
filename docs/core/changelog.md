@@ -19,6 +19,12 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-44"></a>
+## [0.14.44] - 2026-09-16
+- Fixed: **being busted ends the run.** The bar completed, you paid the two-second crash penalty and
+  were left stopped among the cruisers, so it filled again and again. An ordinary crash still costs
+  seconds rather than the run. [RLG-267](../fragments/RLG-267.md)
+
 <a id="v0-14-43"></a>
 ## [0.14.43] - 2026-09-16
 - Added: **a police car in front drags you down.** Being behind a cruiser or an Interceptor in its

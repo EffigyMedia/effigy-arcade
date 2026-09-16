@@ -53,9 +53,30 @@ from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
 ARM = """async (a) => {
   const R = window.__road;
   R.holdSpd(null); R.copsClear(); R.parkTraffic(9, 60000); R.heat(2); R.clearWreck();
+  /* ---- AND THE RUN IS RESTARTED IF THE LAST ARM ENDED IT (RLG-267) -------
+     Being dragged to a stop in a cruiser's line is BUSTED, and since RLG-267 that ENDS the
+     run rather than costing two seconds. So the arm before this one leaves a game-over veil
+     up, `holdSpd` moves nothing, and every reading afterwards is zero - measured, the aside
+     arm read 0 of a 120mph pin on a build that never touched it. */
+  const again = document.querySelector('#veil:not(.hidden) [data-act="again"], #veil:not(.hidden) [data-act="drive"], #veil:not(.hidden) [data-act="play"]');
+  if(again){ again.click(); await new Promise(r => setTimeout(r, 1200));
+             const go = document.querySelector('#veil:not(.hidden) [data-act="drive"]');
+             if(go){ go.click(); await new Promise(r => setTimeout(r, 1500)); }
+             R.setTimed(false); R.copsClear(); R.parkTraffic(9, 60000); R.heat(2); R.clearWreck(); }
   R.setLane(0);
   R.holdSpd(a.hold * R.MAX_SPD);
-  await new Promise(r => setTimeout(r, 600));
+  /* AND THE CAR IS UP TO THE PIN BEFORE ANYTHING IS READ. A restarted run comes out of the
+     countdown at a rolling start and climbs to the pinned speed over about a second, so an
+     arm that began at once read its first samples at 50 of a 120mph pin and called it a
+     drag. */
+  await new Promise((r) => {
+    const t = performance.now();
+    const wait = () => {
+      const up = R.pursuit().mph >= a.hold * 200 * 0.95;
+      if(up || performance.now() - t > 4000) r(); else requestAnimationFrame(wait);
+    };
+    requestAnimationFrame(wait);
+  });
   const t0 = performance.now(); const mph = [];
   let moved = false;
   await new Promise((done) => {

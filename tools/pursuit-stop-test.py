@@ -80,7 +80,11 @@ STOP = """(a) => {
     const tick = () => {
       const pz = R.startLine().pos + R.PLAYER_Z;
       const k = R.cops()[0];
-      const me = R.pursuit().mph / 200 * R.MAX_SPD;
+      /* THE SPEED THE PLAYER WAS PINNED AT, not the live one. RLG-259's zone now drags the
+         player down while a cruiser is in its line, so measuring the cruiser against a car it
+         is itself slowing turns "the cruiser brakes below you" into a ratio of two falling
+         numbers - measured at 9.0, on a build braking correctly. */
+      const me = a.pin !== undefined ? a.pin : R.pursuit().mph / 200 * R.MAX_SPD;
       if(k && k.wreck <= 0){
         const ahead = k.z - pz;
         if(a.around){
@@ -185,7 +189,8 @@ def main():
                     ' R.setLane(0); R.parkTraffic(9, 60000); R.holdSpd(0.6 * R.MAX_SPD); }')
         pg.wait_for_timeout(700)
         pg.evaluate('() => { const R = window.__road; R.placeCop(2200, 0); R.clearWreck(); }')
-        brake = pg.evaluate(STOP, {'secs': 2.5, 'around': False, 'gap': 0})
+        brake = pg.evaluate(STOP, {'secs': 2.5, 'around': False, 'gap': 0,
+                                   'pin': pg.evaluate('() => 0.6 * window.__road.MAX_SPD')})
         pg.evaluate('() => window.__road.holdSpd(null)')
         print('      BRAKE   the cruiser ran as slow as %.2f of the player over %d frames ahead'
               % (brake['minRatio'], brake['aheadFrames']))
