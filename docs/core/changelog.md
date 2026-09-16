@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-46"></a>
+## [0.14.46] - 2026-09-16
+- Fixed: **police cars collide with each other, and drive around each other.** They drove through one
+  another and piled onto you; now they take damage from the contact, lift for a police car ahead and
+  steer round it - gently enough that the box around you still forms.
+  [RLG-258](../fragments/RLG-258.md)
+
 <a id="v0-14-45"></a>
 ## [0.14.45] - 2026-09-16
 - Fixed: **a parked speed trap is silent.** It was drawn dark but still wailed as you drove past,

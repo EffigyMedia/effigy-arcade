@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.45';
+window.ROAD_BUILD = '0.14.46';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -19484,11 +19484,26 @@ function step(dt){
        rather than the gap. */
     const reach = Math.max(2400, k.spd * 1.25);
     let room = reach, lead = 0;
-    for(const c of traffic){
-      const gap = (c.z - k.z) - (c.len + k.len)/2;
-      if(gap <= -200 || gap > reach) continue;
-      if(Math.abs(c.x - k.x) > (c.w + k.w)/2 + 0.02) continue;
-      if(gap < room){ room = gap; lead = c.spd; }
+    /* ---- AND ANOTHER POLICE CAR IS A CAR IN FRONT (owner, 2026-09-15, RLG-258)
+       "It still seems like police cruisers, and possibly also interceptors, do
+       not collide with each other. They need to have their own navigation
+       behaviour so that they avoid collisions with traffic and each other
+       intelligently."
+
+       THIS LOOP READ `traffic` ONLY, so a cruiser lifted for a lorry and drove
+       into the back of the cruiser in front of it - which is half of why they
+       stack on the player. The other half is the dodge further down, which had
+       the same blindness. */
+    const lifts = (o, len, w, sp) => {
+      const gap = (o.z - k.z) - (len + k.len)/2;
+      if(gap <= -200 || gap > reach) return;
+      if(Math.abs(o.x - k.x) > (w + k.w)/2 + 0.02) return;
+      if(gap < room){ room = gap; lead = sp; }
+    };
+    for(const c of traffic) lifts(c, c.len, c.w, c.spd);
+    for(const o of cops){
+      if(o === k || o.wreck > 0) continue;
+      lifts(o, o.len || 400, o.w || 0.27, o.spd || 0);
     }
     const capTraffic = (v) => {
       if(room >= reach) return v;
@@ -19630,14 +19645,25 @@ function step(dt){
     // so early cruisers still make a mess of it.
     const skill = Math.min(1, 0.42 + heat*0.14);
     let dodge = 0;
-    for(const c of traffic){
-      const gap = c.z - k.z;
-      if(gap < -200 || gap > 4600) continue;
-      if(Math.abs(c.x - k.x) > (c.w + k.w)/2 + 0.14) continue;
+    const swerve = (o, w, weight) => {
+      const gap = o.z - k.z;
+      if(gap < -200 || gap > 4600) return;
+      if(Math.abs(o.x - k.x) > (w + k.w)/2 + 0.14) return;
       const urgency = 1 - Math.max(0, gap)/4600;
-      const room = (c.x > 0 ? -1 : 1);
-      const side = Math.abs(k.x - c.x) < 0.02 ? room : (k.x < c.x ? -1 : 1);
-      dodge += side * urgency * 1.9;
+      const open = (o.x > 0 ? -1 : 1);
+      const side = Math.abs(k.x - o.x) < 0.02 ? open : (k.x < o.x ? -1 : 1);
+      dodge += side * urgency * weight;
+    };
+    for(const c of traffic) swerve(c, c.w, 1.9);
+    /* ---- AND ROUND EACH OTHER (RLG-258) --------------------------------
+       Weaker than the swerve round traffic, deliberately: two cruisers that
+       shove each other aside as hard as they avoid a lorry cannot hold the box
+       around the player at all (RLG-158), and the box is the manoeuvre the
+       owner asked for. This is enough to stop them occupying one another's
+       place, not enough to break the formation. */
+    for(const o of cops){
+      if(o === k || o.wreck > 0 || o.trap) continue;
+      swerve(o, o.w || 0.27, 1.1);
     }
     for(const bl of blocks){
       const gap = bl.z - k.z;
@@ -19702,6 +19728,29 @@ function step(dt){
       if(Math.abs(c.z - k.z) < (c.len+k.len)/2 && Math.abs(c.x-k.x) < (c.w+k.w)/2){
         hurtCop(k, 45, 'traffic'); c.spd*=0.6; smashed=true; break;
       }
+    }
+    if(smashed) continue;
+
+    /* ---- POLICE HIT POLICE (owner, 2026-09-15, RLG-258) -----------------
+       They were tested against the traffic, the roadblocks and the player, and
+       against each other by nothing at all - so they drove through one another
+       and piled onto the player, which is what the owner reported twice: "they
+       just pile on you and kind of stun lock you into a location".
+
+       LIGHTER THAN A LORRY AND HEAVIER THAN NOTHING: 30 against the traffic's
+       45, because two police cars trading paint at similar speeds is a shunt
+       rather than a crash, and `hurtCop` gives each of them the invulnerability
+       window that keeps one contact from being counted every frame. Both cars
+       take it, and both lose speed. A parked trap is scenery here, as it is
+       everywhere else (RLG-173). */
+    if(k.grace<=0) for(let j = i - 1; j >= 0; j--){
+      const o = cops[j];
+      if(!o || o.wreck > 0 || o.trap || k.trap) continue;
+      if(Math.abs(o.z - k.z) >= ((o.len || 400) + k.len)/2) continue;
+      if(Math.abs(o.x - k.x) >= ((o.w || 0.27) + k.w)/2) continue;
+      hurtCop(k, 30, 'police'); hurtCop(o, 30, 'police');
+      k.spd *= 0.82; o.spd *= 0.82;
+      smashed = true; break;
     }
     if(smashed) continue;
 
