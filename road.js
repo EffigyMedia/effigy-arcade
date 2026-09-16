@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.52';
+window.ROAD_BUILD = '0.14.53';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -23642,10 +23642,25 @@ function drawRoad(){
        railing needs something to stand up from, and that kerb is concrete that
        is actually there rather than road furniture. A tunnel needs no exception
        - `drawBore` paints the bore over this road afterwards.
+
+       AND A CIRCUIT KEEPS ITS RED AND WHITE KERB. Owner, 2026-09-16: "We need
+       to keep the red and white kerb for Motorsport." The strip says ORDINARY
+       ROADWAY on an interstate, which is why it goes there - but on a circuit
+       it says the opposite. A red-and-white kerb is what a racing circuit HAS,
+       at every apex and every exit, and it is the one piece of the track that
+       tells a driver where the limit of the tarmac is before they reach it.
+
+       THIS IS THE CARRY-OVER RULE, NOT AN EXCEPTION TO IT. The two games are
+       one engine behind a `CFG` seam, and Motorsport is parked - so a change
+       made for Interstate that the circuit would have to undo later is the
+       thing that rule exists to stop. `CFG.circuitOnly` is the seam; the engine
+       never names the game.
        ------------------------------------------------------------- */
     const deckB = bioAt(idx);
-    if(deckB.truss){
-      ctx.fillStyle = mixRGB(mixRGB(dark ? '#8e8a80' : '#6f6b62', snowRumble, snowLight),
+    if(deckB.truss || CFG.circuitOnly){
+      ctx.fillStyle = mixRGB(mixRGB(deckB.truss ? (dark ? '#8e8a80' : '#6f6b62')
+                                                : (dark ? '#c9c3b4' : '#8c3346'),
+                                    snowRumble, snowLight),
                              rainDark * 0.20, WET_DARK);
       quad(p1.x-r1, y1, p1.x-p1.w, y1, p2.x-p2.w, y2, p2.x-r2, y2);
       quad(p1.x+p1.w, y1, p1.x+r1, y1, p2.x+r2, y2, p2.x+p2.w, y2);
