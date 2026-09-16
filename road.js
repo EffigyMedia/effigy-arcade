@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.63';
+window.ROAD_BUILD = '0.14.64';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -26279,8 +26279,31 @@ function draw(){
         pts.push(q);
         lastY = q.y;
       }
-      ctx.fillStyle = mixRGB(tarmacTone(false, 0, false), 0.5,
-                             tarmacTone(true, 0, false));
+      /* ---- AND IT IS THE ROAD'S OWN COLOUR (RLG-281) ------------------
+         Owner, 2026-09-16: "the simulated roadway that goes off into the
+         horizon, needs to match the color of the road per biome."
+
+         IT WAS PAINTING WITH WHATEVER WAS LAST SET. `mixRGB` takes a colour
+         STRING and an RGB ARRAY - it reads `T[0]`, `T[1]`, `T[2]` off the
+         third argument - and this handed it a second string. `'rgb(35,34,49)'[0]`
+         is the character `r`, so every channel came out NaN and the fill was
+         `rgb(NaN,NaN,NaN)`. A canvas SILENTLY IGNORES an invalid fillStyle and
+         keeps the one before it, which here is the ground or the skyline of
+         whatever place is being drawn - so the far ribbon took the biome's own
+         colour instead of the tarmac's, with no error anywhere. That is the
+         whole of the report, and "it depends on the biome" is the tell.
+
+         THIS IS THE THIRD TIME TODAY that a colour helper's argument types
+         have bitten silently - `shade` returns a grey fallback for anything
+         that is not `#rrggbb`, and `hexRGB` THROWS on an array. The three
+         fail in three different ways and not one of them says so.
+
+         The deck is asked for too, because a crossing that runs past the draw
+         distance has a deck surface out there rather than asphalt.
+         ------------------------------------------------------------ */
+      const fDeck = !!bioAt(fFar).overWater;
+      ctx.fillStyle = mixRGB(tarmacTone(false, 0, fDeck), 0.5,
+                             hexRGB(tarmacTone(true, 0, fDeck)));
       ctx.beginPath();
       ctx.moveTo(fa.x - fa.w, fa.y);
       for(const q of pts) ctx.lineTo(q.x - q.w, q.y);

@@ -285,6 +285,60 @@ def main():
               ' there and a sample placed by interpolation misses it too often)'
               % rvg[len(rvg)//2])
 
+        # ---- AND IT IS TARMAC, NOT WHATEVER WAS PAINTED LAST (RLG-281) ---------
+        # Owner, 2026-09-16: "the simulated roadway that goes off into the horizon,
+        # needs to match the color of the road per biome."
+        #
+        # THE BAND WAS FILLED WITH rgb(NaN,NaN,NaN). mixRGB wants a colour string and an
+        # RGB ARRAY and was handed a second string, so every channel came out NaN - and a
+        # canvas SILENTLY IGNORES an invalid fillStyle and keeps the one before it, which
+        # is the ground or the skyline of the place being drawn. In FARMLAND the road to
+        # the horizon measured [115,128,84], PIXEL-IDENTICAL to the grass beside it.
+        #
+        # PINNED TO ONE PLACE, because the free-driving sample above cannot answer this:
+        # its road-against-ground median swung 23.9, 36.6 and 82.2 across three runs of
+        # one build, purely on which biome the run happened to spend its time in - a
+        # forest's ground is nearly tarmac-coloured and a farmland's is not. Pinning it
+        # to the brightest ground on the board turns a number that overlaps into one that
+        # does not: 0 when broken, about 150 when right.
+        #
+        # AND A MISSED SAMPLE CAN ONLY FAIL THIS, NEVER PASS IT. If the two or three
+        # pixel ribbon is missed the reading falls toward the ground's own colour, which
+        # is the failing direction. That is the safe way round for a check to be wrong.
+        page.evaluate("""() => { const R = window.__road;
+          R.setTimed(false); R.holdCurve(0);
+          R.setBiomePair('FARMLAND','FARMLAND'); R.setPhase(0.75);
+          R.setWet(0); R.setSnow(0); R.setPool(0); R.clearTraffic();
+          R.setSpd(R.MAX_SPD * 0.30); }""")
+        for _ in range(20):
+            page.evaluate("() => { const R = window.__road;"
+                          " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.30); }")
+            page.wait_for_timeout(45)
+        tone = page.evaluate("""() => {
+          const R = window.__road, fr = R.farRoad();
+          if(!fr || !fr.drew) return null;
+          const cv = document.getElementById('cv'), g = cv.getContext('2d');
+          const dpr = cv.width / cv.clientWidth;
+          const read = (x, y) => { const d = g.getImageData(Math.round(x*dpr),
+                                     Math.round(y*dpr), 1, 1).data; return [d[0],d[1],d[2]]; };
+          const midY = Math.round((fr.joinY + fr.topY) / 2);
+          return { near: read(fr.joinX, fr.joinY + 4), far: read(fr.vx, midY + 1),
+                   ground: read(fr.vx + 70, midY + 1) };
+        }""")
+        if not tone:
+            ok(False, 'the far band was drawn so its colour could be read', 'no band')
+        else:
+            gap = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+            print('  ..    in a FARMLAND: near road %s  far ribbon %s  ground %s'
+                  % (tone['near'], tone['far'], tone['ground']))
+            ok(gap(tone['far'], tone['ground']) > 60,
+               'the road to the horizon is not the colour of the ground beside it',
+               'they differ by %.1f, and 0 is the same pixel'
+               % gap(tone['far'], tone['ground']))
+            ok(gap(tone['far'], tone['near']) < 40,
+               'and it IS the colour of the road it continues',
+               'they differ by %.1f' % gap(tone['far'], tone['near']))
+
         ok(errs == [], 'no page errors', errs[0][:120] if errs else '')
         ctx.close()
         b.close()
