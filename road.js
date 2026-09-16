@@ -1609,9 +1609,31 @@ var snd = {
                      gain: 0.10 * g, filter:'lowpass' });
   },
 
+  /* ---- LEAVING A RUN SILENCES THE RUN (RLG-272) --------------------------
+     Owner, 2026-09-16: "When you get to the game over screen essentially
+     they're still looping engine sounds that make it sound ugly. We need to
+     cut the run sounds when we leave a run."
+
+     THE ENGINE WAS THE ONE VOICE THIS DID NOT TURN OFF. Every other held layer
+     here goes to a gain of zero and the engine went to 0.01 — inherited at the
+     fork, never chosen, and never reached by anything that would take it the
+     rest of the way. Measured on the end card and again in the garage: eng
+     0.0100 with everything around it at 0, against 0.0899 while driving. A
+     held oscillator sounds until something tells it to stop, so that is a
+     60 Hz sawtooth droning under every menu for as long as the tab is open.
+
+     IT IS NOT AN ABRUPT CUT. The 0.4-second ramp is the one that was already
+     there; only the value it ramps to has changed, so the engine fades out
+     instead of fading down to a hum and staying there.
+
+     AND EVERY CALLER OF THIS IS A RUN THAT IS OVER. `dead()`, `endRun()`, the
+     finish, `endShift()`, and the per-frame `coasting` branch — which is only
+     true once the race is decided and the player is no longer driving it. None
+     of them wants an idle.
+     -------------------------------------------------------------------- */
   quiet: function(){
     if (!snd.eng) return;
-    snd.eng.set(60, 0.01, 300, 0.4);
+    snd.eng.set(60, 0, 300, 0.4);
     snd.eng2.set(30, 0, 260, 0.4);
     snd.wind.set(400, 0, 0.4);
     snd.siren.set(undefined, 0, undefined, 0.3);
@@ -1620,6 +1642,8 @@ var snd = {
     if (snd.sqB) snd.sqB.set(940, 0, 2600, 0.3);
     if (snd.sqC) snd.sqC.set(1260, 0, 3200, 0.3);
     if (snd.screechLow) snd.screechLow.set(280, 0, 0.3);
+    if (snd.horn1) snd.horn1.set(undefined, 0, undefined, 0.3);
+    if (snd.horn2) snd.horn2.set(undefined, 0, undefined, 0.3);
   },
 
   nearMiss: function(){

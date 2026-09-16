@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-48"></a>
+## [0.14.48] - 2026-09-16
+- Fixed: **leaving a run stops the run's engine note.** Every held sound was turned off when a run
+  ended except the engine, which was left droning under the end card and in the garage for as long as
+  the tab stayed open. Measured at 0.0100 against the 0.0899 it sits at while driving.
+  [RLG-272](../fragments/RLG-272.md)
+
 <a id="v0-14-47"></a>
 ## [0.14.47] - 2026-09-16
 - Changed: **a speed trap pulls out of its lay-by.** It was handed a speed above yours the instant it
