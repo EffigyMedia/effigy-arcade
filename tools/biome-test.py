@@ -1041,6 +1041,42 @@ def main():
                   ('%s' % ', '.join('%s %.2f' % (k, every[k]) for k in low)) if low
                   else 'the flattest is %.2f' % tall[-1][0])
 
+        # ------------------- a place is half as long as it was (RLG-283)
+        # Owner, 2026-09-16: "Can we cut the biome distance in half so we see more biomes
+        # in a race?" 6.5-to-12 miles became 3.25-to-6.
+        #
+        # THE SPAN IS ASSERTED, NOT THE COUNT. How many places a run crosses depends on
+        # how fast it is driven, and a check that drove for sixty seconds and counted
+        # would be measuring the throttle - the figure this replaced was written against
+        # a speed nobody recorded and read one to three where the measurement says one.
+        # What is checkable is that the generator's own bounds are what the ruling set
+        # and that a rolled span lands inside them.
+        print()
+        print('  A PLACE IS HALF AS LONG')
+        miles = page.evaluate('() => window.__probe.road.placeMiles()')
+        print('      a place runs %.2f to %.2f miles' % (miles[0], miles[1]))
+        res.check(abs(miles[0] - 3.25) < 0.01 and abs(miles[1] - 6) < 0.01,
+                  'a place runs 3.25 to 6 miles, half what it did',
+                  '%.2f to %.2f' % (miles[0], miles[1]))
+        # AND THE CLIMATE SYSTEM IS LIVE, which the owner asked about directly. It is not
+        # a table nothing reads: an instance carries a temperature in degrees, a
+        # precipitation, the share of it that falls as SNOW at that temperature, and a
+        # snow floor derived from the same number.
+        clim = page.evaluate('() => window.__probe.road.climateNow()')
+        print('      standing in %s at %dF: precip %.2f, snow %.2f, rain %.2f, floor %.2f'
+              % (clim['key'], clim['degF'], clim['precip'], clim['snow'],
+                 clim['rain'], clim['snowFloor']))
+        res.check(-10 <= clim['degF'] <= 120,
+                  'the run stands at a real temperature on the stated scale',
+                  '%dF' % clim['degF'])
+        res.check(abs((clim['snow'] + clim['rain']) - clim['precip']) < 0.01,
+                  'and its snow and rain are shares of its own precipitation',
+                  '%.3f + %.3f against %.3f'
+                  % (clim['snow'], clim['rain'], clim['precip']))
+        res.check(clim['stepF'] == 10,
+                  'and neighbours stay within ten degrees, so the board is a walk',
+                  '%dF' % clim['stepF'])
+
         # ------------------------ three places across the horizon (RLG-252)
         # Owner, 2026-09-15: "at any point you should see the biome you are approaching,
         # the biome you are in and the biome you are leaving", and the place ahead "should

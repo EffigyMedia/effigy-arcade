@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.68';
+window.ROAD_BUILD = '0.14.69';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -13716,9 +13716,20 @@ const TEMP_STEP = TEMP_STEP_F / (TEMP_F_HI - TEMP_F_LO);
 
    THE BOARD BECOMES A WALK, which the owner should see on the device before
    anything else changes. Almost no two places are within 0.077 of each other,
-   so you travel from cold to hot through the places between, and a run of sixty
-   seconds sees one to three places - so a run stays inside a narrow band and
-   the variety comes from returning rather than from one drive.
+   so you travel from cold to hot through the places between.
+
+   THE COUNT IN THIS NOTE SAID ONE TO THREE PLACES IN SIXTY SECONDS AND IT IS
+   CORRECTED HERE. Measured at three-quarters throttle over four runs, the old
+   6.5-to-12-mile place gave exactly ONE per sixty seconds, every time. Whatever
+   speed the original figure was taken at, it is not the one the interstate is
+   driven at.
+
+   [[RLG-283]] HALVED THE SPAN and the same measurement now gives TWO. The STEP
+   is unchanged, so the walk is the same walk and a run simply gets further
+   along it - the temperature travelled in a run went from 0F, a single place,
+   to 1F to 9F across four runs. The old sentence said the variety came from
+   returning rather than from one drive, and that is the part the owner
+   changed.
    ------------------------------------------------------------------------ */
 function rollClimateNear(key, fromT){
   const B = BIOMES[key] || BIOMES.FOREST;
@@ -14146,9 +14157,39 @@ let biomeStarted = 0;
    and a half MINUTES underground, and a run's clock starts at sixty seconds. So
    a tunnel could outlast the whole run it appeared in.
    ------------------------------------------------------------------------- */
+/* ---- HOW LONG A PLACE RUNS (RLG-283) ------------------------------------
+   Owner, 2026-09-16: "Can we cut the biome distance in half so we see more
+   biomes in a race?" It was 6.5 to 12 miles; it is 3.25 to 6 now.
+
+   A RUN CROSSES TWICE AS MANY PLACES, MEASURED RATHER THAN REASONED. Four
+   sixty-second runs at three-quarters throttle crossed ONE place each on the
+   old figure and TWO each on this one. A mile is about 128,700 units, so a run
+   of that length covers 690,000 - under one old place and about one and a half
+   new ones, which is why the count is small and why halving it moves the number
+   at all.
+
+   THE NOTE BESIDE `TEMP_STEP` CLAIMED ONE TO THREE, and the measurement says
+   one. That figure was written against a different speed and is corrected
+   there rather than repeated here.
+
+   THE 10F STEP BETWEEN NEIGHBOURS IS UNCHANGED, and that is the owner's choice
+   rather than an oversight. The board is a WALK - almost no two places are
+   within 0.077 of each other, so you travel from cold to hot through the places
+   between - and halving the span does not break the walk, it carries you
+   further along it in one drive. A run covers twice as much of the temperature
+   scale as it did. Widening the step would have kept the old reach at the cost
+   of the geography; narrowing it would have kept the old reach and made the
+   places nearly identical to each other. Neither was wanted.
+
+   A PLACE THAT STATES ITS OWN SPAN IS UNTOUCHED. A bridge is 1.7 miles because
+   that is how long the crossing is, not because it is a share of some typical
+   place - `B.span` is an authored length and halving it would have halved a
+   structure rather than a stretch of country.
+   ------------------------------------------------------------------------- */
+const PLACE_MILES = [3.25, 6];
 function placeSpan(key){
   const B = BIOMES[key];
-  return (B && B.span) ? B.span * MILE : rnd(6.5, 12) * MILE;
+  return (B && B.span) ? B.span * MILE : rnd(PLACE_MILES[0], PLACE_MILES[1]) * MILE;
 }
 /* where the place the road is heading into begins, and how long it runs, in
    world units. Written when a place is placed at the horizon; read only by the
@@ -30857,6 +30898,16 @@ requestAnimationFrame(frameLoop);
     climFrom = climTo = climateAt(biome, clamp(t, 0, 1));
     return climTo.temp;
   };
+  /* the instance the run is standing in, so a check can watch the WALK across the
+     temperature scale rather than only the sequence of names (RLG-142, RLG-283) */
+  API.climateNow = function(){
+    return { key: climTo.key, temp: +climTo.temp.toFixed(4),
+             degF: Math.round(TEMP_F_LO + climTo.temp * (TEMP_F_HI - TEMP_F_LO)),
+             precip: +climTo.precip.toFixed(3), snow: +climTo.snow.toFixed(3),
+             rain: +climTo.rain.toFixed(3), snowFloor: +climTo.snowFloor.toFixed(3),
+             stepF: TEMP_STEP_F };
+  };
+  API.placeMiles = function(){ return PLACE_MILES.slice(); };
   API.biomeCountdown = function(v){
     if(v !== undefined) biomeNext = v;
     return biomeNext;
