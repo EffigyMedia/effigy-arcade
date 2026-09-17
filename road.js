@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.67';
+window.ROAD_BUILD = '0.14.68';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9466,7 +9466,35 @@ let skyline = null;
 let skylineLit = null;
 /* 'move' or 'fade'. A tunable with a committed default, never a constant edited
    in place - and the owner's ruling on which reads better lands here. */
-let SKY_SWAP = 'move';
+/* how the horizon hands one place to the next. 'span' is RLG-252's ruling - three
+   places side by side, the one ahead growing from the vanishing point. 'move' and
+   'fade' are what came before it and are kept because `API.skySwap` lets a device
+   put either back without a rebuild, which is how the owner judged the first pair. */
+let SKY_SWAP = 'span';
+/* how many SEGMENTS a place stays on the outer edges after you leave it. The
+   ruling says it shrinks "as it recedes" and does not say how fast, so this is the
+   tunable with a committed default: 220 segments is 44,000 units, about a draw
+   distance and a half, so a place is gone from the horizon at roughly the point it
+   is gone from the road. */
+const SKY_RECEDE = 220;
+/* over how many SEGMENTS the place ahead grows from nothing to the whole horizon.
+   The ruling leaves it open - "the distance over which the span grows" - so this is
+   the tunable with a committed default, and `API.skyNear` moves it live.
+
+   IT IS THE DRAW DISTANCE, AND IT CANNOT USEFULLY BE MORE THAN THAT YET. A crossing
+   is placed AT the horizon, `DRAW` segments out, so a larger figure makes the place
+   ahead appear already part-grown the instant it is placed - at 400 it arrived
+   owning 62 per cent of the horizon, which is not a sliver. Growing over exactly the
+   draw distance means it enters at nothing, at the moment its ground does, and fills
+   the frame as the car reaches the boundary.
+
+   THE RULING WANTS IT SOONER THAN THAT and the engine cannot answer yet: the next
+   place is not CHOSEN until the countdown expires, which is upwards of a million
+   units of driving, so for most of a run there is nothing decided to put on the
+   horizon. Choosing it earlier is a change to the generator and [[RLG-150]]
+   deliberately separated WHERE a place begins from WHEN it is picked, so it is the
+   owner's call rather than one to make while tuning a number. */
+let SKY_NEAR = DRAW;
 /* ---- THE HORIZON SHOWS WHAT THE FAR SEGMENTS SHOW (RLG-022) --------------
    Owner, 2026-08-29: "The current biome is where the player car is, BUT the
    horizon and skyline inherit the next biome per the segments approaching the
@@ -13791,6 +13819,22 @@ function shapeAt(z){
    this is a small change rather than a rewrite of every `bio()` call.
    ------------------------------------------------------------------------- */
 let biomeFrom = 'FOREST', biomeTo = 'FOREST', biomeEdge = -1e9;
+/* ---- AND THE PLACE JUST LEFT, WHICH NOTHING KEPT (RLG-252) --------------
+   Owner, 2026-09-15: "at any point you should see the biome you are
+   approaching, the biome you are in and the biome you are leaving."
+
+   THE ENGINE HAS ONLY EVER HELD TWO. `biomeFrom` and `biomeTo` are the ends of
+   the crossing IN THE PICTURE, so at most two places could be on the horizon
+   and only during a transition. A third is needed for the ruling and it costs
+   one variable: the place `biomeFrom` was before it was replaced.
+
+   IT IS SET WHERE THE PAIR IS, and nowhere else, for the reason `rollSide`'s
+   note gives about a second roller: one writer, or the three disagree about
+   which place is which at the moment they hand over.
+
+   `leftAt` IS WHEN, so the span can shrink with distance rather than with a
+   frame count. It is the segment index of the boundary just crossed. */
+let biomePrev = 'FOREST', leftAt = -1e9;
 /* ---- THE PLACE THE ROAD IS BEING MADE INTO (RLG-150) --------------------
    WHERE a place begins and WHEN it was chosen are two questions, and they used
    to be one variable. `biomeEdge` answers the first and must stay at the
@@ -14494,6 +14538,7 @@ function openBiome(){
   climFrom = climTo = rollClimate(biome);
   wxFrom = wxTo = biome;
   biomeFrom = biomeTo = biome;
+  biomePrev = biome; leftAt = -1e9;
   biomeEdge = -1e9;
   /* and no place is planned yet - a fresh run is not carrying the last run's
      next place, and the road ahead of it is generated into THIS one (RLG-150) */
@@ -14647,6 +14692,8 @@ function stepBiome(dt){
       flashWarn(bio().name);
     }
     if(cross >= 1){
+      /* the place being left is the one the pair is dropping (RLG-252) */
+      if(biomeFrom !== biomeTo){ biomePrev = biomeFrom; leftAt = biomeEdge; }
       biomeFrom = biomeTo;
       biome = biomeTo;
       bandBase = -1;
@@ -22314,8 +22361,26 @@ function drawSky(){
     if(!B || !B.sea || B.overWater) return null;
     return { x: W/2 + viewShift + bendPx(farIdx*SEG), side: sideRoll };
   };
-  const paint = (art, lit, alpha, drop, sc, bdw, bdh, key) => {
+  const paint = (art, lit, alpha, drop, sc, bdw, bdh, key, span) => {
     if(alpha <= 0.002) return;
+    /* ---- THE SPAN IS A SIDE-TO-SIDE SLICE OF THE HORIZON (RLG-252) -----
+       A list of [x0, x1] pairs, clipped before anything is tiled. The band
+       itself is unchanged - it is still tiled across the full width and the
+       clip decides how much of it you see - so a place's skyline is the same
+       drawing wherever it sits, which is what keeps a sliver and a full
+       horizon the same place rather than two. */
+    if(span){
+      let any = false;
+      ctx.save();
+      ctx.beginPath();
+      for(const [x0, x1] of span){
+        if(x1 - x0 <= 0.25) continue;
+        ctx.rect(x0, 0, x1 - x0, horizon + 2);
+        any = true;
+      }
+      if(!any){ ctx.restore(); return; }
+      ctx.clip();
+    }
     const clip = seaOnly(key);
     if(clip){
       ctx.save();
@@ -22340,9 +22405,85 @@ function drawSky(){
     }
     ctx.globalAlpha = 1;
     if(clip) ctx.restore();
+    if(span) ctx.restore();
   };
 
-  if(skyT <= 0.002){
+  /* ---- THREE PLACES ACROSS THE HORIZON (RLG-252) ----------------------
+     Owner, 2026-09-15: "background shows biomes as an angle slice of the
+     horizon based on distance. it should remain a small sliver until you are
+     actually entering it then grow to encompass then shrink as it recedes. at
+     any point you should see the biome you are approaching, the biome you are
+     in and the biome you are leaving." And on how narrow a sliver is: "it
+     should grow from nothing until it fills the horizon, and the opposite
+     behind you" - so there is no floor; it starts at zero width.
+
+     THE CENTRE IS THE FURTHEST THING AHEAD. The place being approached arrives
+     at the ROAD'S OWN VANISHING POINT, because that is where the road you are
+     on meets the place it is going - the same `vx` the far road and the coast's
+     shoreline are built on. It widens from nothing as the boundary closes, the
+     place you are in is pushed out to either side of it, and the place you have
+     left is squeezed into the two outer edges until it is gone.
+
+     IT IS MEASURED FROM THE CAR, NOT FROM `skyT`, and that was the first
+     attempt. `skyT` is `bioMix` at the far edge of the draw, which reaches 1
+     while the boundary is still a draw distance up the road - so the centre
+     span went from nothing to the whole horizon during the blend and was full
+     for the entire approach. The ruling asks for a sliver "until you are
+     actually entering it", which is a distance from the CAR.
+
+     AND THE PLACE APPROACHED IS NOT ALWAYS `biomeTo`. Between crossings the
+     pair is settled and the next place is only a PLAN - `planKey` at
+     `planEdge` - so with nothing pending the horizon would have had nothing to
+     show ahead. [[RLG-150]] keeps the plan for the generator; this is its
+     second reader.
+     ------------------------------------------------------------------ */
+  const vx = clamp(W/2 + viewShift + bendPx(farIdx*SEG), 0, W);
+  const reach = W * 0.5 + Math.max(vx, W - vx);   /* to the furthest screen edge */
+  const hereSeg = Math.floor(pos/SEG);
+  const pending = biomeFrom !== biomeTo;
+  const appKey  = pending ? biomeTo : (planKey || null);
+  const appEdge = pending ? biomeEdge : planEdge;
+  const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
+             : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
+  const gone = leftAt <= -1e8 ? 1
+             : clamp((hereSeg - leftAt) / SKY_RECEDE, 0, 1);
+  /* ---- THREE CONCENTRIC REGIONS, MEASURED OUT FROM THE VANISHING POINT.
+     0 to `aHalf` is the place ahead, `aHalf` to `bHalf` the place you are in,
+     and everything beyond `bHalf` the place you have left.
+
+     `bHalf` CLOSES THE GAP RATHER THAN BEING A SECOND WIDTH. At `gone` 0 it
+     sits ON `aHalf`, so the place just left still fills everything outside the
+     centre; at `gone` 1 it has reached the screen edge and that place is gone.
+     Writing it as its own width instead left a hole between the two whenever
+     the sums disagreed, and the region a hole shows is the SKY.
+
+     AND EACH IS PAINTED ONLY INTO ITS OWN REGION. The first build painted the
+     place you are in across the full width as a base and cut the other two out
+     of it - which leaks, because the bands are not the same height: a desert
+     mesa is shorter than a city tower, so the city stood ABOVE the desert
+     inside the desert's own span. Three exclusive clips, no base.
+     ------------------------------------------------------------------- */
+  const aHalf = reach * near;
+  const bHalf = aHalf + (reach - aHalf) * gone;
+  const spanApp = [[Math.max(0, vx - aHalf), Math.min(W, vx + aHalf)]];
+  const spanIn  = [[Math.max(0, vx - bHalf), Math.max(0, vx - aHalf)],
+                   [Math.min(W, vx + aHalf), Math.min(W, vx + bHalf)]];
+  const spanOut = [[0, Math.max(0, vx - bHalf)], [Math.min(W, vx + bHalf), W]];
+
+  if(SKY_SWAP === 'span'){
+    /* the place you are in, either side of the centre */
+    paint(outSky.body, outSky.lit, 1, 0, 1, odw, odh, biomeFrom, spanIn);
+    /* the place just left, on the two outer edges, shrinking with distance */
+    if(biomePrev !== biomeFrom && gone < 1){
+      const pS = skylineFor(biomePrev), pSc = scaleFor(biomePrev);
+      paint(pS.body, pS.lit, 1, 0, 1, sw*pSc, sh*pSc, biomePrev, spanOut);
+    }
+    /* and the place ahead, at the centre, growing out of the vanishing point */
+    if(appKey && appKey !== biomeFrom && aHalf > 0.25){
+      const aS = skylineFor(appKey), aSc = scaleFor(appKey);
+      paint(aS.body, aS.lit, 1, 0, 1, sw*aSc, sh*aSc, appKey, spanApp);
+    }
+  } else if(skyT <= 0.002){
     paint(outSky.body, outSky.lit, 1, 0, 1, odw, odh, biomeFrom);
   } else if(skyT >= 0.998){
     paint(inSky.body, inSky.lit, 1, 0, 1, dw, dh, biomeTo);
@@ -30775,7 +30916,35 @@ requestAnimationFrame(frameLoop);
      behaviour - one biome everywhere - which is what the falsification needs. */
   /* 'move' or 'fade'. The owner rules on which reads better after seeing both,
      so it is switchable at runtime rather than a rebuild away. */
-  API.skySwap = function(v){ if(v === 'move' || v === 'fade') SKY_SWAP = v; return SKY_SWAP; };
+  API.skyNear = function(v){ if(typeof v === 'number' && v > 0) SKY_NEAR = v; return SKY_NEAR; };
+  API.skyRecede = function(){ return SKY_RECEDE; };
+  API.biomePrev = function(){ return biomePrev; };
+  /* ---- WHAT THE HORIZON IS SHOWING, AS NUMBERS (RLG-252) ---------------
+     Three places side by side cannot be read off a picture: which place a span
+     belongs to is the whole ruling, and a skyline is a silhouette that says
+     nothing about which biome drew it. This reports the three keys and the two
+     half-widths the spans are built from, so a check can assert the ORDER and
+     the GROWTH rather than look at a frame and agree with itself. */
+  API.skySpans = function(){
+    const farI = Math.floor(pos/SEG) + DRAW;
+    const vx = clamp(W/2 + viewShift + bendPx(farI*SEG), 0, W);
+    const reach = W * 0.5 + Math.max(vx, W - vx);
+    const hereSeg = Math.floor(pos/SEG);
+    const pending = biomeFrom !== biomeTo;
+    const appKey = pending ? biomeTo : (planKey || null);
+    const appEdge = pending ? biomeEdge : planEdge;
+    const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
+               : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
+    const gone = leftAt <= -1e8 ? 1
+               : clamp((hereSeg - leftAt) / SKY_RECEDE, 0, 1);
+    return { ahead: appKey, here: biomeFrom, left: biomePrev,
+             near: +near.toFixed(3), gone: +gone.toFixed(3),
+             aHalf: +(reach*near).toFixed(1),
+             bHalf: +((reach*near) + (reach - reach*near)*gone).toFixed(1),
+             reach: +reach.toFixed(1), vx: +vx.toFixed(1),
+             edgeIn: appEdge <= -1e8 ? null : appEdge - hereSeg };
+  };
+  API.skySwap = function(v){ if(v === 'move' || v === 'fade' || v === 'span') SKY_SWAP = v; return SKY_SWAP; };
   /* ---- AND THE INSTANCES GO WITH THE PAIR (RLG-109) --------------------
      Setting the pair without setting the climates leaves the two disagreeing -
      the ground and the skyline of one place, the weather odds and the snow floor

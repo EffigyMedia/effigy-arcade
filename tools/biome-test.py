@@ -355,9 +355,19 @@ def main():
         # ------------------------------------------------ the horizon leads the car
         print()
         print('  THE SKYLINE BELONGS TO THE HORIZON, NOT TO THE CAR')
-        res.check(page.evaluate("() => window.__probe.road.skySwap()") in ('move', 'fade'),
-                  'the swap mechanism is switchable, so both can be judged',
+        # RLG-252 ADDED A THIRD AND MADE IT THE DEFAULT. 'move' and 'fade' were the two
+        # the owner judged between when the horizon was one band handing over to another;
+        # 'span' is three places side by side, which is a different question rather than a
+        # third answer to the old one. All three stay switchable, because that is how the
+        # first pair was judged and the same lever is what a device needs to judge this.
+        res.check(page.evaluate("() => window.__probe.road.skySwap()")
+                  in ('move', 'fade', 'span'),
+                  'the swap mechanism is switchable, so each can be judged',
                   page.evaluate("() => window.__probe.road.skySwap()"))
+        for want in ('move', 'fade', 'span'):
+            got = page.evaluate("(v) => window.__probe.road.skySwap(v)", want)
+            res.check(got == want, 'and %r can be selected on a device' % want, got)
+        page.evaluate("() => window.__probe.road.skySwap('span')")
         page.evaluate("() => window.__probe.road.setBiomePair('DESERT', 'DESERT')")
         page.wait_for_timeout(200)
         placed = page.evaluate("() => window.__probe.road.startBiomeChange('FOREST')")
@@ -1030,6 +1040,74 @@ def main():
         res.check(not low, 'and nothing is flatter than the floor of 0.10',
                   ('%s' % ', '.join('%s %.2f' % (k, every[k]) for k in low)) if low
                   else 'the flattest is %.2f' % tall[-1][0])
+
+        # ------------------------ three places across the horizon (RLG-252)
+        # Owner, 2026-09-15: "at any point you should see the biome you are approaching,
+        # the biome you are in and the biome you are leaving", and the place ahead "should
+        # grow from nothing until it fills the horizon".
+        #
+        # ASKED AS NUMBERS. Which biome drew a span is the whole ruling and a skyline is a
+        # silhouette that says nothing about it - two places with similar bands would look
+        # identical and be completely wrong. `skySpans` reports the three keys and the two
+        # half-widths, so the ORDER and the GROWTH can be asserted instead of looked at.
+        print()
+        print('  THREE PLACES ACROSS THE HORIZON')
+        page.evaluate("""() => { const R = window.__probe.road;
+          R.setTimed(false); R.setBiomePair('FARMLAND','FARMLAND'); }""")
+        page.wait_for_timeout(200)
+        page.evaluate("() => window.__probe.road.startBiomeChange('CITY')")
+        for _ in range(400):
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.5); }")
+            page.wait_for_timeout(45)
+            sw = page.evaluate("() => window.__probe.road.biomeSweep()")
+            if sw['from'] == 'CITY' and sw['to'] == 'CITY':
+                break
+        page.evaluate("() => window.__probe.road.startBiomeChange('DESERT')")
+        grew = []
+        for _ in range(500):
+            page.evaluate("() => { const R = window.__probe.road;"
+                          " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.22); }")
+            page.wait_for_timeout(45)
+            d = page.evaluate("() => window.__probe.road.skySpans()")
+            grew.append(d)
+            if d['near'] >= 0.98:
+                break
+        seen = [d for d in grew if d['ahead'] == 'DESERT' and d['here'] == 'CITY']
+        print('      %d frames with DESERT ahead of CITY; near ran %.2f to %.2f'
+              % (len(seen), seen[0]['near'] if seen else -1,
+                 seen[-1]['near'] if seen else -1))
+        res.check(len(seen) > 5, 'the place ahead is on the horizon while you are still in '
+                  'the last one', '%d frames' % len(seen))
+        if seen:
+            res.check(seen[0]['near'] < 0.25,
+                      'and it starts as a sliver rather than arriving part-grown',
+                      'it first appeared at %.2f of the horizon' % seen[0]['near'])
+            res.check(seen[-1]['near'] > 0.9,
+                      'and grows until it fills the horizon',
+                      'it reached %.2f' % seen[-1]['near'])
+            # MONOTONIC, because "grow from nothing until it fills" is a direction as well
+            # as two endpoints - a span that jumped about between them would satisfy both.
+            backs = sum(1 for a, b in zip(seen, seen[1:]) if b['near'] < a['near'] - 0.02)
+            res.check(backs == 0, 'and it never shrinks on the way',
+                      '%d of %d steps went backwards' % (backs, len(seen) - 1))
+            # AND THE THREE ARE NESTED. The place ahead is inside the place you are in,
+            # which is inside the place you left - if that order ever inverts the spans
+            # cross and the horizon shows the wrong place in the wrong ring.
+            bad = [d for d in seen if d['aHalf'] > d['bHalf'] + 0.5]
+            res.check(not bad, 'and the place ahead always sits INSIDE the place you are in',
+                      '%d frames had the centre span wider than the one around it' % len(bad))
+            # AND THE GROWTH IS GRADUAL, WHICH THE THREE CHECKS ABOVE DO NOT PROVE.
+            # Watched with the growth distance cut to 2 segments - a step from nothing to
+            # the whole horizon - and every one of them still passed: the first sample is
+            # 0, the last is 1, and a step never goes backwards. What separates a growth
+            # from a jump is how much of it is spent in BETWEEN, so that is counted.
+            mid = [d for d in seen if 0.1 < d['near'] < 0.9]
+            res.check(len(mid) > 20,
+                      'and the growth is gradual rather than a step',
+                      'only %d of %d frames were part-grown' % (len(mid), len(seen)))
+            three = [d for d in seen if d['left'] != d['here']]
+            print('      %d of those frames had a third place still on the edges' % len(three))
 
         # ------------------------------------------- and the distinction can fail
         print()
