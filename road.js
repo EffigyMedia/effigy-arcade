@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.66';
+window.ROAD_BUILD = '0.14.67';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8037,17 +8037,79 @@ function buildFleet(){
       { body:cab.body, hi:cab.hi, lo:cab.lo, lamp:'#b8371f', lamp2:'#ffb066' }));
   });
 
-  SP.repair = sprite(150,120, (g,w,h)=>{
+  /* ---- THE THREE PICKUPS (RLG-266) ---------------------------------------
+     Owner, 2026-09-15: "I'd also like to split the rewards into their three pick
+     ups... Remember if a pick up is not needed for a mode, we just omit it from
+     being spawned." And the looks are the owner's own: a RED TOOLBOX with a
+     silver handle and latch, a BLUE NOS BOTTLE lying on its side with a metal
+     collar and a valve, and a RED JERRY CAN, because "time is represented by
+     fuel".
+
+     TWO OF THE THREE ARE RED AND THAT IS DELIBERATE. The owner chose it. What
+     has to carry at distance on a phone is the SILHOUETTE, so the toolbox is a
+     squat upright box with a handle over it and the can is a taller flat slab
+     with a spout at one shoulder - they differ in outline before they differ in
+     colour, which is the same rule the fleet's own bodies follow.
+
+     EACH IS DRAWN STANDING ON ITS OWN SHADOW, as the old crate was. Without it
+     a pickup floats a few pixels over the verge at any distance.
+     ---------------------------------------------------------------------- */
+  const pickShadow = (g,w,h,r)=>{
     g.fillStyle='rgba(0,0,0,.45)';
-    g.beginPath(); g.ellipse(w/2,h-6,w*0.42,h*0.07,0,0,6.2832); g.fill();
-    g.fillStyle='#d8dee7';
-    rr(g, w*0.10, h*0.34, w*0.80, h*0.52, 5); g.fill();
-    g.fillStyle='#38424f'; g.fillRect(w*0.10, h*0.56, w*0.80, h*0.07);
-    g.fillStyle='#9aa5b3'; rr(g, w*0.36, h*0.22, w*0.28, h*0.14, 4); g.fill();
-    g.fillStyle='#3ddc84';
-    g.fillRect(w*0.44, h*0.40, w*0.12, h*0.34);
-    g.fillRect(w*0.33, h*0.51, w*0.34, h*0.12);
+    g.beginPath(); g.ellipse(w/2,h-6,w*(r||0.42),h*0.07,0,0,6.2832); g.fill();
+  };
+  /* A RED TOOLBOX. Squat, wider than it is tall, with the handle standing clear
+     above it - the handle is what makes it a toolbox rather than a crate. */
+  SP.pickRepair = sprite(150,120, (g,w,h)=>{
+    pickShadow(g,w,h,0.40);
+    /* the handle first, so the box is painted over its feet and it reads as
+       rising THROUGH the lid rather than sitting on it */
+    g.strokeStyle='#c8ced6'; g.lineWidth=Math.max(3,w*0.035);
+    g.beginPath();
+    g.moveTo(w*0.34, h*0.44); g.lineTo(w*0.34, h*0.28);
+    g.lineTo(w*0.66, h*0.28); g.lineTo(w*0.66, h*0.44);
+    g.stroke();
+    g.fillStyle='#c0342b'; rr(g, w*0.12, h*0.42, w*0.76, h*0.46, 4); g.fill();
+    /* the lid, a shade lighter, so the box has a top face */
+    g.fillStyle='#d2493c'; rr(g, w*0.12, h*0.42, w*0.76, h*0.13, 4); g.fill();
+    /* and the silver latch on the front */
+    g.fillStyle='#c8ced6'; g.fillRect(w*0.45, h*0.53, w*0.10, h*0.11);
+    g.fillStyle='rgba(0,0,0,.30)'; g.fillRect(w*0.12, h*0.545, w*0.76, h*0.02);
   });
+  /* A BLUE NOS BOTTLE, ON ITS SIDE. A cylinder lying down: the body, a darker
+     underside so it reads as round, a metal collar at the neck and a valve. */
+  SP.pickNos = sprite(150,120, (g,w,h)=>{
+    pickShadow(g,w,h,0.44);
+    g.fillStyle='#1d5fa8'; rr(g, w*0.10, h*0.50, w*0.66, h*0.34, h*0.17); g.fill();
+    g.fillStyle='#2f7fd0'; rr(g, w*0.12, h*0.53, w*0.62, h*0.13, h*0.065); g.fill();
+    g.fillStyle='rgba(0,0,0,.28)'; rr(g, w*0.12, h*0.75, w*0.62, h*0.08, h*0.04); g.fill();
+    /* the collar, then the valve standing off the end */
+    g.fillStyle='#aab3bf'; g.fillRect(w*0.74, h*0.53, w*0.09, h*0.28);
+    g.fillStyle='#8c95a1'; g.fillRect(w*0.83, h*0.60, w*0.07, h*0.14);
+    g.fillStyle='#c8ced6'; g.fillRect(w*0.88, h*0.635, w*0.05, h*0.07);
+  });
+  /* A RED JERRY CAN. Taller than the toolbox and flat-sided, with the spout at
+     one shoulder and the X pressing on its face - the two details that say
+     JERRY CAN at a glance and at a distance. */
+  SP.pickFuel = sprite(150,120, (g,w,h)=>{
+    pickShadow(g,w,h,0.34);
+    g.fillStyle='#b8322a'; rr(g, w*0.24, h*0.26, w*0.50, h*0.62, 4); g.fill();
+    g.fillStyle='#c94236'; rr(g, w*0.24, h*0.26, w*0.50, h*0.09, 4); g.fill();
+    /* the spout, off the near shoulder */
+    g.fillStyle='#a02b24'; g.fillRect(w*0.66, h*0.17, w*0.10, h*0.13);
+    g.fillStyle='#c8ced6'; g.fillRect(w*0.65, h*0.14, w*0.13, h*0.045);
+    /* the pressed X, in shadow rather than in a second colour */
+    g.strokeStyle='rgba(0,0,0,.30)'; g.lineWidth=Math.max(2,w*0.022);
+    g.beginPath();
+    g.moveTo(w*0.32, h*0.42); g.lineTo(w*0.66, h*0.80);
+    g.moveTo(w*0.66, h*0.42); g.lineTo(w*0.32, h*0.80);
+    g.stroke();
+    /* and the handle across the top */
+    g.strokeStyle='#a02b24'; g.lineWidth=Math.max(2,w*0.030);
+    g.beginPath(); g.moveTo(w*0.34, h*0.26); g.lineTo(w*0.34, h*0.20);
+    g.lineTo(w*0.58, h*0.20); g.lineTo(w*0.58, h*0.26); g.stroke();
+  });
+
   SP.barrier = sprite(200,120, (g,w,h)=>{
     g.fillStyle='rgba(0,0,0,.45)';
     g.beginPath(); g.ellipse(w/2,h-5,w*0.46,h*0.07,0,0,6.2832); g.fill();
@@ -8066,6 +8128,15 @@ function buildFleet(){
 /* Both halves. Kept so a caller that genuinely wants every sprite - the boot,
    and anything that has changed what the ROAD is carrying - reads the same as
    it always did. A garage tap is not one of those and calls `buildPlayer`. */
+/* which sprite a pickup wears. One lookup, read by the windscreen and by the
+   mirror, so the two cannot disagree about what is lying on the verge. An
+   unknown kind falls back to the toolbox rather than drawing nothing - a
+   pickup you cannot see is worse than one wearing the wrong box (RLG-266). */
+function pickupArt(c){
+  const k = c && c.kind;
+  return (k === 'nos' && SP.pickNos) || (k === 'fuel' && SP.pickFuel)
+      || SP.pickRepair;
+}
 function buildSprites(){ buildPlayer(); buildFleet(); }
 
 
@@ -11735,8 +11806,46 @@ function reset(){
     nearestSpawn = 1e9;
   nextWaveZ = 52000;
   nextCopT = 9; nextBlockT = 30; nextCrateT = 16;
+  /* staggered, so the first of each does not arrive in the same second */
+  nextPickT = { repair:16, nos:22, fuel:28 };
+  laidTally = { repair:0, nos:0, fuel:0 };
 }
 let nextWaveZ=0, nextCopT=0, nextBlockT=0, nextCrateT=0;
+/* ---- WHICH PICKUPS THE ROAD IS LAYING, AND WHY IT IS DERIVED (RLG-266) ----
+   Owner, 2026-09-15: "if a pick up is not needed for a mode, we just omit it
+   from being spawned", and 2026-09-16, on the split: omit the ones that are
+   irrelevant for the settings currently engaged.
+
+   SO THERE IS NO PER-MODE TABLE. Each kind states the condition under which its
+   currency is worth anything, and the spawner asks. That is [[RLG-107]]'s rule -
+   a reward paid in a currency the mode does not use is an invisible reward -
+   moved from the AWARD, where it could only stop a pickup paying nothing, to
+   the SPAWNER, where it stops the pickup being laid at all. A mode added later
+   inherits the rule instead of needing a row.
+
+   `live` IS ASKED PER SPAWN, NOT ONCE. A player changes car between runs and
+   the clock is switched on and off from the garage, so a list built at boot
+   would be wrong by the first lap.
+
+   NOS IS THE ONE THAT WAS ALREADY WRONG. Half the fleet carries no bottle - a
+   production car has none by ruling - and the single crate offered them a top-up
+   they could not take, which is the exact hole `awardNos` returning 0 was
+   papering over.
+
+   EACH KIND KEEPS ITS OWN TIMER, at the interval one crate used to run at. The
+   owner chose that over a sparser road: three pickups on their own clocks pay
+   about what one crate paid to a driver who takes all three, and the CHOICE of
+   which to swerve for when two appear apart is the new play. One shared timer
+   would have cut the reward to a third.
+   ------------------------------------------------------------------------- */
+const PICKUPS = [
+  { kind:'repair', live: () => true },
+  { kind:'nos',    live: () => hasNos() },
+  { kind:'fuel',   live: () => clockRuns() }
+];
+let nextPickT = { repair:0, nos:0, fuel:0 };
+/* every pickup laid this run, by kind - see `API.crateLaid` */
+let laidTally = { repair:0, nos:0, fuel:0 };
 
 /* Cruising speed on the title card. The road already moves before you press
    anything, so the game starts from a car that is going rather than a car
@@ -19057,12 +19166,20 @@ function step(dt){
      ------------------------------------------------------------------- */
   const roadFurniture = !CFG.circuitOnly;
 
-  if(roadFurniture && nextCrateT <= 0){
+  if(roadFurniture) for(const P of PICKUPS){
+    nextPickT[P.kind] -= dt;
+    if(nextPickT[P.kind] > 0) continue;
+    /* THE CLOCK STILL RUNS FOR A KIND THAT IS NOT LIVE, and it is re-armed
+       rather than held: a bottle picked up in the garage mid-session should not
+       be met by a pickup that was due twenty seconds ago. */
+    nextPickT[P.kind] = rnd(20, 34);
+    if(!P.live()) continue;
     // parked on the shoulder, so taking one means leaving the road
     const side = Math.random() < 0.5 ? -1 : 1;
     noteSpawn(pos + OUT_OF_SIGHT);
-    crates.push({ z: pos + OUT_OF_SIGHT, x: side * rnd(0.86, 1.02), got:false });
-    nextCrateT = rnd(20, 34);
+    crates.push({ z: pos + OUT_OF_SIGHT, x: side * rnd(0.86, 1.02),
+                  kind: P.kind, got:false });
+    laidTally[P.kind]++;
   }
   /* ---- TRAPS REPLACE THE HEAT SPAWN ------------------------------------
      Cops used to appear out of nowhere the moment heat rose. They are parked
@@ -20514,12 +20631,31 @@ function step(dt){
          to gain. A reward paid in a currency the mode does not use is exactly
          the invisible reward the whole of RLG-107 was about.
          ---------------------------------------------------------------- */
-      const before = dmg;
-      dmg = Math.max(0, dmg - 25);
-      const healed = Math.round(before - dmg);
-      const gained = awardNos(25);
-      let secs = 0;
-      if(clockRuns()){ clock += (secs = CRATE_SECS); lastBeep = -1; }
+      /* ---- ONE PICKUP PAYS ONE CURRENCY (RLG-266) --------------------
+         The box used to pay all three at once and build its line from whichever
+         clauses were worth something. Each pickup now pays its own and nothing
+         else - and the fallback that used to matter here is gone with it,
+         because the SPAWNER no longer lays a pickup whose currency is dead.
+
+         THE AMOUNTS ARE UNCHANGED: 25, 25 and `CRATE_SECS`. The owner kept the
+         rate by giving each kind its own timer rather than by making any one of
+         them pay more.
+
+         A PICKUP WHOSE CURRENCY WENT DEAD BETWEEN SPAWN AND PICKUP still pays
+         nothing, and that is correct rather than a hole: it is a jerry can laid
+         while the clock ran, taken after it stopped. `awardNos` already answers
+         0 for a car with no bottle, so the same is true of a swapped car. */
+      const kind = c.kind || 'repair';
+      let healed = 0, gained = 0, secs = 0;
+      if(kind === 'repair'){
+        const before = dmg;
+        dmg = Math.max(0, dmg - 25);
+        healed = Math.round(before - dmg);
+      } else if(kind === 'nos'){
+        gained = awardNos(25);
+      } else if(kind === 'fuel' && clockRuns()){
+        clock += (secs = CRATE_SECS); lastBeep = -1;
+      }
       /* ---- ONE LINE, ONE SHAPE (RLG-126) --------------------------------
          Owner, 2026-08-31: a unified short line, and let the gauges show it
          too. Every clause is a PLUS of a named amount, so three awards read as
@@ -24992,7 +25128,7 @@ function paintBucket(list, onRoad){
       /* backing up: white reverse lamps, low and inboard on the tail */
       if(it.o.spd < -60 && it.o.wreck <= 0) drawReverse(box);
     } else if(it.kind==='r'){
-      drawSprite(SP.repair, it.o.x, it.o.z, 0.22);
+      drawSprite(pickupArt(it.o), it.o.x, it.o.z, 0.22);
     } else {
       for(const p of it.o.parts){
         if(p.cop){
@@ -27274,10 +27410,12 @@ function drawMirrorFull(mx, my, mw, mh){
     if(it.crate){
       /* the same box on the shoulder, at its own lateral offset */
       const cw = p1.scale * 0.22 * CAR_UNIT * mw;
-      if(SP.repair && cw >= 1){
-        const chh = cw * SP.repair.height / SP.repair.width;
+      /* the glass wears the same box the road does (RLG-266, RLG-280) */
+      const cart = pickupArt(it.o);
+      if(cart && cw >= 1){
+        const chh = cw * cart.height / cart.width;
         const cp = rproj(it.o.x * ROAD, it.o.z);
-        if(cp) ctx.drawImage(SP.repair, cp.x - cw/2, cp.y - chh, cw, chh);
+        if(cp) ctx.drawImage(cart, cp.x - cw/2, cp.y - chh, cw, chh);
       }
       continue;
     }
@@ -31853,6 +31991,38 @@ requestAnimationFrame(frameLoop);
      must still be COLLECTED (owner, 2026-08-31) - you pass a thing once on an
      endless road - and a count is the only way to tell "taken" from "left". */
   API.cratesTaken = function(){ return cratesTaken; };
+  /* ---- WHAT THE ROAD HAS ACTUALLY LAID, BY KIND (RLG-266) --------------
+     A count per kind, and the timers beside it. The spawn rule is the thing
+     that can rot silently - a pickup omitted correctly and a pickup that never
+     spawns because its timer is stuck look identical from outside - so the
+     check reads both: what was laid, and whether the clock for it is running. */
+  /* clear the road of pickups, so a check can count what is laid from a known
+     empty rather than from whatever the run had already put out (RLG-266) */
+  API.clearCrates = function(){ crates.length = 0; return 0; };
+  /* A RIVAL TAKES PICKUPS TOO, which is easy to forget from outside and reads as
+     a pickup that paid nothing: `cratesTaken` goes up, the player gains nothing,
+     and the crate is gone. A check measuring what a pickup PAYS has to have the
+     road to itself (RLG-266). */
+  API.clearRacers = function(){ racers.length = 0; return 0; };
+  /* every pickup this run has LAID, by kind, counted as it is spawned. `crateKinds`
+     reports what is on the road NOW, which a check cannot use to measure a spawner:
+     a pickup driven past is gone from that tally, so a long drive reports the last
+     few rather than all of them. */
+  API.crateLaid = function(reset){
+    const out = Object.assign({}, laidTally);
+    if(reset) laidTally = { repair:0, nos:0, fuel:0 };
+    return out;
+  };
+  API.crateKinds = function(){
+    const out = { repair:0, nos:0, fuel:0, other:0 };
+    for(const c of crates){
+      if(c.got) continue;
+      const k = c.kind || 'repair';
+      if(out[k] === undefined) out.other++; else out[k]++;
+    }
+    return { laid: out, due: Object.assign({}, nextPickT),
+             live: { repair: true, nos: hasNos(), fuel: clockRuns() } };
+  };
   API.cratesLeft = function(){
     let n = 0; for(const c of crates) if(!c.got) n++; return n;
   };
@@ -31876,10 +32046,13 @@ requestAnimationFrame(frameLoop);
       if(!cp.hit && cp.z > pos + PLAYER_Z && (best === null || cp.z < best)) best = cp.z;
     return best;
   };
-  API.parkCrate = function(dz){
+  API.parkCrate = function(dz, kind){
     crates.length = 0;
+    /* the KIND is asked for now (RLG-266). A harness that stages a pickup and
+       does not say which gets the toolbox, which is what every existing caller
+       meant when there was only one box. */
     crates.push({ z: pos + PLAYER_Z + (dz === undefined ? 900 : dz),
-                  x: playerX, got:false });
+                  x: playerX, kind: kind || 'repair', got:false });
     return crates.length;
   };
   /* what a pickup last SAID, which is the half of RLG-107 the owner reported.

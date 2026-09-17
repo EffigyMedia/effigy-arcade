@@ -90,7 +90,7 @@ class Results:
             self.fails.append(label)
 
 
-def take_crate(page, body, dmg, timed=True):
+def take_crate(page, body, dmg, timed=True, kind='repair'):
     """Set the car up, park a crate in front of it, drive over it, and report what happened.
 
     The speed is held every frame while it closes on the crate: the pickup is a distance test and a
@@ -99,8 +99,8 @@ def take_crate(page, body, dmg, timed=True):
     page.evaluate("""(a) => { const R = window.__probe.road;
         R.setBody(a.body); R.setLane(0); R.setTarget(0); R.setDmg(a.dmg);
         R.setWet(0); R.setSnow(0); R.setPool(0); R.setTimed(a.timed);
-        R.clearTraffic(); R.parkCrate(900); }""",
-                  {'body': body, 'dmg': dmg, 'timed': timed})
+        R.clearTraffic(); R.parkCrate(900, a.kind); }""",
+                  {'body': body, 'dmg': dmg, 'timed': timed, 'kind': kind})
     before = page.evaluate("""() => { const R = window.__probe.road;
         return { nos: R.nos(), clock: R.clock, dmg: R.dmg, has: R.hasNos(),
                  taken: R.cratesTaken() }; }""")
@@ -172,7 +172,9 @@ def main():
                   has)
 
         # ---- 2. A CAR WITH A BOTTLE STILL GETS ONE FILLED ------------------------
-        before, after = take_crate(page, WITH_BOTTLE, 0)
+        # RLG-266 SPLIT THE BOX, so the pickup has to be the one that pays nitrous. Before
+        # the split any crate paid all three and this asked for the default.
+        before, after = take_crate(page, WITH_BOTTLE, 0, kind='nos')
         print('      %-8s full health: %r   nos %d -> %d, clock %.1f -> %.1f'
               % (WITH_BOTTLE, after['fx'], before['nos'], after['nos'],
                  before['clock'], after['clock']))
@@ -184,35 +186,36 @@ def main():
 
         # ---- 3. A CAR WITH NO BOTTLE IS NOT GIVEN ONE, NOR TOLD IT WAS -----------
         for body in WITHOUT:
-            before, after = take_crate(page, body, 0)
+            before, after = take_crate(page, body, 0, kind='nos')
             print('      %-8s full health: %r   nos %d -> %d, clock %.1f -> %.1f'
                   % (body, after['fx'], before['nos'], after['nos'],
                      before['clock'], after['clock']))
-            res.check(bool(after['fx']), '%s picked the crate up' % body, 'nothing was said')
-            # THE CAR, NOT THE LABEL. This is the half that hiding the text would have missed.
-            # It asserts the car GAINED nothing rather than that it holds nothing: `setBody` is
-            # a test seam that goes straight to the body and does not reset the run, so a bottle
-            # filled on the control car above is still sitting there. What a run actually starts
-            # with is checked separately below, through the same restart a player gets.
+            # THE CAR, NOT THE LABEL. It asserts the car GAINED nothing rather than that it
+            # holds nothing: `setBody` goes straight to the body and does not reset the run,
+            # so a bottle filled on the control car above is still sitting there.
             res.check(after['nos'] == before['nos'],
                       '%s is given no nitrous at all' % body,
                       'nos went %d to %d' % (before['nos'], after['nos']))
             res.check('NOS' not in after['fx'],
                       'and is not told about a bottle it has not got',
                       after['fx'])
-            # AND IT IS PAID IN THE GAME'S OWN CURRENCY (owner, 2026-08-31)
-            gained = after['clock'] - before['clock']
-            res.check(gained > 1,
-                      'and a car with nothing to gain is paid in seconds instead',
-                      'the clock went %.2f to %.2f, so the crate did nothing at all'
-                      % (before['clock'], after['clock']))
-            res.check('SEC' in after['fx'],
-                      'and the flash says so, in the words a checkpoint uses',
-                      after['fx'])
 
-        # ---- 4. AND A DAMAGED ONE IS REPAIRED, STILL WITHOUT A BOTTLE ------------
-        # The branch that must not mention nitrous is the one that has something else to say.
-        before, after = take_crate(page, WITHOUT[0], 60)
+        # ---- THE SECONDS FALLBACK IS GONE, AND THAT IS RLG-266 -------------------
+        # What stood here asserted that a car with nothing to gain is PAID IN SECONDS
+        # INSTEAD, and that a repair pays seconds AS WELL "because every award is its own".
+        # Both described one box paying three currencies, with a fallback for the case
+        # where a currency was dead. THE OWNER SPLIT THE BOX: a pickup pays ONE currency
+        # and the fallback is not needed, because the SPAWNER no longer lays a pickup whose
+        # currency is dead. RLG-107's rule is honoured earlier and harder rather than
+        # abandoned - it moved from the award to the spawner.
+        #
+        # `tools/pickup-test.py` asserts that rule, over three combinations of car and
+        # clock, and watches it fail with the gate removed. These lines are deleted rather
+        # than inverted because there is nothing left here to assert: the situation they
+        # described - meeting a pickup you cannot use - no longer arises.
+
+        # ---- 4. AND A DAMAGED CAR IS REPAIRED, STILL WITHOUT A BOTTLE ------------
+        before, after = take_crate(page, WITHOUT[0], 60, kind='repair')
         print('      %-8s damaged:     %r   dmg %d -> %d, clock %.1f -> %.1f'
               % (WITHOUT[0], after['fx'], before['dmg'], after['dmg'],
                  before['clock'], after['clock']))
@@ -222,18 +225,8 @@ def main():
         res.check('HEALTH' in after['fx'] and 'NOS' not in after['fx'],
                   'and told about the repair, and not about a bottle it has not got',
                   after['fx'])
-        # AND IT IS PAID IN SECONDS TOO, because the clock is running and RLG-125 makes each
-        # award independent rather than a fallback. RLG-107 paid seconds ONLY when nothing else
-        # applied, and this check asserted the opposite of what it now asserts - kept and turned
-        # around rather than deleted, because the change of mind is the interesting part.
-        res.check(after['clock'] - before['clock'] > 1,
-                  'and paid in seconds as well, because every award is its own',
-                  'the clock went %.2f to %.2f' % (before['clock'], after['clock']))
-        res.check('SEC' in after['fx'] and 'HEALTH' in after['fx'],
-                  'and told about both', after['fx'])
         # ONE SHAPE. Every clause is a PLUS of a named amount - the repair used to read
-        # `REPAIRED -25%`, which was the only clause of three that counted DOWN, so the line
-        # said "minus, plus, plus" for three things that are all gains.
+        # `REPAIRED -25%`, which was the only clause of three that counted DOWN.
         res.check(after['fx'].count('+') == len([w for w in after['fx'].split('  ') if w]),
                   'and every clause of the line is a gain, in one shape',
                   after['fx'])
@@ -248,7 +241,7 @@ def main():
         runs = page.evaluate("() => window.__probe.road.clockRuns()")
         res.check(runs is False, 'the clock can be turned off for the check',
                   'clockRuns() still says %r' % runs)
-        before, after = take_crate(page, WITH_BOTTLE, 60, timed=False)
+        before, after = take_crate(page, WITH_BOTTLE, 60, timed=False, kind='fuel')
         print('      %-8s untimed:     %r   clock %.1f -> %.1f'
               % (WITH_BOTTLE, after['fx'], before['clock'], after['clock']))
         res.check(abs(after['clock'] - before['clock']) < 0.5,
@@ -257,8 +250,11 @@ def main():
                   % (after['clock'] - before['clock']))
         res.check('SEC' not in after['fx'],
                   'and does not claim to have paid any', after['fx'])
-        res.check('HEALTH' in after['fx'],
-                  'while still paying what the mode does use', after['fx'])
+        # AND IT SAYS NOTHING AT ALL, which is the shape RLG-266 leaves behind: a can
+        # taken with the clock stopped pays nothing and has nothing to announce. Before
+        # the split the same box would have paid the repair and said so.
+        res.check('HEALTH' not in after['fx'],
+                  'and a can pays no repair either - one pickup, one currency', after['fx'])
         page.evaluate("() => window.__probe.road.setTimed(true)")
 
         # ---- 4c. A CRATE THAT PAYS NOTHING IS STILL TAKEN (RLG-126) -------------
@@ -289,13 +285,20 @@ def main():
         # have set it - the gauge lighting is the thing under test, not the award.
         # DRAINED FIRST, or there is no charge to gain and nothing to light. The cases above
         # this one fill the bottle, and a gauge cannot be seen receiving what it already has.
+        # ONE PICKUP CANNOT LIGHT BOTH GAUGES ANY MORE (RLG-266), so they are taken in
+        # turn. This asked for one crate and expected the clock AND the bottle to light,
+        # which is the old box paying two currencies at once.
         page.evaluate("() => window.__probe.road.setNos(20)")
-        before, after = take_crate(page, WITH_BOTTLE, 60, timed=True)
-        print('      %-8s gauges after a crate: clock %r, bottle %r'
+        before, after = take_crate(page, WITH_BOTTLE, 60, timed=True, kind='fuel')
+        print('      %-8s gauges after a can:    clock %r, bottle %r'
               % (WITH_BOTTLE, after['gauges']['clock'], after['gauges']['nos']))
         res.check('gain' in after['gauges']['clock'],
                   'the clock lights when seconds go into it',
                   'its class was %r' % after['gauges']['clock'])
+        page.evaluate("() => window.__probe.road.setNos(20)")
+        before, after = take_crate(page, WITH_BOTTLE, 60, timed=True, kind='nos')
+        print('      %-8s gauges after a bottle: clock %r, bottle %r'
+              % (WITH_BOTTLE, after['gauges']['clock'], after['gauges']['nos']))
         res.check('gain' in after['gauges']['nos'],
                   'and the bottle lights when the charge does',
                   'its class was %r' % after['gauges']['nos'])
