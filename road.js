@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.75';
+window.ROAD_BUILD = '0.14.76';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10949,6 +10949,59 @@ const RAGE_LOOK  = 0.45;    /* how often it re-reads its position, in seconds  *
 const RAGE_GIVEUP = 3.2;    /* how long it will try to get past before settling */
 const RAGE_NEAR  = 1600;    /* within this along the road it is ON you          */
 const RAGE_PUSH  = 1.45;    /* how much harder than its cruise it will drive    */
+/* ---- AND IT CAN BE SATISFIED (owner, 2026-09-16, RLG-285) ----------------
+   "The road rager should reset and go about their business if they
+   successfully brake check you to a stop. Otherwise if they get a few good
+   hits on you they do the same."
+
+   A GRUDGE NEEDS AN ENDING THE PLAYER CAN CAUSE. Until this, the only ways
+   out were running away or waiting, so being hunted taught nothing. Now the
+   driver wants something specific, and getting it is what calms it down.
+
+   THE BRAKE CHECK IS A CONDITION HELD, NOT A MOMENT. It counts only while the
+   driver is ahead and braking and the player is under `RAGE_STOP_SPD` of top
+   speed, and it must hold for `RAGE_STOP_HOLD`. A single slow frame is a
+   pothole or a gear change, not a stop. The threshold is Intercept's
+   `STOP_SPD`, so "brought to a stop" means one thing in this engine.
+
+   A HIT COUNTS ONLY IF IT HAD FORCE. `RAGE_HIT_SEV` is on the same 0-1 scale
+   `impactWith` returns. A rub along the door is contact; it is not a good
+   hit. Each contact event is counted at most once (RLG-277).
+
+   AND THEN IT IS CALM FOR A WHILE. The hit that satisfies a driver is also a
+   hit, and a hit angers. Without `RAGE_CALM`, a satisfied driver could be
+   angered again by the same impact that calmed it. The owner did not rule
+   on whether a calmed driver can be angered again later; this window only
+   stops the rule contradicting itself, and a driver can rage again after it.
+   ------------------------------------------------------------------------ */
+const RAGE_STOP_SPD  = STOP_SPD;  /* under this fraction of top, you are stopped */
+const RAGE_STOP_HOLD = 1.2;       /* seconds a brake check must hold you there   */
+const RAGE_HITS      = 3;         /* good hits that settle a grudge              */
+const RAGE_HIT_SEV   = 0.15;      /* what counts as a good hit, 0 to 1           */
+const RAGE_CALM      = 10;        /* seconds a settled driver will not rage      */
+const RAGE_LINE      = 0.30;      /* across, in road widths, that is still ahead */
+let ragesSettled = { stop: 0, hits: 0 };
+/* ---- A DRIVER WHO GOT WHAT IT WANTED ------------------------------------
+   The same reset as cooling off, plus the calm window and a tally. */
+function settleRage(c, how){
+  c.rage = 0; c.rageMove = null; c.rageWhy = null;
+  c.rageHits = 0; c.rageStopT = 0;
+  c.calm = RAGE_CALM;
+  if(c.cruiseFloor !== undefined) c.cruise = c.cruiseFloor;
+  if(ragesSettled[how] !== undefined) ragesSettled[how]++;
+}
+/* ---- ONE CONTACT WITH A RAGING DRIVER ------------------------------------
+   Called from the contact event, and from `API.rageHit` so a check can stage
+   the contact without depending on the collider (RLG-279 records that staged
+   contacts are not yet reliable). Returns true when this hit settled it. */
+function rageHit(c, sev){
+  if(!c || !(c.rage > 0)) return false;
+  if(!(sev >= RAGE_HIT_SEV)) return false;
+  c.rageHits = (c.rageHits || 0) + 1;
+  if(c.rageHits < RAGE_HITS) return false;
+  settleRage(c, 'hits');
+  return true;
+}
 /* how angry a driver of this mind gets about a provocation, 0 to 1 */
 function rageOdds(mind){ return RAGE_ODDS[mind] === undefined ? 0 : RAGE_ODDS[mind]; }
 /* ---- ANGER ONE DRIVER ---------------------------------------------------
@@ -10958,6 +11011,8 @@ function rageOdds(mind){ return RAGE_ODDS[mind] === undefined ? 0 : RAGE_ODDS[mi
    for you does not roll again and does not stack. */
 function anger(c, why){
   if(!c || c.dead || c.gone || isCrossing(c)) return false;
+  /* a driver who has just got what it wanted is not angered again yet */
+  if(c.calm > 0) return false;
   if(c.rage > 0){ c.rage = RAGE_SECS; return true; }
   if(Math.random() >= rageOdds(c.mind)) return false;
   c.rage = RAGE_SECS;
@@ -10965,6 +11020,7 @@ function anger(c, why){
   c.rageMove = 'CUT';       /* everyone reaches for the overtake first */
   c.rageTry = RAGE_GIVEUP;
   c.rageLook = 0;
+  c.rageHits = 0; c.rageStopT = 0;
   ragesStarted++;
   return true;
 }
@@ -10994,6 +11050,20 @@ function rageStep(c, dt, pz){
      not a duration: a driver that keeps up stays angry, and one that cannot
      keep up runs out of it. */
   if(gap < RAGE_NEAR) c.rage = Math.min(RAGE_SECS, c.rage + dt * 1.6);
+
+  /* ---- THE BRAKE CHECK THAT WORKED (RLG-285) ---------------------------
+     READ FROM WHERE THE CARS ARE, NOT FROM THE MOVE LABEL. The first build
+     required `rageMove === 'BLOCK'`, and it never fired: a brake check that
+     works brings the player up to the rager's bumper, and the move-picker
+     calls anything within 260 units "alongside". So the label turned to SWIPE
+     at exactly the moment the stop happened. What a brake check IS, is a
+     driver directly ahead, in your line, with you stopped behind it.
+     `RAGE_LINE` is how far across still counts as in your line. */
+  const holding = dz > 0 && gap < RAGE_NEAR
+               && Math.abs(c.x - playerX) < RAGE_LINE
+               && spd < MAX_SPD * RAGE_STOP_SPD;
+  c.rageStopT = holding ? (c.rageStopT || 0) + dt : 0;
+  if(c.rageStopT >= RAGE_STOP_HOLD){ settleRage(c, 'stop'); return false; }
 
   /* ---- IT RE-READS ITS POSITION RATHER THAN HOLDING A PLAN ------------
      Owner's own answer: "what they try to do would depend on their position
@@ -20194,6 +20264,7 @@ function step(dt){
        -------------------------------------------------------------------- */
     if(c.z > pos + 64000){ traffic.splice(i,1); continue; }
     if((c.iframe || 0) > 0) c.iframe -= dt;
+    if((c.calm || 0) > 0) c.calm -= dt;
     const dz = c.z - pz, dx = Math.abs(c.x - playerX);
     const overlap = carW(c.w + playerW())/2;
     /* SOLID FIRST, AND ALWAYS (RLG-277). This runs inside the mercy window too -
@@ -20231,8 +20302,12 @@ function step(dt){
         /* ---- AND SOME OF THEM TAKE IT PERSONALLY (RLG-241) ----------
            Hung on the contact event rather than on the overlap, so one rub is
            one provocation - which is exactly what RLG-277 made `contactFires`
-           mean. Rolled inside `anger` against the driver's own mind. */
-        anger(c, 'hit');
+           mean. Rolled inside `anger` against the driver's own mind.
+
+           A DRIVER ALREADY RAGING COUNTS THE HIT FIRST (RLG-285). A hit
+           that satisfies it must not also re-arm it, so `anger` is only
+           asked when the hit did not settle anything. */
+        if(!rageHit(c, sev)) anger(c, 'hit');
       }
       iframe = 0.9;
     } else if(!c.near && Math.abs(dz) < 260 && dx < overlap+0.20){
@@ -31554,12 +31629,29 @@ requestAnimationFrame(frameLoop);
       if(!(c.rage > 0)) continue;
       out.push({ mind: c.mind, move: c.rageMove, why: c.rageWhy,
                  fuse: +c.rage.toFixed(2),
+                 hits: c.rageHits || 0, stopT: +(c.rageStopT || 0).toFixed(2),
                  dz: Math.round(c.z - (pos + PLAYER_Z)),
                  dx: +(c.x - playerX).toFixed(3),
                  spd: Math.round(c.spd || 0) });
     }
     return { raging: out, started: ragesStarted,
-             odds: RAGE_ODDS, secs: RAGE_SECS, lost: RAGE_LOST };
+             odds: RAGE_ODDS, secs: RAGE_SECS, lost: RAGE_LOST,
+             settled: Object.assign({}, ragesSettled),
+             needHits: RAGE_HITS, hitSev: RAGE_HIT_SEV,
+             stopHold: RAGE_STOP_HOLD, stopSpd: RAGE_STOP_SPD, calm: RAGE_CALM };
+  };
+  /* ---- A CONTACT WITH A RAGING DRIVER, STAGED (RLG-285) ----------------
+     The CONDITION is staged - a hit of this severity landed - and the RULE is
+     measured through the same `rageHit` the contact event calls. Staged
+     because the collider cannot yet be relied on to land a contact on a parked
+     car (RLG-279). After a hit that did not settle, `anger` is asked exactly as
+     the contact event asks it. */
+  API.rageHit = function(i, sev){
+    const c = traffic[i || 0];
+    if(!c) return null;
+    const settled = rageHit(c, sev);
+    if(!settled) anger(c, 'hit');
+    return { settled, hits: c.rageHits || 0, raging: c.rage > 0, calm: +(c.calm || 0).toFixed(2) };
   };
   /* anger one car outright, so a check can watch the BEHAVIOUR without having
      to provoke a driver whose mind may never roll one */

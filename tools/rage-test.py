@@ -20,7 +20,9 @@ inferred from a crash. That is the same reason RLG-252's spans are asserted as n
                  follow the POSITION - ahead is a brake-check, alongside is a swipe, behind is
                  a ram - and a driver that cannot get past must stop trying.
 
-  HOW IT ENDS    it cools off, or you outrun it.
+  HOW IT ENDS    it cools off, or you outrun it - or it gets what it wanted (RLG-285): a
+                 brake check that holds you under the stop speed, or a few good hits.
+                 Each is checked against a control that must NOT settle.
 
 WHAT IT CANNOT SEE: whether being hunted is frightening or merely annoying, whether a
 brake-check reads as malice or as traffic being bad, and whether the odds put one on you too
@@ -242,6 +244,70 @@ def main():
                 break
         check(left is True, 'outrunning a rager ends it',
               'it was still on the player after 4.5s of full throttle')
+
+        # ---- AND IT CAN BE SATISFIED (owner, 2026-09-16, RLG-285) --------------
+        print()
+        print('  AND IT GOES BACK TO ITS BUSINESS WHEN IT GETS WHAT IT WANTED')
+        info = page.evaluate('() => window.__probe.road.ragers()')
+
+        def brake_check(player_frac, secs=3.0):
+            """A rager just ahead, braking; the player held at `player_frac` of top.
+
+            Returns whether the grudge settled by a STOP, and the rager's last frame.
+            The player is pinned rather than stopped by the rager, because what is under
+            test is the rule that reads the stop, not whether this sedan can brake a
+            car the harness is driving."""
+            page.evaluate("""(f) => { const R = window.__probe.road;
+              R.clearTraffic(); R.clearRacers(); R.holdSpd(R.MAX_SPD * f);
+              R.parkTraffic(0, 700, 'sedan', 2); R.enrage(0, 'test'); }""", player_frac)
+            before = page.evaluate('() => window.__probe.road.ragers().settled.stop')
+            last = None
+            for _ in range(int(secs / 0.05)):
+                page.evaluate("(f) => { const R = window.__probe.road; R.holdSpd(R.MAX_SPD * f); }",
+                              player_frac)
+                page.wait_for_timeout(50)
+                r = page.evaluate('() => window.__probe.road.ragers()')
+                if r['raging']:
+                    last = r['raging'][0]
+                if r['settled']['stop'] > before:
+                    return True, last
+            return False, last
+
+        # THE CONTROL FIRST: the same rager, the same place, a player who keeps going.
+        # It must still be angry at the end, or the check below cannot fail.
+        moving, mlast = brake_check(0.45)
+        check(not moving, 'a brake check that does NOT stop you settles nothing',
+              'last move %s' % (mlast and mlast['move']))
+        stopped, slast = brake_check(info['stopSpd'] * 0.4)
+        check(stopped, 'a brake check that holds you under the stop speed settles it',
+              'last frame %s' % slast)
+        after = page.evaluate('() => window.__probe.road.ragers().raging')
+        check(not after, 'and the driver is no longer raging', '%d still raging' % len(after))
+
+        # ---- A FEW GOOD HITS ---------------------------------------------------
+        page.evaluate("""() => { const R = window.__probe.road;
+          R.clearTraffic(); R.holdSpd(R.MAX_SPD * 0.45);
+          R.parkTraffic(0, -900, 'sedan', 2); R.enrage(0, 'test'); }""")
+        need, sev = info['needHits'], info['hitSev']
+        # A RUB IS NOT A HIT. Many weak contacts must not settle anything.
+        weak = [page.evaluate("(s) => window.__probe.road.rageHit(0, s)", sev * 0.5)
+                for _ in range(need + 2)]
+        check(all(not w['settled'] and w['raging'] for w in weak),
+              'weak contacts do not count as good hits',
+              'after %d rubs: hits %d, raging %s' % (len(weak), weak[-1]['hits'], weak[-1]['raging']))
+        good = [page.evaluate("(s) => window.__probe.road.rageHit(0, s)", sev * 3)
+                for _ in range(need)]
+        check(all(not g['settled'] for g in good[:-1]),
+              'fewer than %d good hits leave it angry' % need,
+              ', '.join('%d' % g['hits'] for g in good[:-1]))
+        check(good[-1]['settled'] and not good[-1]['raging'],
+              'and good hit number %d settles it' % need, '%s' % good[-1])
+        # THE SETTLING HIT IS ALSO A HIT, and a hit angers. The calm window is what
+        # stops the same impact starting the grudge again.
+        again = page.evaluate("(s) => window.__probe.road.rageHit(0, s)", sev * 3)
+        check(not again['raging'] and again['calm'] > 0,
+              'and hitting it again straight away does not re-anger it',
+              '%s' % again)
 
         errs = page.evaluate("() => window.__probe.errors")
         check(not errs, 'no page errors', '; '.join(errs[:2]))
