@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.70';
+window.ROAD_BUILD = '0.14.71';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1145,6 +1145,21 @@ var snd = {
       snd.eng2  = AR.sfx.hold({ freq:70, type:'square',  cutoff:400, q:2, detune:14, space:true });
       snd.wind  = AR.sfx.holdNoise({ freq:900, q:0.5 });
       snd.siren = AR.sfx.hold({ freq:700, type:'sine', cutoff:2600, q:1, space:true });
+      /* ---- A VOICE PER CAR, UP TO THREE (RLG-270) ---------------------
+         `snd.siren` above stays and is the PLAYER'S own bar - it is driven by
+         `barOn` and belongs to the car you are in, so it has no position to be
+         panned to. These are the ones out in the world: built once at arm time
+         like every other held voice, and handed to whichever cars are nearest
+         each frame. They are `pan:0` so the panner EXISTS - `hold` only builds
+         one when a pan is stated, and a voice with no panner cannot be placed
+         later. */
+      snd.sirens = [];
+      for(var sv = 0; sv < SIREN_VOICES; sv++)
+        snd.sirens.push(AR.sfx.hold({ freq:700, type:'sine', cutoff:2600, q:1,
+                                      space:true, pan:0 }));
+      /* each voice keeps its OWN phase, and that is the whole ruling: one clock
+         shared between them is what made two cruisers sound like one. */
+      snd.sirenPhases = [0, 0, 0];
       /* NOS: a wide bandpassed hiss, opened up while the bottle is live */
       snd.thrust = AR.sfx.holdNoise({ freq:1800, q:0.35 });
       /* A real car horn is TWO notes a third apart played together, with a
@@ -1759,9 +1774,36 @@ var snd = {
       var SV = sirenVoice(copNear, mine, ambNear);
       snd.sirenPhase += SV.rate;
       var two = Math.sin(snd.sirenPhase) > 0 ? SV.hi : SV.lo;
-      snd.siren.set(two, 0.048 * wail, SV.cutoff, 0.02);
+      /* THE SHARED VOICE IS THE PLAYER'S BAR ONLY NOW (RLG-270). What is out in
+         the world is voiced per car below, so sounding both here would double
+         every siren. `mine` is the bar on the car you are driving. */
+      snd.siren.set(two, 0.048 * (mine > 0 ? mine : 0), SV.cutoff, 0.02);
     } else {
       snd.siren.set(undefined, 0, undefined, 0.15);
+    }
+    /* ---- AND EVERY OTHER SIREN IS ITS OWN VOICE (RLG-270) --------------
+       Each keeps its own phase, so two cars alongside each other wail AGAINST
+       one another instead of in lock step - which is the whole of what the
+       owner reported missing. Each is panned by where its car is across the
+       road and gained by how near it is.
+
+       THE MIX IS HELD DOWN DELIBERATELY. Three voices at full would be three
+       times the old loudness, and the loop this replaces took a MAXIMUM for
+       exactly that reason - so the nearest keeps the old level and the rest are
+       quieter shares of it rather than additions to it. */
+    var SC = snd.sirenCars || [];
+    for(var si = 0; si < (snd.sirens ? snd.sirens.length : 0); si++){
+      var V = snd.sirens[si], C = SC[si];
+      if(!V) continue;
+      if(!C || snd.noSiren){ V.set(undefined, 0, undefined, 0.15); continue; }
+      var CV = sirenVoiceFor(C.body);
+      /* THE PHASE IS READ FROM THE CAR AND WRITTEN BACK TO IT, so it survives a
+         car changing voice slot and so two cars can never share one clock. */
+      C.k.sirenPh = (C.k.sirenPh || 0) + CV.rate * (C.k.sirenWob || 1);
+      snd.sirenPhases[si] = C.k.sirenPh;
+      var tone = Math.sin(C.k.sirenPh) > 0 ? CV.hi : CV.lo;
+      V.set(tone, 0.048 * C.gain * (si === 0 ? 1 : 0.55), CV.cutoff, 0.02);
+      if(V.place) V.place(clamp(C.x, -1, 1) * 0.8, 0.10);
     }
   },
   /* ---- THE LAUNCH ------------------------------------------------------
@@ -17282,6 +17324,17 @@ let scatterStat = { calls:0, cooled:0, seen:0, far:0, wide:0, deaf:0, obey:0, ro
    are one function. `traffic-test` records that over 40 horn presses only 6
    were ever in range, which is the same fault seen from the other end.
    ------------------------------------------------------------------------- */
+/* ---- HOW MANY SIRENS CAN SOUND AT ONCE (RLG-270) ------------------------
+   The ruling left the count open - "one per chasing car, or a small pool of two
+   or three with the rest folded into the nearest" - and three is the smaller
+   answer, for the reason the ruling itself gives: the mix has to stay under
+   control when four cars are on the player, and the loop this replaces took a
+   MAXIMUM precisely so that three cruisers were not three times as loud. Three
+   is enough for the ear to hear that they disagree; a fourth adds loudness
+   rather than information. And RLG-002 makes this a phone game, so a held
+   oscillator per police car is a cost that grows with the one thing the player
+   does not control - how many turned up. */
+const SIREN_VOICES = 3;
 const SIREN_LOOK = 2.0;          /* seconds of road ahead */
 const SIREN_LOOK_MIN = 4200;     /* ...and never less than the old window */
 const SIREN_LOOK_MAX = DRAW * SEG;   /* ...and never past the drawn road */
@@ -21087,6 +21140,9 @@ function step(dt){
   blinkPhase += dt*9.4;
 
   var near = 0;
+  /* every police car and ambulance close enough to be heard, so each can be
+     given its own voice below (RLG-270) */
+  const sirenCars = [];
   for(const k of cops){
     if(k.wreck>0) continue;
     /* ---- A PARKED TRAP IS SILENT (owner, 2026-09-16, RLG-269) -----------
@@ -21101,6 +21157,37 @@ function step(dt){
     if(!copBarLit(k)) continue;
     const gap = Math.abs(k.z - pz);
     if(gap < 7000) near = Math.max(near, 1 - gap/7000);
+    /* ---- AND EACH ONE IS ITS OWN VOICE NOW (RLG-270) ------------------
+       Owner, 2026-09-16: "I don't think I've heard multiple sirens moving out
+       of sync realistically when there's more than one cop in your proximity."
+       They had not, because there was ONE siren in the engine: this loop
+       reduced every police car to a single loudest number and that number drove
+       one held oscillator, so two cruisers alongside each other could not be
+       out of step. The LIGHTS already were - `sirenPhase` is one clock and each
+       car adds its own `k.phase` - which is exactly the shape the sound needed.
+
+       SO THE CARS ARE COLLECTED HERE and the voices are assigned below. Each
+       carries its own phase, so two cars wail against each other rather than
+       together; its own pan, from where it is across the road; and its own gain
+       from its distance. */
+    if(gap < 7000){
+      /* ---- THE PHASE BELONGS TO THE CAR, NOT TO THE VOICE (RLG-270) ---
+         Seeded once, here, the first time a car is heard. Two voices started
+         together advance at the same rate and NEVER diverge - the first build
+         did exactly that and two cruisers read 4.497 and 4.497, which is the
+         defect the owner reported, rebuilt with more machinery. A car also
+         keeps its phase as it moves between voice slots, so a cruiser dropping
+         from nearest to second does not jump.
+
+         AND EACH RUNS AT ITS OWN SLIGHT RATE. A fixed offset is still lock
+         step - two sirens a beat apart for ever. Real units drift, so each car
+         carries a small permanent multiplier and the pair wanders in and out
+         of phase the way two real sirens do. */
+      if(k.sirenPh === undefined){ k.sirenPh = Math.random() * 6.2832;
+                                   k.sirenWob = 0.94 + Math.random() * 0.12; }
+      sirenCars.push({ k: k, gain: 1 - gap/7000, x: k.x || 0,
+                       body: k.body || 'CRUISER' });
+    }
   }
   /* the same measurement for an ambulance on a call, kept apart from the
      cruisers' because the two sound different and the LOUDER one is what you
@@ -21110,7 +21197,31 @@ function step(dt){
     if(!c.emergency) continue;
     const gap = Math.abs(c.z - pz);
     if(gap < 7000) ambNear = Math.max(ambNear, 1 - gap/7000);
+    /* an ambulance takes a voice from the same pool. RLG-065 gave it a
+       different SOUND, not a different mechanism. */
+    if(gap < 7000){
+      if(c.sirenPh === undefined){ c.sirenPh = Math.random() * 6.2832;
+                                   c.sirenWob = 0.94 + Math.random() * 0.12; }
+      sirenCars.push({ k: c, gain: 1 - gap/7000, x: c.x || 0,
+                       body: 'AMBULANCE' });
+    }
   }
+  /* ---- THE NEAREST FEW, AND NOT ALL OF THEM (RLG-270) ------------------
+     `SIREN_VOICES` is 3. The ruling left the count open - "one per chasing car,
+     or a small pool of two or three with the rest folded into the nearest" -
+     and three is the smaller answer for a reason the ruling itself gives: the
+     mix has to stay under control when four cars are on the player, and the old
+     loop took a MAXIMUM precisely so that three cruisers were not three times
+     as loud. Three voices are enough for the ear to hear that they disagree;
+     a fourth adds loudness rather than information. Anything past the third is
+     folded into the nearest, exactly as the ruling offered.
+
+     AND IT IS MOBILE. RLG-002 makes this a phone game, and a held oscillator
+     per police car is a cost that grows with the thing the player least
+     controls - how many cars turned up. */
+  sirenCars.sort((a, b) => b.gain - a.gain);
+  if(sirenCars.length > SIREN_VOICES) sirenCars.length = SIREN_VOICES;
+  snd.sirenCars = sirenCars;
   /* rate of deceleration as a fraction of the hardest the brakes can pull,
      so the screech follows what the car is doing rather than what the pedal is */
   const lost = Math.max(0, prevSpd - spd);
@@ -33003,8 +33114,11 @@ requestAnimationFrame(frameLoop);
      test decide. `downedBy` is how a check tells a PIT from a shunt that
      happened to finish one off.
      -------------------------------------------------------------------- */
-  API.placeCop = function(dz, dx){
-    cops.length = 0;
+  API.placeCop = function(dz, dx, keep){
+    /* `keep` adds a car instead of replacing the road - RLG-270 needs TWO on the
+       player at once to ask whether their sirens disagree, and one is the only
+       thing this could stage before. */
+    if(!keep) cops.length = 0;
     cops.push({ z: pos + PLAYER_Z + (dz === undefined ? 0 : dz),
                 x: dx === undefined ? 0.3 : dx,
                 spd: spd, wreck:0, ang:0, grace:0, cool:0, side:1,
@@ -33731,6 +33845,25 @@ requestAnimationFrame(frameLoop);
   /* how far the player's own siren reaches right now, in world units - a check
      that recomputed it would agree with a copy of the formula (RLG-205) */
   API.sirenReach = function(){ return Math.round(sirenReach(spd)); };
+  /* ---- WHAT IS ACTUALLY WAILING, AND WHETHER THEY AGREE (RLG-270) -------
+     A sound test cannot listen, but it can read the graph - this project's own
+     rule. The owner's report is that two sirens never disagree, so what has to
+     be readable is the PHASE of each voice and which car it belongs to. Two
+     voices at the same phase are the defect; two at different phases are the
+     fix, and no recording is needed to tell them apart. */
+  API.sirenVoices = function(){
+    const out = [];
+    const cars = snd.sirenCars || [];
+    for(let i = 0; i < SIREN_VOICES; i++){
+      const c = cars[i];
+      out.push({ car: c ? (c.body || 'CRUISER') : null,
+                 gain: c ? +c.gain.toFixed(3) : 0,
+                 x: c ? +c.x.toFixed(3) : null,
+                 phase: +(((snd.sirenPhases || [])[i] || 0) % 6.2832).toFixed(4) });
+    }
+    return { voices: out, pool: SIREN_VOICES, heard: cars.length,
+             shared: +((snd.sirenPhase || 0) % 6.2832).toFixed(4) };
+  };
   API.scatterStat = function(reset){
     const out = Object.assign({}, scatterStat);
     if(reset) for(const k of Object.keys(scatterStat)) scatterStat[k] = 0;

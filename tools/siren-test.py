@@ -128,6 +128,45 @@ with sync_playwright() as p:
               'and alternates faster',
               f'police {cf} tone changes, ambulance {af}, over the same window')
 
+    # ---- AND TWO CARS DO NOT WAIL IN LOCK STEP (RLG-270) --------------------
+    # Owner, 2026-09-16: "I don't think I've heard multiple sirens moving out of sync
+    # realistically when there's more than one cop in your proximity." They had not:
+    # there was ONE siren voice in the engine and the frame loop reduced every police
+    # car to a single loudest number, so two cruisers alongside each other could not
+    # disagree. The LIGHTS already did - each car adds its own phase to one clock.
+    #
+    # A SOUND TEST CANNOT LISTEN, BUT IT CAN READ THE GRAPH, which is this project's
+    # own rule. Two voices at the same phase are the defect and two at different
+    # phases are the fix, and no recording is needed to tell them apart.
+    print()
+    print('  TWO CARS, TWO VOICES, TWO PHASES')
+    pg.evaluate("""() => { const R = window.__road;
+      R.setTimed(false); R.clearTraffic();
+      R.placeCop(600, -0.4); R.placeCop(-900, 0.5, true); }""")
+    for _ in range(30):
+        pg.evaluate("() => { const R = window.__road;"
+                      " R.setSpd(R.MAX_SPD * 0.4); }")
+        pg.wait_for_timeout(50)
+    sv = pg.evaluate('() => window.__road.sirenVoices()')
+    for i, v in enumerate(sv['voices']):
+        print('      voice %d: car=%-9s gain %.2f  x %s  phase %.3f'
+              % (i, str(v['car']), v['gain'], v['x'], v['phase']))
+    live = [v for v in sv['voices'] if v['car']]
+    check(len(live) >= 2, 'two police cars each get a voice',
+          '%d of a pool of %d' % (len(live), sv['pool']))
+    if len(live) >= 2:
+        # THE WHOLE RULING IN ONE LINE. Equal phases is what the owner reported.
+        apart = abs(live[0]['phase'] - live[1]['phase'])
+        check(apart > 0.05,
+              'and the two are out of step with each other',
+              'their phases are %.3f and %.3f, %.3f apart'
+              % (live[0]['phase'], live[1]['phase'], apart))
+        # AND EACH IS PLACED WHERE ITS CAR IS, so they are told apart by ear as well
+        # as by phase - a siren that does not move is a siren nobody can locate.
+        check(live[0]['x'] != live[1]['x'],
+              'and each is panned to its own car',
+              'both at x %s' % live[0]['x'])
+
     check(not errs, 'no page errors', errs[0] if errs else 'clean')
     pg.close()
     b.close()
