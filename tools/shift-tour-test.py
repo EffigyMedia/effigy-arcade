@@ -25,7 +25,7 @@ WHAT THIS ASKS, IN THREE PARTS.
   THE ROUNDS half drives it. A shift is cleared, and the check watches the round advance,
   the next distance fall, and the finish line move with it. Four rounds, then the trophy.
 
-  THE PRIZE half (owner, 2026-09-17). A CRUISER ladder pays the dozen colours and a
+  THE PRIZE half (owner, 2026-09-17). A CRUISER ladder pays the realistic force colours and a
   SUPERCRUISER ladder the iridescent paints, both for the police livery only. It checks the
   flag written, the palette the garage then draws on both force cars and on a racing car, that
   a second win announces nothing, and that a police car keeps its own colour.
@@ -325,7 +325,7 @@ with sync_playwright() as p:
             check('TOURNAMENT COMPLETE' in trophy, 'and the trophy screen is up',
                   trophy[:60].strip())
             # ---- WHAT IT PAID (owner, 2026-09-17) -------------------------------
-            # The CRUISER ladder pays the dozen colours for the police livery,
+            # The CRUISER ladder pays the realistic force colours for the livery,
             # and only that: not the racing flip paints, and not the police ones.
             opts = pg.evaluate("() => window.Arcade.save.get('interstate-opts') || {}")
             check('POLICE COLOURS UNLOCKED' in trophy,
@@ -336,16 +336,23 @@ with sync_playwright() as p:
                   'and writes neither iridescent flag',
                   f"copiridescent={opts.get('copiridescent')} iridescent={opts.get('iridescent')}")
             after = paint_after(pg, 'CRUISER')
-            check(len(before) == 2 and len(after) == 12,
-                  'the CRUISER palette grew from two to twelve',
+            # REALISTIC, NOT THE RACING DOZEN (owner, 2026-09-17): the prize is the
+            # force colours, and no loud racing colour is among them.
+            check(len(before) == 2 and len(after) == 6,
+                  'the CRUISER palette grew from two to six',
                   f'{len(before)} -> {len(after)}')
             check(after[:2] == ['WHITE', 'BLACK'] and 'ORACLE' not in after,
-                  'white and black first, and no flip paint yet', ', '.join(after[:4]) + ' ...')
+                  'white and black first, and no flip paint yet', ', '.join(after))
+            check('FORCEBLUE' in after and 'FORCEGREEN' in after
+                  and not {'LIME', 'PINK', 'ORANGE', 'VIOLET'} & set(after),
+                  'the new colours are force colours, not racing ones', ', '.join(after))
             # THE PRIZE STAYS WITH THE FORCE. A racing car's palette is the base
             # dozen before and after - `copcolours` must not open anything there.
             check(len(paint_after(pg, 'HATCH')) == 12 and
                   'ORACLE' not in paint_after(pg, 'HATCH'),
                   'and a racing car gained nothing', ', '.join(paint_after(pg, 'HATCH')[-2:]))
+            check('FORCEBLUE' not in paint_after(pg, 'HATCH'),
+                  'and cannot choose a force colour', '')
 
             # ---- A SECOND WIN CLAIMS NOTHING NEW (RLG-202) --------------------
             # Run the last round again: the flag is already held, so the trophy
@@ -364,24 +371,24 @@ with sync_playwright() as p:
                   'and writes the POLICE flag, not the racing one',
                   f"copiridescent={opts.get('copiridescent')} iridescent={opts.get('iridescent')}")
             cr = paint_after(pg, 'CRUISER')
-            check(len(cr) == 17 and 'ORACLE' in cr,
+            check(len(cr) == 11 and 'ORACLE' in cr,
                   'both force cars now offer the flip paints', f'CRUISER {len(cr)} choices')
             check('ORACLE' not in paint_after(pg, 'HATCH'),
                   'and a racing car still does not', '')
 
             # ---- A POLICE COLOUR IS ITS OWN (RLG-212) ------------------------
-            # Paint the HATCH pink and the CRUISER lime through the real
+            # Paint the HATCH pink and the CRUISER force green through the real
             # swatches: neither may take the other's colour.
             walk_to(pg, 'HATCH'); pg.click('[data-act="paint:PINK"]'); pg.wait_for_timeout(120)
             walk_to(pg, 'CRUISER')
             first = pg.evaluate("() => window.__road.paint ? window.__road.paint() : null")
-            pg.click('[data-act="paint:LIME"]'); pg.wait_for_timeout(120)
+            pg.click('[data-act="paint:FORCEGREEN"]'); pg.wait_for_timeout(120)
             walk_to(pg, 'HATCH')
             hatch = pg.evaluate("() => window.__road.paint()")
             walk_to(pg, 'CRUISER')
             cop = pg.evaluate("() => window.__road.paint()")
             check(first != 'PINK', 'the cruiser did not take the racing colour', f'{first}')
-            check(hatch == 'PINK' and cop == 'LIME',
+            check(hatch == 'PINK' and cop == 'FORCEGREEN',
                   'and each keeps its own', f'HATCH {hatch}, CRUISER {cop}')
 
         check(errs == [], 'the road raised no page error', errs[0][:90] if errs else '')

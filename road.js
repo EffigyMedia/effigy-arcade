@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.74';
+window.ROAD_BUILD = '0.14.75';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7478,6 +7478,22 @@ Object.assign(PAINT, IRIDESCENT);
 const IRIDESCENT_KEYS = Object.keys(IRIDESCENT);
 const BASE_PAINT_KEYS = Object.keys(PAINT).filter(k => IRIDESCENT_KEYS.indexOf(k) < 0);
 const PAINT_KEYS = Object.keys(PAINT);
+/* ---- THE COLOURS A POLICE FORCE ACTUALLY USES (owner, 2026-09-17, RLG-212)
+   "more realistic and minimal like a dark blue police or a dark green police
+   color". The CRUISER shift prize. Deliberately muted: these are the colours
+   of a real patrol fleet, and the loud end of the wheel is the other prize.
+
+   ADDED TO `PAINT` AFTER THE KEY LISTS ABOVE ARE TAKEN, so the painter can
+   find them by name and no racing car is ever offered one. Silver is the
+   racing SILVER, because a silver patrol car is already a real one.
+   ------------------------------------------------------------------------ */
+const FORCE_PAINT = {
+  FORCEBLUE:  { body:'#1f3563', hi:'#4a67a3', lo:'#0e1a36' },
+  FORCEGREEN: { body:'#1e4a37', hi:'#46806a', lo:'#0d261c' },
+  CHARCOAL:   { body:'#3b3f47', hi:'#636a75', lo:'#1d2025' }
+};
+Object.assign(PAINT, FORCE_PAINT);
+const FORCE_PAINT_KEYS = Object.keys(FORCE_PAINT).concat(['SILVER']);
 
 /* ---- what ordinary cars are painted --------------------------------------
    Deliberately DULL. The supercars own the saturated end of the spectrum, and
@@ -29099,8 +29115,9 @@ function garageCard(){
    with the same livery though."
 
    SO THE LIMIT ABOVE IS NOW THE STARTING POINT, NOT THE RULE. A police car
-   starts white or black, and the two prizes add to that: the dozen colours for
-   the CRUISER ladder, the flip paints for the SUPERCRUISER one. Both are
+   starts white or black, and the two prizes add to that: the realistic force
+   colours for the CRUISER ladder, and the wild flip paints for the SUPERCRUISER
+   one (owner, 2026-09-17). Both are
    police flags - `copiridescent` is not the racing `iridescent`, so winning a
    shift does not repaint the rest of the garage.
 
@@ -29111,8 +29128,7 @@ function garageCard(){
 const COP_BASE_PAINT = ['WHITE', 'BLACK'];
 function copPaintChoices(){
   let out = COP_BASE_PAINT.slice();
-  if(unlocked('copcolours'))
-    out = out.concat(BASE_PAINT_KEYS.filter(k => COP_BASE_PAINT.indexOf(k) < 0));
+  if(unlocked('copcolours')) out = out.concat(FORCE_PAINT_KEYS);
   if(unlocked('copiridescent')) out = out.concat(IRIDESCENT_KEYS);
   return out;
 }
