@@ -131,7 +131,7 @@ def main():
         print()
         print('  AND WHAT THE ROAD LAYS')
 
-        def lay(body, timed, secs=40):
+        def lay(body, timed, secs=40, fuel=False):
             """drive long enough to see one of each, and count what was LAID
 
             The first of each kind is due at 16, 22 and 28 seconds, so a drive has to
@@ -140,9 +140,9 @@ def main():
             on the road now - a pickup driven past is gone from that tally, so a long
             drive would report the last few rather than all of them.
             """
-            page.evaluate("""([b, t]) => { const R = window.__probe.road;
-              R.setBody(b); R.setTimed(t); R.clearCrates(); R.clearRacers();
-              R.clearTraffic(); R.crateLaid(true); }""", [body, timed])
+            page.evaluate("""([b, t, f]) => { const R = window.__probe.road;
+              R.setFuel(f); R.setBody(b); R.setTimed(t); R.clearCrates(); R.clearRacers();
+              R.clearTraffic(); R.crateLaid(true); }""", [body, timed, fuel])
             page.wait_for_timeout(300)
             live = None
             for _ in range(secs * 5):
@@ -154,10 +154,22 @@ def main():
             seen['other'] = 0
             return seen, live
 
-        for body, timed, label in (('TUNER', True, 'a car with a bottle, clock ON'),
-                                   ('SALOON', True, 'a car with NO bottle, clock ON'),
-                                   ('TUNER', False, 'a car with a bottle, clock OFF')):
-            seen, live = lay(body, timed)
+        # RLG-286: Interstate lays no jerry can, so its default arms must show fuel DEAD
+        # with the clock on. The last arm turns the switch on to prove the can still works
+        # in code, which is what the owner asked to keep for Motorsport.
+        for body, timed, fuel, label in (
+                ('TUNER', True, False, 'a car with a bottle, clock ON'),
+                ('SALOON', True, False, 'a car with NO bottle, clock ON'),
+                ('TUNER', False, False, 'a car with a bottle, clock OFF'),
+                ('TUNER', True, True, 'FUEL SWITCHED ON, clock ON')):
+            seen, live = lay(body, timed, fuel=fuel)
+            if not fuel and timed:
+                check(live['fuel'] is False,
+                      'Interstate lays no jerry can with the clock on (%s)' % label,
+                      'live %r' % live['fuel'])
+            if fuel:
+                check(live['fuel'] is True,
+                      'with the switch on, the can is live again', 'live %r' % live['fuel'])
             print('      %-32s laid  repair %d  nos %d  fuel %d      live %s'
                   % (label, seen['repair'], seen['nos'], seen['fuel'], live))
             check(seen['other'] == 0, 'no pickup of an unknown kind is laid (%s)' % label,

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.73';
+window.ROAD_BUILD = '0.14.74';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12123,8 +12123,31 @@ let nextWaveZ=0, nextCopT=0, nextBlockT=0, nextCrateT=0;
 const PICKUPS = [
   { kind:'repair', live: () => true },
   { kind:'nos',    live: () => hasNos() },
-  { kind:'fuel',   live: () => clockRuns() }
+  { kind:'fuel',   live: () => fuelOn() && clockRuns() }
 ];
+/* ---- FUEL IS A GAME'S CHOICE, AND INTERSTATE HAS DECLINED IT (RLG-286) ----
+   Owner, 2026-09-16: "As much as I like the fuel gauge. Let's take it out of
+   interstate - but we will need it for Motorsport so keep it in code. Let's do
+   the same for the Gerry can."
+
+   ONE SWITCH FOR BOTH, because they are one feature. The dial shows how much
+   is in the tank and the can refills it. A can with no dial fills a tank the
+   player cannot see, and a dial with no can has only one way to go.
+
+   `CFG.fuel` IS OFF UNLESS A GAME ASKS FOR IT. Interstate does not ask.
+   Motorsport does not ask YET: it keeps its own tank in its own file, and when
+   it wants the dial it sets `fuel` and passes `fuelFrac` so the dial reads that
+   tank and not the race clock (the reason is in the RLG-240 note on the dial).
+   The pickup's clock payout, the dial painter and the pump lamp are all
+   unchanged. They are only switched off.
+
+   WHAT INTERSTATE LOSES, STATED RATHER THAN DISCOVERED. The can was a source
+   of clock time. The checkpoints still pay time and the number countdown is
+   still on the HUD. But RLG-100 records that a ROADSTER at full throttle runs
+   out before its first checkpoint, and the can was one way that gap could have
+   closed. That margin is now smaller.
+   ------------------------------------------------------------------------- */
+function fuelOn(){ return !!CFG.fuel; }
 let nextPickT = { repair:0, nos:0, fuel:0 };
 /* every pickup laid this run, by kind - see `API.crateLaid` */
 let laidTally = { repair:0, nos:0, fuel:0 };
@@ -28439,8 +28462,18 @@ const FUEL_GAUGE = {
    it sits high enough to clear both with a 2px gap: 47 apart along the diagonal,
    27.5 across, so 38.1 up - taken as 39 */
 const FUEL_R = 19, FUEL_UP = 39, FUEL_H = 28;
-function fuelFrac(){ return clamp(clock / CLOCK_START, 0, 1); }
-function fuelShown(){ return clockRuns() && !CFG.circuitOnly; }
+/* a game with a tank of its own passes `CFG.fuelFrac`; otherwise the dial
+   reads the run clock, which is what it was built to show (RLG-240, RLG-286) */
+function fuelFrac(){
+  return clamp(CFG.fuelFrac ? CFG.fuelFrac() : clock / CLOCK_START, 0, 1);
+}
+/* A GAME THAT FEEDS ITS OWN TANK SHOWS THE DIAL WHENEVER IT DRIVES, because
+   a tank is there whether or not a clock is. Without that, the dial stays
+   what it was: a picture of the clock, shown only while the clock counts. */
+function fuelShown(){
+  if(!fuelOn()) return false;
+  return CFG.fuelFrac ? true : (clockRuns() && !CFG.circuitOnly);
+}
 let dialDpr = 0, dialH = 0;
 function drawDials(){
   if(!dialCx) return;
@@ -32886,7 +32919,9 @@ requestAnimationFrame(frameLoop);
       if(out[k] === undefined) out.other++; else out[k]++;
     }
     return { laid: out, due: Object.assign({}, nextPickT),
-             live: { repair: true, nos: hasNos(), fuel: clockRuns() } };
+             /* read from PICKUPS, not restated, so the answer a check gets
+                cannot differ from the one the spawner uses (RLG-286) */
+             live: PICKUPS.reduce((o, P) => (o[P.kind] = !!P.live(), o), {}) };
   };
   API.cratesLeft = function(){
     let n = 0; for(const c of crates) if(!c.got) n++; return n;
@@ -33334,6 +33369,11 @@ requestAnimationFrame(frameLoop);
     return { hidden: hidden, dark: dark, reach: Math.round(pts[pts.length - 1].z - pos) };
   };
   /* the fuel gauge's tunables and where its pump lamp is drawn (RLG-240) */
+  /* ---- THE FUEL SWITCH, FROM OUTSIDE (RLG-286) -------------------------
+     Interstate has no fuel, so the only way to prove the dial and the can
+     still work is to turn the switch on for a check. The code stays tested
+     until Motorsport turns it on for real. */
+  API.setFuel = function(v){ CFG.fuel = !!v; return fuelOn(); };
   API.fuelGauge = function(o){
     if(o) for(const k in o) if(k in FUEL_GAUGE) FUEL_GAUGE[k] = o[k];
     return Object.assign({ frac: +fuelFrac().toFixed(3), shown: fuelShown(),

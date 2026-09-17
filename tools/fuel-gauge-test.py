@@ -109,14 +109,25 @@ def main():
             pg.click('[data-act="drive"]')
             pg.wait_for_timeout(2000)
 
-            def at_clock(timed, secs):
-                pg.evaluate("([t, c]) => { const R = window.__probe.road; R.setTimed(t); R.setClock(c); }",
-                            [timed, secs])
+            def at_clock(timed, secs, fuel=True):
+                # RLG-286: Interstate has no fuel, so the dial is switched ON for the checks
+                # that are about the dial, and left at the game's default for the one that
+                # is about Interstate.
+                pg.evaluate("([t, c, f]) => { const R = window.__probe.road; R.setFuel(f);"
+                            " R.setTimed(t); R.setClock(c); }",
+                            [timed, secs, fuel])
                 pg.wait_for_timeout(400)
                 pg.evaluate("(c) => window.__probe.road.setClock(c)", secs)
                 pg.wait_for_timeout(150)
                 return pg.evaluate(READ)
 
+            # ---- INTERSTATE HAS NO FUEL DIAL (owner, 2026-09-16, RLG-286) -----------
+            # Read FIRST and at the game's own setting: the clock counting, which is the
+            # one condition under which the dial used to be drawn. Nothing is switched
+            # off by this file for this arm - `setFuel` is only ever called with True.
+            pg.evaluate("() => window.__probe.road.setTimed(true)")
+            pg.wait_for_timeout(400)
+            plain = pg.evaluate(READ)
             off = at_clock(False, 60)
             dim = at_clock(True, 120 * 0.20)
             lit = at_clock(True, 120 * 0.08)
@@ -136,6 +147,12 @@ def main():
                'the cluster grows upward and its bottom edge stays put',
                'height %.0f to %.0f, bottom %.1f to %.1f'
                % (off['height'], dim['height'], off['bottom'], dim['bottom']))
+            ok(not plain['f']['shown'] and plain['face'][3] < 20,
+               'Interstate draws no fuel dial, even with the clock counting',
+               'shown %s, face alpha %d' % (plain['f']['shown'], plain['face'][3]))
+            ok(abs(plain['height'] - off['height']) < 1,
+               'and its cluster is the two-dial height',
+               'height %.0f against %.0f' % (plain['height'], off['height']))
             if errs:
                 ok(False, 'page errors', errs[0][:140])
             b.close()
