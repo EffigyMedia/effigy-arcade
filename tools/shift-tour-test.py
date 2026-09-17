@@ -25,6 +25,11 @@ WHAT THIS ASKS, IN THREE PARTS.
   THE ROUNDS half drives it. A shift is cleared, and the check watches the round advance,
   the next distance fall, and the finish line move with it. Four rounds, then the trophy.
 
+  THE PRIZE half (owner, 2026-09-17). A CRUISER ladder pays the dozen colours and a
+  SUPERCRUISER ladder the iridescent paints, both for the police livery only. It checks the
+  flag written, the palette the garage then draws on both force cars and on a racing car, that
+  a second win announces nothing, and that a police car keeps its own colour.
+
 WHAT IS STAGED AND WHAT IS MEASURED. The clear is staged - `API.stageCleared` puts every
 rival out through the game's own `stopRacer`, for the reason `stageStop` gives and repeats:
 the manoeuvre cannot be flown by a harness. What is MEASURED is everything the tournament
@@ -132,6 +137,44 @@ def tour(pg):
     return pg.evaluate("() => window.__road.tourState()")
 
 
+def paint_after(pg, body):
+    """The palette `body` offers, read from the swatches the garage draws.
+
+    It opens the garage first: after a ladder the trophy is on screen, and a
+    walk that starts there reads no swatches at all - zero, which looks like a
+    palette that shrank rather than like a screen that was never the garage."""
+    if not pg.evaluate("() => !!document.querySelector('[data-act=\"next\"]')"):
+        pg.evaluate("() => { document.body.classList.remove('trophying');"
+                    "        window.__road.showGarage(); }")
+        pg.wait_for_timeout(200)
+    walk_to(pg, body)
+    return pg.evaluate("""() => [...document.querySelectorAll('[data-act^="paint:"]')]
+                                 .map(b => b.dataset.act.slice(6))""")
+
+
+def last_round(pg, body):
+    """Win the LAST round of `body`'s shift ladder, and return the trophy text.
+
+    The first three rounds are proven above by driving them; this seeds the
+    ladder at its last round so a second prize can be asked about without
+    another four-round drive."""
+    pg.evaluate("() => { document.body.classList.remove('trophying'); window.__road.showGarage(); }")
+    pg.wait_for_timeout(200)
+    walk_to(pg, body)
+    cycle_to(pg, 'INTERCEPT TOURNAMENT')
+    pg.evaluate("() => window.__road.seedTour({ round: 3 })")
+    pg.click('[data-act="drive"]')
+    pg.wait_for_timeout(1500)
+    pg.evaluate("() => window.__road.setTimed(false)")
+    pg.evaluate("() => window.__road.stageCleared()")
+    if not until(pg, "() => window.__road.tourState().done === true",
+                 timeout=15000, required=False):
+        return ''
+    pg.wait_for_timeout(300)
+    return pg.evaluate("() => { const v = document.getElementById('veil');"
+                       "        return (v && !v.classList.contains('hidden')) ? v.textContent : ''; }")
+
+
 def strictly_down(xs):
     return all(b < a for a, b in zip(xs, xs[1:]))
 
@@ -218,6 +261,8 @@ with sync_playwright() as p:
             check(False, 'the road arm reached a police car on the tournament', f'{got}')
         else:
             ladder = tour(pg)['ladder']
+            before = pg.evaluate("""() => [...document.querySelectorAll('[data-act^="paint:"]')]
+                                        .map(b => b.dataset.act.slice(6))""")
             seen_legs, seen_rounds = [], []
             for n in range(len(ladder)):
                 # ROUND ONE IS ENTERED FROM THE GARAGE AND THE REST FROM THE
@@ -279,12 +324,65 @@ with sync_playwright() as p:
                 "        return (v && !v.classList.contains('hidden')) ? v.textContent : ''; }")
             check('TOURNAMENT COMPLETE' in trophy, 'and the trophy screen is up',
                   trophy[:60].strip())
-            # IT PAYS NOTHING YET, AND THAT IS ASSERTED RATHER THAN LEFT OPEN.
-            # RLG-212's third part is the owner's open question, so a build that
-            # quietly invented a prize is a build that answered it without them.
-            check('UNLOCKED' not in trophy.upper(),
-                  'and claims no prize - RLG-212 part 3 is the owner\'s',
-                  'a prize was announced' if 'UNLOCKED' in trophy.upper() else 'nothing claimed')
+            # ---- WHAT IT PAID (owner, 2026-09-17) -------------------------------
+            # The CRUISER ladder pays the dozen colours for the police livery,
+            # and only that: not the racing flip paints, and not the police ones.
+            opts = pg.evaluate("() => window.Arcade.save.get('interstate-opts') || {}")
+            check('POLICE COLOURS UNLOCKED' in trophy,
+                  'the CRUISER ladder announces the police colours', trophy[60:130].strip())
+            check(opts.get('copcolours') is True, 'and writes them into the save',
+                  f"copcolours={opts.get('copcolours')}")
+            check(not opts.get('copiridescent') and not opts.get('iridescent'),
+                  'and writes neither iridescent flag',
+                  f"copiridescent={opts.get('copiridescent')} iridescent={opts.get('iridescent')}")
+            after = paint_after(pg, 'CRUISER')
+            check(len(before) == 2 and len(after) == 12,
+                  'the CRUISER palette grew from two to twelve',
+                  f'{len(before)} -> {len(after)}')
+            check(after[:2] == ['WHITE', 'BLACK'] and 'ORACLE' not in after,
+                  'white and black first, and no flip paint yet', ', '.join(after[:4]) + ' ...')
+            # THE PRIZE STAYS WITH THE FORCE. A racing car's palette is the base
+            # dozen before and after - `copcolours` must not open anything there.
+            check(len(paint_after(pg, 'HATCH')) == 12 and
+                  'ORACLE' not in paint_after(pg, 'HATCH'),
+                  'and a racing car gained nothing', ', '.join(paint_after(pg, 'HATCH')[-2:]))
+
+            # ---- A SECOND WIN CLAIMS NOTHING NEW (RLG-202) --------------------
+            # Run the last round again: the flag is already held, so the trophy
+            # must not announce it a second time.
+            again = last_round(pg, 'CRUISER')
+            check(again and 'UNLOCKED' not in again,
+                  'a second CRUISER ladder announces nothing', again[:60].strip() if again else 'no trophy')
+
+            # ---- AND THE SUPERCRUISER LADDER PAYS THE FLIP PAINTS -------------
+            sup = last_round(pg, 'SUPERCRUISER')
+            opts = pg.evaluate("() => window.Arcade.save.get('interstate-opts') || {}")
+            check(sup and 'IRIDESCENT POLICE PAINT UNLOCKED' in sup,
+                  'the SUPERCRUISER ladder announces iridescent police paint',
+                  sup[60:140].strip() if sup else 'no trophy')
+            check(opts.get('copiridescent') is True and not opts.get('iridescent'),
+                  'and writes the POLICE flag, not the racing one',
+                  f"copiridescent={opts.get('copiridescent')} iridescent={opts.get('iridescent')}")
+            cr = paint_after(pg, 'CRUISER')
+            check(len(cr) == 17 and 'ORACLE' in cr,
+                  'both force cars now offer the flip paints', f'CRUISER {len(cr)} choices')
+            check('ORACLE' not in paint_after(pg, 'HATCH'),
+                  'and a racing car still does not', '')
+
+            # ---- A POLICE COLOUR IS ITS OWN (RLG-212) ------------------------
+            # Paint the HATCH pink and the CRUISER lime through the real
+            # swatches: neither may take the other's colour.
+            walk_to(pg, 'HATCH'); pg.click('[data-act="paint:PINK"]'); pg.wait_for_timeout(120)
+            walk_to(pg, 'CRUISER')
+            first = pg.evaluate("() => window.__road.paint ? window.__road.paint() : null")
+            pg.click('[data-act="paint:LIME"]'); pg.wait_for_timeout(120)
+            walk_to(pg, 'HATCH')
+            hatch = pg.evaluate("() => window.__road.paint()")
+            walk_to(pg, 'CRUISER')
+            cop = pg.evaluate("() => window.__road.paint()")
+            check(first != 'PINK', 'the cruiser did not take the racing colour', f'{first}')
+            check(hatch == 'PINK' and cop == 'LIME',
+                  'and each keeps its own', f'HATCH {hatch}, CRUISER {cop}')
 
         check(errs == [], 'the road raised no page error', errs[0][:90] if errs else '')
 

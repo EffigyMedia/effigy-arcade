@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.72';
+window.ROAD_BUILD = '0.14.73';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16699,6 +16699,17 @@ function fieldHeat(dt){
    after the thing is decided. `coasting` is also what stops `snd.drive()`
    re-opening the engine voices sixty times a second under a `snd.quiet()`.
    ------------------------------------------------------------------------- */
+/* ---- WHAT A SHIFT LADDER PAYS (owner, 2026-09-17, RLG-212) ----------------
+   Keyed by the car's RACE class, because that is what the shift is run
+   against: a CRUISER polices the sports field and a SUPERCRUISER the super one.
+   Both prizes are paint for the police livery, and both are police flags - see
+   `copPaintChoices`. A production ladder has no police car and no row.
+   ------------------------------------------------------------------------- */
+const SHIFT_PAYS = { sports:'copcolours', super:'copiridescent' };
+const SHIFT_PAYS_SAY = {
+  copcolours:    'POLICE COLOURS UNLOCKED · BOTH FORCE CARS',
+  copiridescent: 'IRIDESCENT POLICE PAINT UNLOCKED · BOTH FORCE CARS'
+};
 function endShift(won){
   if(finished) return;
   finished = true;
@@ -16733,7 +16744,16 @@ function endShift(won){
      -------------------------------------------------------------------- */
   if(tourOn && won){
     if(tourRound >= tourRounds() - 1){
-      setTimeout(() => showShiftTrophy(), 700);
+      /* ---- THE PRIZE IS WRITTEN HERE, AT THE FINISH (RLG-212) ----------
+         Not on the trophy screen, for the reason the racing ladder gives: a
+         player who closes the app in the 700ms before it draws has still won.
+         And WHETHER IT WAS NEW is decided here too, before the write, because
+         after the write the answer is always yes (RLG-202). */
+      const pays = SHIFT_PAYS[classOf(optBody)] || '';
+      const had  = !!(pays && unlocked(pays));
+      if(pays && !had && AR && AR.save)
+        AR.save.merge((GAME_ID + '-opts'), { [pays]: true });
+      setTimeout(() => showShiftTrophy(had ? '' : pays), 700);
     } else {
       tourRound++;
       setTimeout(() => showShiftRound(), 700);
@@ -28909,8 +28929,13 @@ function openVeil(html, go){
     b.addEventListener('click', () => {
       optPaint = b.dataset.act.slice(6);
       /* only an UNRESTRICTED car's choice becomes the remembered one — picking
-         black for the cruiser must not turn every other car black */
-      if(paintChoices().length >= BASE_PAINT_KEYS.length){
+         black for the cruiser must not turn every other car black. A police
+         car keeps its own (RLG-212), and is asked first because its count of
+         choices can now match a racing car's. */
+      if(dutyLegal(optBody)){
+        copPaint = optPaint;
+        if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { copPaint:optPaint });
+      } else if(paintChoices().length >= BASE_PAINT_KEYS.length){
         freePaint = optPaint;
         if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { paint:optPaint });
       }
@@ -29034,9 +29059,32 @@ function garageCard(){
    but because a lime police car is a different joke than the one this game is
    telling. Everything else takes the full dozen.
    ------------------------------------------------------------------------- */
+/* ---- AND A SHIFT TOURNAMENT WIDENS IT (owner, 2026-09-17, RLG-212) -------
+   "for winning the cruiser intercept you get more colors of the same livery
+   instead of just black-and-white... If you win the interceptor intercept you
+   get the iridescent color pallets." And: "The iridescent pallets are still
+   with the same livery though."
+
+   SO THE LIMIT ABOVE IS NOW THE STARTING POINT, NOT THE RULE. A police car
+   starts white or black, and the two prizes add to that: the dozen colours for
+   the CRUISER ladder, the flip paints for the SUPERCRUISER one. Both are
+   police flags - `copiridescent` is not the racing `iridescent`, so winning a
+   shift does not repaint the rest of the garage.
+
+   THE TWO FORCE CARS STILL SHARE ONE PALETTE, so a prize won in either car
+   shows on both. `dutyLegal` asks the record rather than naming two bodies,
+   which is the shape RLG-181 asked for.
+   ------------------------------------------------------------------------- */
+const COP_BASE_PAINT = ['WHITE', 'BLACK'];
+function copPaintChoices(){
+  let out = COP_BASE_PAINT.slice();
+  if(unlocked('copcolours'))
+    out = out.concat(BASE_PAINT_KEYS.filter(k => COP_BASE_PAINT.indexOf(k) < 0));
+  if(unlocked('copiridescent')) out = out.concat(IRIDESCENT_KEYS);
+  return out;
+}
 function paintChoices(){
-  /* the two force cars share one palette — the super cruiser is one of theirs */
-  if(optBody === 'CRUISER' || optBody === 'SUPERCRUISER') return ['WHITE','BLACK'];
+  if(dutyLegal(optBody)) return copPaintChoices();
   if(optBody === 'CAB')     return ['GOLD'];        /* a cab is yellow */
   /* the iridescent set only appears once the sports ladder has been won */
   return unlocked('iridescent') ? PAINT_KEYS : BASE_PAINT_KEYS;
@@ -29049,8 +29097,20 @@ function paintChoices(){
    put back the moment you leave a restricted one.
    ------------------------------------------------------------------------ */
 let freePaint = 'WHITE';
+/* ---- AND A POLICE CAR REMEMBERS ITS OWN (RLG-212) -----------------------
+   The rule above tells "restricted" from "free" by COUNTING the choices, and a
+   police car with the colours won has as many as a racing car. Left to that
+   test, the cruiser would have been treated as free and handed the racing
+   car's colour - a pink HATCH would have produced a pink patrol car the first
+   time the player looked at it. So the force keeps a colour of its own, and a
+   car is asked what it IS before the count is asked anything. */
+let copPaint = 'WHITE';
 function syncPaintForBody(){
   const allowed = paintChoices();
+  if(dutyLegal(optBody)){
+    optPaint = allowed.indexOf(copPaint) >= 0 ? copPaint : allowed[0];
+    return;
+  }
   if(allowed.length >= BASE_PAINT_KEYS.length) optPaint = freePaint;
   else if(allowed.indexOf(optPaint) < 0)   optPaint = allowed[0];
 }
@@ -29058,7 +29118,17 @@ function paintSwatches(){
   return '<div class="swatches">' + paintChoices().map(k =>
     '<button class="sw' + (k === optPaint ? ' on' : '') + '" data-act="paint:' + k +
     '" style="background:' + PAINT[k].body + '" aria-label="' + k + '"></button>'
-  ).join('') + '</div>';
+  ).join('') + '</div>' + copPaintHint();
+}
+/* ---- A POLICE CAR SAYS WHAT ITS PAINT PRIZES ARE (RLG-212) ---------------
+   The silhouette rule, applied to paint: a prize nobody knows about is not a
+   reward. Each line disappears once its prize is won. */
+function copPaintHint(){
+  if(!dutyLegal(optBody)) return '';
+  const lines = [];
+  if(!unlocked('copcolours'))    lines.push('MORE COLOURS · WIN A CRUISER INTERCEPT TOURNAMENT');
+  if(!unlocked('copiridescent')) lines.push('IRIDESCENT · WIN A SUPERCRUISER INTERCEPT TOURNAMENT');
+  return lines.map(s => '<div class="gnote">' + s + '</div>').join('');
 }
 /* Where the PAINT is inside a sprite, as opposed to where the canvas is. A
    sprite is a canvas with a car somewhere in it, and every question about how
@@ -30787,15 +30857,11 @@ function showShiftRound(){
 }
 
 /* ---- AND THE END OF A SHIFT LADDER (owner, 2026-09-16, RLG-212) -----------
-   IT PAYS NOTHING YET, AND THAT IS THE RULING'S OWN OPEN QUESTION rather than
-   an omission. RLG-212's third part is the owner's: "We need to find slash
-   create more things to unlock so that beating a sports or super tournament
-   intercept unlocks something" - stated as a problem to solve, not as an
-   answer. Nothing in this game pays for police work at all today.
-
-   SO THE SCREEN SAYS WHAT WAS DONE AND CLAIMS NOTHING. A trophy announcing a
-   prize that does not exist is the reward-that-is-a-lie RLG-203 stripped silver
-   and bronze for, pointed the other way.
+   IT PAYS PAINT FOR THE POLICE LIVERY (owner, 2026-09-17) - see `SHIFT_PAYS`.
+   `won` is the flag the finish just wrote, or '' when this ladder's prize was
+   already the player's. Then the screen says what was done and claims nothing:
+   announcing a prize the player already holds is the reward-that-is-a-lie
+   RLG-203 stripped silver and bronze for.
 
    IT IS THE RACING TROPHY'S ART AND NOT ITS PROSE. `showTrophy` computes a
    class ladder, a gold car, a police car and a standings table, and all four
@@ -30803,7 +30869,7 @@ function showShiftRound(){
    so this sets the same three flags that drive it - and `tourDone`, which is
    what retires a spent ladder on the way back through the garage (RLG-232).
    ------------------------------------------------------------------------- */
-function showShiftTrophy(){
+function showShiftTrophy(won){
   tourDone = true;
   trophyPlace = 1; trophyT = performance.now();
   document.body.classList.remove('titling');
@@ -30819,6 +30885,7 @@ function showShiftTrophy(){
         + SHIFT_MILES[SHIFT_MILES.length-1] + ' MI</b></div>' +
     '</div>' +
     '<div class="gnote">EVERY CAR STOPPED, EVERY ROUND</div>' +
+    (won && SHIFT_PAYS_SAY[won] ? '<div class="gnote">' + SHIFT_PAYS_SAY[won] + '</div>' : '') +
     '<div class="gstack">' +
       '<button class="go" data-act="again">NEW TOURNAMENT</button>' +
       '<button class="go ghost" data-act="menu">MAIN MENU</button>' +
@@ -31282,6 +31349,10 @@ if (AR && AR.options) AR.options.define([
       if(had && AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { super:true });
     }
     if(g0.paint && PAINT[g0.paint]){ optPaint = g0.paint; freePaint = g0.paint; }
+    /* the force's own colour (RLG-212). Validated against what is WON when the
+       garage syncs, so a save holding a colour whose prize was erased falls
+       back to white rather than painting a car the player cannot choose. */
+    if(g0.copPaint && PAINT[g0.copPaint]) copPaint = g0.copPaint;
     if(typeof g0.manual === 'boolean') optManual = g0.manual;
     if(typeof g0.timed === 'boolean') timedRun = g0.timed;
     /* which class a formula car enters (RLG-213). `entryClass()` validates on
@@ -33313,6 +33384,9 @@ requestAnimationFrame(frameLoop);
   API.zeroSixty = function(k){ return zeroSixty(k); };
   API.inCruiser = function(){ return inCruiser(); };
   API.paintChoices = function(){ return paintChoices(); };
+  /* the colour on the car in the garage now (RLG-212) - a check that the
+     force and the racing cars keep their own has to read it per car */
+  API.paint = function(){ return optPaint; };
   API.setBar = function(v){ barOn = v; };
   /* ---- AND WHETHER IT IS ON, WHICH IS THE HALF THAT WAS MISSING ---------
      A check that presses the button and then calls `setBar` to find out what
