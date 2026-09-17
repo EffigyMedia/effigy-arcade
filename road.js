@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.71';
+window.ROAD_BUILD = '0.14.72';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -856,6 +856,41 @@ function clockRuns(){ return (mode === 'race') || timedRun; }
    A gold at the end unlocks FORMULA, and the unlock is permanent.
    =========================================================================== */
 const TOUR_MILES = [10, 12, 16, 24];
+/* ---- AND THE SHIFT'S LADDER RUNS THE OTHER WAY (owner, 2026-09-16, RLG-212)
+   Owner: "instead of the races getting longer, they get shorter, so they get
+   harder." And, when an earlier session read that ruling's own caution as a
+   block and stopped: "I actually did want the distances of a rate inverse. I
+   never said otherwise. If it turns out not to work, then we can rebalance."
+
+   THE DIFFICULTY IS THE OPPOSITE QUANTITY IN THE TWO MODES. A racing round is
+   won on pace, so endurance is what makes a later round harder and the ladder
+   climbs. An INTERCEPT round is won on how fast you can put eleven cars away,
+   and the race distance is the mode's CLOCK - you lose the moment a rival
+   reaches the line. Less road is less time. So the ladder falls.
+
+   IT IS THE RACING LADDER REVERSED, and it is a TUNABLE WITH A COMMITTED
+   DEFAULT rather than a decision waiting on evidence. Nobody has yet played
+   the mode to know whether ten miles is enough road to stop eleven cars, and
+   that is what the owner's "rebalance" is for. `FIELD_SWING` is the second
+   dial if distance alone turns out too blunt: a shorter round is not the only
+   way to make one harder, and a quieter one is the other.
+   ------------------------------------------------------------------------- */
+const SHIFT_MILES = [24, 16, 12, 10];
+/* ---- ONE LADDER READ THROUGH ONE DOOR ------------------------------------
+   Eight places read `TOUR_MILES[tourRound]` and `TOUR_MILES.length` - the
+   finish line, the HUD, the save's clamp, the garage note, three screens and a
+   harness seam - and each of them was about to get its own `playerIsPolice()`
+   branch. That is the shape this file has paid for three times over: a rule
+   stated in eight places is a rule that is wrong in one of them.
+
+   WHICH LADDER IS A QUESTION ABOUT WHO IS DRIVING, so the car answers it.
+   ------------------------------------------------------------------------- */
+function tourLadder(){ return playerIsPolice() ? SHIFT_MILES : TOUR_MILES; }
+function tourRounds(){ return tourLadder().length; }
+function legMiles(){
+  const L = tourLadder();
+  return L[Math.min(Math.max(tourRound, 0), L.length - 1)];
+}
 const TOUR_PTS   = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1, 0, 0];   /* by place */
 let tourOn = false, tourRound = 0, tourPts = 0, tourField = [];
 /* ---- A FINISHED TOURNAMENT IS RETIRED ON THE WAY BACK IN (RLG-232) -------
@@ -986,7 +1021,7 @@ function tourLoad(cls){
   tourClass = cls || '';
   const s = tourAll()[cls];
   if(!s) return false;
-  tourRound   = Math.min(Math.max(s.round|0, 0), TOUR_MILES.length - 1);
+  tourRound   = Math.min(Math.max(s.round|0, 0), tourRounds() - 1);
   tourPts     = Math.max(s.pts|0, 0);
   tourRetries = Math.min(Math.max(s.retries === undefined ? TOUR_RETRIES
                                                           : s.retries|0, 0), TOUR_RETRIES);
@@ -16183,7 +16218,14 @@ let stopped = 0;
    is the build this ruling replaces. */
 let gridPinLast = false;
 function gridSlot(){
-  if(gridPinLast || !tourOn || tourRound <= 0) return FIELD;
+  /* ---- AND A SHIFT ALWAYS STARTS AT THE BACK (RLG-212) -----------------
+     RLG-274 grids a tournament round from the standings, and a shift has none:
+     `tourStanding()` counts rivals with more POINTS than the player, nobody on
+     a shift scores any, and the answer would have been pole in every round
+     after the first. The police arrive from behind - RLG-157 - and the mode is
+     the work of getting past eleven cars, so the back of the grid is not a
+     default here, it is the mode. */
+  if(gridPinLast || playerIsPolice() || !tourOn || tourRound <= 0) return FIELD;
   return Math.min(Math.max(tourStanding() - 1, 0), FIELD);
 }
 function buildField(){
@@ -16346,7 +16388,7 @@ function buildField(){
     r.launchT = LAUNCH.aiFor;
   });
   /* a tournament round sets its own distance */
-  finishZ = pos + (tourOn ? TOUR_MILES[tourRound] : RACE_MILES) * MILE;
+  finishZ = pos + (tourOn ? legMiles() : RACE_MILES) * MILE;
   /* ---- AND THE READOUT OPENS ON THE TRUTH (RLG-274) --------------------
      `place` is recomputed every frame from the cars actually ahead, so a wrong
      value here corrects itself within a frame - but that frame is the one the
@@ -16673,9 +16715,32 @@ function endShift(won){
   snd.quiet();
   menuMusic();
   snd.checkpoint();
-  setTimeout(() => showEnd(won
-    ? 'SHIFT CLEAR · ' + stopped + ' OF ' + FIELD + ' STOPPED'
-    : 'THEY GOT THROUGH · ' + stopped + ' OF ' + FIELD + ' STOPPED'), 700);
+  const line = (won ? 'SHIFT CLEAR · ' : 'THEY GOT THROUGH · ')
+             + stopped + ' OF ' + FIELD + ' STOPPED';
+  /* ---- A TOURNAMENT ROUND IS PASS OR FAIL (owner, 2026-09-16, RLG-212) ----
+     A racing round is SCORED - you take points for where you finished and a
+     bad round is recoverable. A shift has no place to finish in: the mode's
+     one number is how many of the field are still running, and the owner's
+     end condition is binary - "You have to take out all the racers before the
+     race finishes" (RLG-203). So the ladder advances on a clear and nothing
+     else, and a round that lost costs an attempt.
+
+     THE LOSS NEEDS NO BRANCH HERE. `showEnd` already hands a tournament to
+     `showTourEnd` (RLG-268), which spends the retry on the press, re-runs the
+     same round, and ends the ladder when the attempts run out. That is the
+     shape RLG-232 asked for: one door, and a third way to end a run added
+     tomorrow is covered by construction.
+     -------------------------------------------------------------------- */
+  if(tourOn && won){
+    if(tourRound >= tourRounds() - 1){
+      setTimeout(() => showShiftTrophy(), 700);
+    } else {
+      tourRound++;
+      setTimeout(() => showShiftRound(), 700);
+    }
+    return;
+  }
+  setTimeout(() => showEnd(line), 700);
 }
 /* ---- THE SLOW-DOWN ZONE IN FRONT OF A POLICE CAR (owner, 2026-09-15, RLG-259)
    "We are also missing the proper functionality for them to slow you down if a
@@ -17126,7 +17191,7 @@ function stepRacers(dt){
     snd.checkpoint();
     if(tourOn){
       tourScore(place);
-      const last = (tourRound >= TOUR_MILES.length - 1);
+      const last = (tourRound >= tourRounds() - 1);
       if(last){
         const st = tourStanding();
         /* gold unlocks the formula car, silver the tuner, bronze the muscle
@@ -28686,7 +28751,7 @@ function hud(){
     const lab = $('placeWrap').querySelector('span');
     if(lab) lab.textContent = onShift ? 'LEFT' : 'PLACE';
     $('place').textContent = onShift ? (running() + '/' + FIELD) : (place + '/12');
-    const legMi = tourOn ? TOUR_MILES[tourRound] : RACE_MILES;
+    const legMi = tourOn ? legMiles() : RACE_MILES;
     $('dist').innerHTML = Math.max(0, legMi - dist).toFixed(1) + '<i>MI</i>';
   }
   drawDials();
@@ -29554,10 +29619,17 @@ function showGarage(){
          start, not a fixed light (RLG-051). */
       '<button class="go ghost" data-act="time">TIME \u00B7 <b>' +
         TIMES[optTime].key + '</b></button>' +
+      /* ---- WHAT THE LADDER UNDER YOU SAYS -------------------------------
+         The tail differs because the two ladders carry different state: a
+         racing round is worth points and a standing, and a shift round is
+         worth an attempt (RLG-212). The head - which round, how far - is the
+         same sentence for both and is read through `legMiles`. */
       (mode === 'race' && tourOn
-        ? '<div class="gnote">ROUND ' + (tourRound+1) + ' OF 4 \u00B7 ' +
-          TOUR_MILES[tourRound] + ' MI' +
-          (tourRound ? ' \u00B7 ' + tourPts + ' PTS, P' + tourStanding() : '') +
+        ? '<div class="gnote">ROUND ' + (tourRound+1) + ' OF ' + tourRounds() +
+          ' \u00B7 ' + legMiles() + ' MI' +
+          (playerIsPolice()
+            ? ' \u00B7 ' + Math.max(0, tourRetries|0) + ' ATTEMPTS LEFT'
+            : (tourRound ? ' \u00B7 ' + tourPts + ' PTS, P' + tourStanding() : '')) +
           '</div>' : '') +
       /* practice has a clock only if you ask for one */
       (mode === 'race' ? '' :
@@ -29594,13 +29666,25 @@ function showGarage(){
            than the only one - a hardware back-press or a stale veil must not be
            able to walk a bus into a tournament */
         if(!modesOffered(optBody)) return;
-        /* ---- A POLICE CAR HAS TWO MODES, NOT THREE (RLG-203) ------------
-           TEST DRIVE and INTERCEPT, and the cycle is between those two alone.
-           It writes the SHIFT and never the racing car's setting, which is the
-           whole of why the two are separate variables.
+        /* ---- A POLICE CAR HAS THREE MODES TOO (owner, 2026-09-16, RLG-212)
+           TEST DRIVE, INTERCEPT, INTERCEPT TOURNAMENT - the same three-stop
+           shape the racing control has, which is the symmetry the owner asked
+           for. RLG-203 took SINGLE RACE and TOURNAMENT away from these cars;
+           this gives the second of them back in the mode's own terms.
+
+           IT WRITES THE SHIFT AND NEVER THE RACING CAR'S SETTING, which is the
+           whole of why they are separate variables.
            -------------------------------------------------------------- */
         if(dutyLegal(optBody)){
-          duty = !duty;
+          if(!duty){ duty = true; dutyTour = false; }
+          /* ---- TURNING IT ON PICKS THE SAVED LADDER UP (RLG-268) --------
+             The same act as the racing control's middle stop, and it has to
+             behave the same way: a shift ladder is saved per class, so asking
+             for the tournament is exactly where a player asks to continue the
+             one they quit. `tourLoad` resets first and lays the save over the
+             top, so a class with nothing saved still starts clean. */
+          else if(!dutyTour){ dutyTour = true; tourLoad(classOf(optBody)); }
+          else { duty = false; dutyTour = false; }
           enforceModeRules();
           showGarage();
           return;
@@ -29794,7 +29878,12 @@ function modesOffered(k){ return raceLegal(k) || dutyLegal(k); }
    would have been added by hand.
    ------------------------------------------------------------------------- */
 function modeLabel(){
-  if(dutyLegal(optBody)) return duty ? 'INTERCEPT' : 'TEST DRIVE';
+  /* ---- A POLICE CAR HAS THREE STOPS NOW (owner, 2026-09-16, RLG-212) -----
+     "as a [symmetry] to the single race and tournament modes for the race
+     cars." The shape matches: three stops on both controls, and the police
+     car's third is the ladder RLG-203's shift is a single round of. */
+  if(dutyLegal(optBody))
+    return duty ? (dutyTour ? 'INTERCEPT TOURNAMENT' : 'INTERCEPT') : 'TEST DRIVE';
   if(!raceLegal(optBody)) return 'TEST DRIVE';
   /* the racing car's OWN setting, read at the source rather than through
      `mode` - which is the shift's while a police car is selected */
@@ -29822,6 +29911,14 @@ function modeLabel(){
    always had; and neither writes the other's.
    ------------------------------------------------------------------------- */
 let raceMode = 'endless', raceTour = false;
+/* ---- AND THE SHIFT'S TOURNAMENT IS ITS OWN SETTING TOO (RLG-212) ---------
+   The same rule as the two above it, and for the same reason: a police car's
+   control and a racing car's control must never write each other's state. A
+   player who sets INTERCEPT TOURNAMENT, walks to a STALLION to look at it and
+   walks back has to find the tournament still on - and the STALLION must not
+   have inherited it. Three variables, three controls, no crossing.
+   ------------------------------------------------------------------------- */
+let dutyTour = false;
 /* a harness's grip on the field's pace - see the note in `stepRacers` */
 let fieldHold = null;
 function enforceModeRules(){
@@ -29835,10 +29932,11 @@ function enforceModeRules(){
      been undone by the save it did not know about. */
   if(tourDone){ tourClear(tourClass || classOf(optBody)); tourReset(); tourDone = false; }
   if(playerIsPolice()){
-    /* on shift: the race machinery on, the tournament off, and the racing car's
-       own choice left exactly where it was */
+    /* on shift: the race machinery on, the SHIFT's own tournament setting, and
+       the racing car's choice left exactly where it was. `tourOn` read `false`
+       here until RLG-212 gave the mode a ladder of its own. */
     mode = 'race';
-    tourOn = false;
+    tourOn = dutyTour;
     /* ---- AND HOT PURSUIT IS NOT OPTIONAL ON SHIFT (RLG-203) ------------
        The mode IS a pursuit - "it should play like a standard race with hot
        pursuit enabled" - and `optEasy` is that switch being off. Left on, every
@@ -29857,6 +29955,14 @@ function enforceModeRules(){
       optEasy = false;
       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
     }
+    /* ---- AND THE SHIFT LADDER FOLLOWS ITS CLASS TOO (RLG-212) ----------
+       The police branch returns early, so the swap below it never ran for a
+       car on shift - which was right while a shift could not be a tournament
+       and is a leak now that it can: walking CRUISER to SUPERCRUISER would
+       have carried a part-driven cruiser ladder straight into the super one.
+       `tourSwap` parks the outgoing class and fetches the incoming one, and
+       it returns at once when the class has not changed. */
+    tourSwap();
     return;
   }
   mode = raceMode;
@@ -30617,8 +30723,8 @@ function showRound(place){
       '<div class="gc"><span>YOUR POINTS</span><b>' + tourPts + '</b></div>' +
       '<div class="gc"><span>STANDING</span><b>P' + tourStanding() + '</b></div>' +
       '<div class="gc"><span>NEXT ROUND</span><b>' + (tourRound+1) + ' OF '
-        + TOUR_MILES.length + '</b></div>' +
-      '<div class="gc"><span>DISTANCE</span><b>' + TOUR_MILES[tourRound] + ' MI</b></div>' +
+        + tourRounds() + '</b></div>' +
+      '<div class="gc"><span>DISTANCE</span><b>' + legMiles() + ' MI</b></div>' +
     '</div>' +
     '<div class="gstack">' +
       '<button class="go" data-act="next">NEXT RACE</button>' +
@@ -30641,6 +30747,88 @@ function showRound(place){
     { next: start, garage: showGarage,
       quit: () => { tourSave(tourClass || classOf(optBody));
                     tourOn = false; showTitle(); } });
+}
+
+/* ---- between rounds OF A SHIFT (owner, 2026-09-16, RLG-212) ---------------
+   A SEPARATE SCREEN BECAUSE IT HAS NOTHING TO SAY IN COMMON. The racing card
+   is standings - a place, a point total, a championship position - and a shift
+   scores none of the three. What a shift round has is the number the mode is
+   about, how many of the field you put away, and the two facts that decide
+   whether the next one is possible: it is shorter, and you have this many
+   attempts left.
+
+   AND THE NEXT ROUND'S DISTANCE IS THE HEADLINE UNDER IT, deliberately. The
+   ladder falling is the whole design of the mode and a player must be able to
+   see it fall - four rounds that quietly get harder is a difficulty curve; four
+   rounds that say 24, 16, 12, 10 on the way past is a ladder you are climbing.
+   ------------------------------------------------------------------------- */
+function showShiftRound(){
+  openVeil(
+    '<div class="eyebrow">ROUND ' + tourRound + ' COMPLETE</div>' +
+    '<h1>SHIFT<u>CLEAR</u></h1>' +
+    '<div class="grid2">' +
+      '<div class="gc"><span>STOPPED</span><b>' + stopped + ' OF ' + FIELD + '</b></div>' +
+      '<div class="gc"><span>ATTEMPTS</span><b>' + Math.max(0, tourRetries|0) + '</b></div>' +
+      '<div class="gc"><span>NEXT ROUND</span><b>' + (tourRound+1) + ' OF '
+        + tourRounds() + '</b></div>' +
+      '<div class="gc"><span>DISTANCE</span><b>' + legMiles() + ' MI</b></div>' +
+    '</div>' +
+    '<div class="tip">LESS ROAD IS LESS TIME TO STOP THEM</div>' +
+    '<div class="gstack">' +
+      '<button class="go" data-act="next">NEXT SHIFT</button>' +
+      '<button class="go ghost" data-act="garage">CHANGE CAR</button>' +
+      '<button class="go ghost" data-act="quit">QUIT &amp; SAVE</button>' +
+    '</div>',
+    /* the same three exits as the racing card, and QUIT saves on the same terms
+       - the ladder is kept for this class and continues when it is picked */
+    { next: start, garage: showGarage,
+      quit: () => { tourSave(tourClass || classOf(optBody));
+                    tourOn = false; showTitle(); } });
+}
+
+/* ---- AND THE END OF A SHIFT LADDER (owner, 2026-09-16, RLG-212) -----------
+   IT PAYS NOTHING YET, AND THAT IS THE RULING'S OWN OPEN QUESTION rather than
+   an omission. RLG-212's third part is the owner's: "We need to find slash
+   create more things to unlock so that beating a sports or super tournament
+   intercept unlocks something" - stated as a problem to solve, not as an
+   answer. Nothing in this game pays for police work at all today.
+
+   SO THE SCREEN SAYS WHAT WAS DONE AND CLAIMS NOTHING. A trophy announcing a
+   prize that does not exist is the reward-that-is-a-lie RLG-203 stripped silver
+   and bronze for, pointed the other way.
+
+   IT IS THE RACING TROPHY'S ART AND NOT ITS PROSE. `showTrophy` computes a
+   class ladder, a gold car, a police car and a standings table, and all four
+   are answers to questions a shift never asked. What they share is the podium,
+   so this sets the same three flags that drive it - and `tourDone`, which is
+   what retires a spent ladder on the way back through the garage (RLG-232).
+   ------------------------------------------------------------------------- */
+function showShiftTrophy(){
+  tourDone = true;
+  trophyPlace = 1; trophyT = performance.now();
+  document.body.classList.remove('titling');
+  document.body.classList.add('trophying');
+  requestAnimationFrame(drawTrophyArt);
+  openVeil(
+    '<div class="eyebrow">TOURNAMENT COMPLETE</div>' +
+    '<h1>SHIFT<u>COMMANDER</u></h1>' +
+    '<div class="grid2">' +
+      '<div class="gc"><span>ROUNDS</span><b>' + tourRounds() + ' OF '
+        + tourRounds() + '</b></div>' +
+      '<div class="gc"><span>SHORTEST</span><b>'
+        + SHIFT_MILES[SHIFT_MILES.length-1] + ' MI</b></div>' +
+    '</div>' +
+    '<div class="gnote">EVERY CAR STOPPED, EVERY ROUND</div>' +
+    '<div class="gstack">' +
+      '<button class="go" data-act="again">NEW TOURNAMENT</button>' +
+      '<button class="go ghost" data-act="menu">MAIN MENU</button>' +
+    '</div>',
+    /* `showGarage` retires the spent ladder through `enforceModeRules`, which
+       is the one place that does it for every way out of this screen */
+    { again: () => { document.body.classList.remove('trophying');
+                     showGarage(); },
+      menu:  () => { document.body.classList.remove('trophying');
+                     tourOn = false; showTitle(); } });
 }
 
 /* ---- the end of the tournament -------------------------------------------
@@ -30934,18 +31122,30 @@ function showTourEnd(reason){
      HERE rather than on the way out, because every button on this screen leads
      out of it and the flag must not depend on which one is pressed. */
   if(out){ tourClear(tourClass || classOf(optBody)); tourOn = false; }
+  /* ---- AND A SHIFT LOSES IN ITS OWN TERMS (RLG-212) --------------------
+     The two left-hand cells are the standings, which a shift does not keep -
+     `tourScore` is only ever reached from the racing finish line, so on a
+     shift they would read 0 and P1 for a round that was just lost. What a
+     shift has instead is the number the mode is about. The two right-hand
+     cells and the whole retry rule are unchanged, because losing costs the
+     same thing in both ladders. */
+  const onShift = playerIsPolice();
   openVeil(
     '<div class="eyebrow">' + reason + '</div>' +
     '<h1>' + (out ? 'OUT' : 'ROUND ' + (tourRound + 1)) +
-      '<u>' + (out ? 'OF ATTEMPTS' : 'OF ' + TOUR_MILES.length) + '</u></h1>' +
+      '<u>' + (out ? 'OF ATTEMPTS' : 'OF ' + tourRounds()) + '</u></h1>' +
     '<div class="grid2">' +
-      '<div class="gc"><span>YOUR POINTS</span><b>' + tourPts + '</b></div>' +
-      '<div class="gc"><span>STANDING</span><b>P' + tourStanding() + '</b></div>' +
+      (onShift
+        ? '<div class="gc"><span>STOPPED</span><b>' + stopped + ' OF ' + FIELD + '</b></div>' +
+          '<div class="gc"><span>STILL RUNNING</span><b>' + running() + '</b></div>'
+        : '<div class="gc"><span>YOUR POINTS</span><b>' + tourPts + '</b></div>' +
+          '<div class="gc"><span>STANDING</span><b>P' + tourStanding() + '</b></div>') +
       '<div class="gc"><span>DISTANCE</span><b>' + dist.toFixed(1) + ' MI</b></div>' +
       '<div class="gc"><span>RETRIES</span><b>' + left + '</b></div>' +
     '</div>' +
     '<div class="gstack">' +
-      (out ? '' : '<button class="go" data-act="again">RETRY THAT RACE</button>') +
+      (out ? '' : '<button class="go" data-act="again">RETRY THAT ' +
+                  (onShift ? 'SHIFT' : 'RACE') + '</button>') +
       '<button class="go' + (out ? '' : ' ghost') + '" data-act="quit">' +
         /* the same words as the between-rounds screen, because it is the same
            act: the ladder is kept. Out of attempts there is nothing left to
@@ -31451,7 +31651,7 @@ requestAnimationFrame(frameLoop);
   API.seedTour = function(o){
     o = o || {};
     if(o.round !== undefined) tourRound = Math.min(Math.max(o.round|0, 0),
-                                                   TOUR_MILES.length - 1);
+                                                   tourRounds() - 1);
     if(o.pts !== undefined) tourPts = Math.max(o.pts|0, 0);
     if(Array.isArray(o.field))
       for(let i=0;i<tourField.length;i++) tourField[i].pts = Math.max(o.field[i]|0, 0);
@@ -32322,7 +32522,13 @@ requestAnimationFrame(frameLoop);
                                          it" has to be able to read the row rather than
                                          infer it from what happens next. */
                                       retries:tourRetries, cls:tourClass,
-                                      max:TOUR_RETRIES, rounds:TOUR_MILES.length,
+                                      max:TOUR_RETRIES, rounds:tourRounds(),
+                                      /* RLG-212: WHICH ladder, and how long this
+                                         round is. A check for "the shift's rounds
+                                         get shorter" has to read the distances the
+                                         game will actually drive rather than the
+                                         constant it hopes is being used. */
+                                      miles:legMiles(), ladder:tourLadder().slice(),
                                       saved:tourAll() }; };
   /* ---- THE FALSIFIER'S HANDLE ON RLG-232 --------------------------------
      `tour-exit-test --falsify` needs the OLD behaviour: a trophy left by the
@@ -32506,6 +32712,15 @@ requestAnimationFrame(frameLoop);
      can report that it had to change it rather than assume.
      ------------------------------------------------------------------- */
   API.finishBox = function(){ return finishBox; };
+  /* ---- HOW LONG THE ROAD ACTUALLY IS, IN MILES (RLG-212) ----------------
+     `finishZ` is laid down once by `buildField` and is what the loss condition
+     reads, so it is the ground truth for "this round is shorter". A check that
+     asked the LADDER instead would be asking the same table the road was
+     supposed to have been built from, and a build where the two disagree - the
+     screens counting down from 16 while the line sits at 24 - is exactly the
+     defect that is worth catching. Measured from the START of the leg, which is
+     `finishZ` less however far has been driven. */
+  API.raceLeg = function(){ return (finishZ - pos) / MILE + dist; };
   API.parkFinish = function(dz){
     const was = mode;
     if(mode !== 'race') mode = 'race';
@@ -32545,12 +32760,25 @@ requestAnimationFrame(frameLoop);
   API.duty = function(){
     return { on: playerIsPolice(), chosen: duty, legal: dutyLegal(optBody), body: optBody,
              mode: mode, tour: tourOn, pursuit: !optEasy,
+             /* RLG-212: the SETTING, against `tour` which is whether it is in
+                effect. They differ for a racing car exactly as `chosen` and
+                `on` do, and a check for "the tournament survived the walk"
+                needs the one the walk cannot take away. */
+             chosenTour: dutyTour,
              label: modeLabel(), raceLegal: raceLegal(optBody),
              cls: classOf(optBody) };
   };
   API.setDuty = function(v){
     duty = !!v;
     enforceModeRules();          /* it is what decides `mode`, in one place */
+    return API.duty();
+  };
+  /* the shift's tournament, set without walking the control (RLG-212). It sits
+     with `setDuty`: the CONDITION is staged and the RULE is measured. */
+  API.setDutyTour = function(v){
+    dutyTour = !!v;
+    if(dutyTour) tourLoad(classOf(optBody));
+    enforceModeRules();
     return API.duty();
   };
   /* crates still on the road that nobody has taken. A crate that paid nothing
@@ -33365,6 +33593,25 @@ requestAnimationFrame(frameLoop);
              lawless: fieldLawless(), pts: Math.round(heatPts), stars: heat,
              want: Math.min(4, WINGMEN + dispatchCap()),
              swing: FIELD_SWING, limit: SPEED_LIMIT };
+  };
+  /* ---- A SHIFT THAT HAS BEEN CLEARED (RLG-212) --------------------------
+     THE LADDER IS WHAT THIS STAGES FOR, NOT THE STOP. `stageStop` and
+     `shift-stop-test` already measure the rule that puts one rival away, and
+     they say in as many words what they cannot prove: the manoeuvre itself
+     cannot be flown by a harness. A check about what happens BETWEEN rounds
+     must not be blocked on that, so the condition - every rival out - is
+     staged, and the RULE measured is the one the tournament owns: whether a
+     clear advances the round, whether the next round is shorter, and what the
+     last one pays.
+
+     IT GOES THROUGH `stopRacer`, the product's own path, rather than setting
+     `r.out` from outside. A tally written by the check is a tally the check is
+     then reading back from itself, and `stopped` is on both the round card and
+     the end card.
+     -------------------------------------------------------------------- */
+  API.stageCleared = function(){
+    for(const r of racers) if(!r.out) stopRacer(r);
+    return { running: running(), stopped: stopped };
   };
   /* ---- PUT A RACER WHERE THE STOP CAN BE TESTED -------------------------
      THE MANOEUVRE ITSELF CANNOT BE FLOWN BY A HARNESS. Getting in front of a

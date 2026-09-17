@@ -156,6 +156,8 @@ with sync_playwright() as p:
     pg.click('[data-act="mode"]')
     pg.wait_for_timeout(120)
     armed = control(pg, 'mode')
+    # WHICH car was armed, so the walk back at the end returns to THAT one
+    armed_car = car(pg)
     check(armed and armed['label'].endswith('TOURNAMENT'),
           'a race mode can be set at all',
           f"{car(pg)} reads '{armed['label'] if armed else 'no control'}'")
@@ -186,25 +188,40 @@ with sync_playwright() as p:
         st = control(pg, 'mode')
         check(st['label'].endswith('INTERCEPT'), 'one press reaches INTERCEPT',
               f"'{st['label']}'")
-        # THE WHOLE OF "replace their race modes": the cycle has two stops, so a
-        # second press must come back rather than reaching SINGLE RACE.
+        # THE CYCLE HAS THREE STOPS NOW (RLG-212), and the third is the shift's
+        # own tournament - so a second press must reach INTERCEPT TOURNAMENT and
+        # a THIRD must come back. This read "a second press returns to TEST
+        # DRIVE" while the police car had two modes.
+        pg.click('[data-act="mode"]')
+        pg.wait_for_timeout(120)
+        mid = control(pg, 'mode')
+        check(mid['label'].endswith('INTERCEPT TOURNAMENT'),
+              'a second press reaches INTERCEPT TOURNAMENT',
+              f"'{mid['label']}'")
         pg.click('[data-act="mode"]')
         pg.wait_for_timeout(120)
         back = control(pg, 'mode')
         check(back['label'].endswith('TEST DRIVE'),
-              'and a second press returns to TEST DRIVE, not to a race',
+              'and a third press returns to TEST DRIVE, not to a race',
               f"'{back['label']}'")
 
-        # walk the whole cycle and prove no race mode is reachable at all
+        # walk the whole cycle and prove no RACING mode is reachable at all
         labels = []
         for _ in range(6):
             labels.append(control(pg, 'mode')['label'].split('·')[-1].strip())
             pg.click('[data-act="mode"]')
             pg.wait_for_timeout(90)
-        check('SINGLE RACE' not in labels and 'TOURNAMENT' not in labels,
-              'no race mode is reachable in a police car',
+        # A BARE 'TOURNAMENT' IS THE RACING ONE and is still forbidden here; the
+        # police car's third stop is 'INTERCEPT TOURNAMENT'. Matching the word
+        # alone would now pass on the racing mode leaking through, which is the
+        # exact defect this check was written for.
+        stray = [n for n in labels
+                 if n == 'SINGLE RACE' or n == 'TOURNAMENT']
+        check(not stray, 'no racing mode is reachable in a police car',
               ' -> '.join(labels[:4]))
         check('INTERCEPT' in labels, 'and INTERCEPT is', ' -> '.join(labels[:4]))
+        check('INTERCEPT TOURNAMENT' in labels, 'and so is its tournament',
+              ' -> '.join(labels[:4]))
 
         # ---- HOT PURSUIT IS NOT A CHOICE ON SHIFT ----------------------------
         while not control(pg, 'mode')['label'].endswith('INTERCEPT'):
@@ -250,9 +267,21 @@ with sync_playwright() as p:
         # ---- WALKING OUT OF A POLICE CAR TAKES THE SHIFT WITH YOU ------------
         # Left set, the player would be on a sports grid with the world refusing
         # to chase them and no control anywhere that could turn it off.
-        racer, _ = walk_to(pg, 'ROADSTER')
-        check(racer == 'ROADSTER', 'the garage can get back to a racing car', f'{racer}')
-        if racer == 'ROADSTER':
+        # ---- AND IT WALKS BACK TO THE CAR THE TOURNAMENT WAS SET ON ---------
+        # It walked to the ROADSTER, which is a SPORTS car and is LOCKED in this
+        # save - the unlock written at the top grants `super` and the two police
+        # cars, not `sports`. A locked car draws no controls at all (RLG-223), so
+        # `control(pg, 'mode')` returned None and the check below raised a
+        # TypeError rather than failing. That is worse than a failure: the run
+        # stopped, and the two checks after it never ran at all.
+        #
+        # THE CAR HAS TO BE THE ONE GUARD 2 ARMED. The whole claim is "the racing
+        # car still holds the mode it was left on", and the car that was left on
+        # TOURNAMENT is the one the garage opened on - a production car, which is
+        # the class the player starts in and is never locked (RLG-213).
+        racer, _ = walk_to(pg, armed_car)
+        check(racer == armed_car, 'the garage can get back to a racing car', f'{racer}')
+        if racer == armed_car:
             d = pg.evaluate("() => window.__road.duty()")
             # THE CHOICE MAY SURVIVE; THE SHIFT MAY NOT. `chosen` is what the
             # player picked and `on` is whether this car can act on it, and the
@@ -263,9 +292,14 @@ with sync_playwright() as p:
             # convenience: the racing car was left on TOURNAMENT at the top of
             # this run, and going to look at the police cars must not quietly
             # reset it - which is exactly what one shared `mode` did.
-            check(control(pg, 'mode')['label'].endswith('TOURNAMENT'),
+            # NOT `endswith('TOURNAMENT')`: since RLG-212 the police car has a
+            # tournament of its own, and the loose form would pass on the
+            # SHIFT's setting leaking into a racing car - which is the one
+            # thing the two separate variables exist to prevent.
+            lab = control(pg, 'mode')['label'].split('·')[-1].strip()
+            check(lab == 'TOURNAMENT',
                   'and the racing car still holds the mode it was left on',
-                  f"'{control(pg, 'mode')['label']}'")
+                  f"'{lab}'")
 
     check(errs == [], 'the garage raised no page error', errs[0][:90] if errs else '')
 
