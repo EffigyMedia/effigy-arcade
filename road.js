@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.76';
+window.ROAD_BUILD = '0.14.77';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15968,6 +15968,38 @@ function widestHalf(){
    flank comes to rest. `EDGE_X - 0.03` is where the engine holds the car -
    see the barrier block - and it is read from the constant rather than typed. */
 function railX(){ return EDGE_X - 0.03 + widestHalf() + RAIL.skin; }
+/* ---- THE CLIFF'S EDGE IS BROKEN ROCK (owner, 2026-09-16, RLG-284) --------
+   "The cliff edge in the mountain biome should be jagged a non-uniform."
+
+   A STRAIGHT RIM READS AS A WALL. The rim ran at exactly `railX()` for the
+   whole length of a mountain, so the drop had the edge of a kerb. Rock that
+   has broken away does not keep a line.
+
+   THE JAG IS FIXED TO THE ROAD, NOT THE FRAME. It is `sceneRand` of the
+   ABSOLUTE segment, so a notch in the rim stays where it is as you drive past
+   it. A rim re-rolled each frame would shimmer, which is worse than a straight
+   one. Each slice uses its own segment's value at its near end and the next
+   segment's at its far end, so neighbouring slices meet and the rim is one
+   unbroken zig-zag.
+
+   NON-UNIFORM IN TWO WAYS. Every segment has a small jag up to `RIM_JAG.amp`.
+   On top of that, stretches of `RIM_JAG.run` segments roll once for a bite: a
+   run that wins takes a deeper notch of up to `RIM_JAG.bite` on each of its
+   segments. So the rim has rough sections and deeply broken sections, not one
+   even saw-tooth.
+
+   IT ONLY EVER GOES OUTWARD, in road widths beyond the rail. Rock between the
+   rail and the rim is a ledge; a rim inside the rail would put the drop under
+   the barrier. */
+const RIM_JAG = { amp: 0.16, bite: 0.42, odds: 0.30, run: 6 };
+function rimJag(seg){
+  let j = sceneRand(seg, 811) * RIM_JAG.amp;
+  if(sceneRand(Math.floor(seg / RIM_JAG.run), 812) < RIM_JAG.odds)
+    j += sceneRand(seg, 813) * RIM_JAG.bite;
+  return j;
+}
+/* where the rim is, in screen x, for a projected point at segment `seg` */
+function rimX(p, seg, side){ return p.x + side * p.w * (railX() + rimJag(seg)); }
 function drawRail(p1, p2, y1, y2, za, zb, side, kind, vh){
   const wall = kind === 'barrier';
   const pal  = wall ? RAIL.stone : RAIL.steel;
@@ -24659,8 +24691,8 @@ function drawRoad(){
           /* the ground runs out to the rim and no further. The rim's own line
              carries the slope down to the bottom of the screen for the nearest
              slice, which is the shoreline's trick and is here for its reason. */
-          const rx1 = p1.x + gDrop * p1.w * railX();
-          const rx2 = p2.x + gDrop * p2.w * railX();
+          const rx1 = rimX(p1, idx, gDrop);
+          const rx2 = rimX(p2, idx + 1, gDrop);
           ctx.beginPath();
           ctx.moveTo(gDrop < 0 ? W : 0, y2);
           ctx.lineTo(rx2, y2);
@@ -24714,8 +24746,8 @@ function drawRoad(){
       const dB = bioAt(idx);
       const dropSide = (dB.hazard === 'roll' && !dropOff) ? hazardSide(dB) : 0;
       if(dropSide){
-        const dx1 = p1.x + dropSide * p1.w * railX();
-        const dx2 = p2.x + dropSide * p2.w * railX();
+        const dx1 = rimX(p1, idx, dropSide);
+        const dx2 = rimX(p2, idx + 1, dropSide);
         const edge = dropSide < 0 ? 0 : W;
         /* ---- THE COLOURS GO THROUGH `mixRGB`, AND THAT IS NOT A STYLE
                CHOICE. `shade` takes `#rrggbb` ONLY - it regex-matches and
@@ -27783,7 +27815,7 @@ function drawMirrorFull(mx, my, mw, mh){
     if(!mB.truss && !dropOff){
       const mDrop = mB.hazard === 'roll' ? hazardSide(mB) : 0;
       if(mDrop){
-        const mdx = a.x + mDrop * a.w * railX();
+        const mdx = rimX(a, widx, mDrop);
         ctx.fillStyle = mixRGB(groundTone(widx, true), 0.84, DROP_DARK);
         if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, a.y, mdx - mx, my + mh - a.y); }
         else { if(mdx < mx + mw) ctx.fillRect(mdx, a.y, mx + mw - mdx, my + mh - a.y); }
@@ -32133,6 +32165,15 @@ requestAnimationFrame(frameLoop);
   API.rollSide = function(){ return rollSide(); };
   API.edgeOf = function(k, side){ return edgeAt(BIOMES[k], side); };
   API.hazardSideOf = function(k){ return hazardSide(BIOMES[k]); };
+  /* the rim's offset beyond the rail, per segment, and its tunables (RLG-284) */
+  API.rimJag = function(from, n, tune){
+    /* a check may set the tunables - all zero is the straight rim this ruling
+       replaced, which is the control a render has to differ from */
+    if(tune) for(const k in tune) if(k in RIM_JAG) RIM_JAG[k] = tune[k];
+    const out = [];
+    for(let i = 0; i < (n || 200); i++) out.push(+rimJag((from || 0) + i).toFixed(4));
+    return { jag: out, tune: Object.assign({}, RIM_JAG), rail: railX() };
+  };
   /* what a place puts on its horizon, stated rather than inferred from its name
      (RLG-102/RLG-105). A check reads this to prove nothing falls through to the
      tower default, which is what put a city skyline on a farmland. */
