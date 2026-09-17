@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.69';
+window.ROAD_BUILD = '0.14.70';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10799,6 +10799,183 @@ const OBEY = { 0: 1.00, 1: 0.60, 2: 0.25, 3: 0 };
    so a stubborn OUTLAW ends up stubborn rather than ending up where a stubborn
    COMMUTER would */
 const OBEY_FLOOR = 0.12;
+
+/* ---- ROAD RAGE (RLG-241) ------------------------------------------------
+   Owner, 2026-09-13: "if you piss off another driver they may try to run you
+   down and hit you." Answered 2026-09-16 on the four questions that gated it.
+
+   IT IS A STATE OF THE DRIVER, NEVER A CLASS. That is the standing rule this
+   engine repeats in three separate rulings - [[RLG-042]] traffic stats against
+   drivers, [[RLG-052]] indicators wired but untriggered, [[RLG-054]] the
+   personalities themselves: the car is CAPABLE and the DRIVER decides. So rage
+   lives on the same `mind` scale everything else does and nothing here names a
+   vehicle.
+
+   WHO RAGES follows the scale and a COMMUTER never does. Owner's choice from
+   three, and the reason is that it keeps the scale meaning ONE thing: you can
+   read what a car might do from how it has been driving. `RAGE_ODDS` is indexed
+   by mind, the same shape as `OBEY` and `SIGNALS` above it.
+
+   WHAT ANGERS THEM: hitting them, and leaning on the horn at them. The owner
+   took those two and left the near miss and the cut-off alone - both of which
+   happen constantly in ordinary driving, and a rage that fires when you did not
+   mean anything by it teaches the player nothing.
+
+   WHAT THEY DO DEPENDS ON WHERE THEY ARE, which is the owner's own answer and
+   is more than any of the three offered: "what they try to do would depend on
+   their position from you and maybe they should try to get in front of you and
+   brake check you first but if they're not faster than you, they quickly give
+   up on that and do one of the others based position instead."
+
+     CUT   it is trying to get in front of you, to brake-check. The first thing
+           it reaches for, and it ABANDONS it quickly if it cannot actually
+           out-run you - `RAGE_GIVEUP` is how long it will try.
+     BLOCK it is in front and braking, which is the pay-off of CUT.
+     SWIPE it is alongside, so it leans on you.
+     RAM   it is behind, so it closes and hits you.
+
+   The state is re-picked from position every `RAGE_LOOK`, so a driver that
+   fails to get past slides into the move its position affords rather than
+   holding a plan that no longer fits.
+
+   HOW IT ENDS: it cools off, or you outrun it. `RAGE_SECS` is the fuse and it
+   is re-armed while the car is still on you; `RAGE_LOST` is the distance at
+   which it gives up regardless. The same shape the police use to lose you,
+   because a player who has learnt one has learnt the other.
+
+   IT DOES NOT TOUCH THE POLICE, and that is a default rather than a ruling -
+   the owner was not asked. An angered driver draws no cruisers and defending
+   yourself against one adds no heat, because coupling this to the heat economy
+   would make a stranger's temper the player's criminal record. Say so before
+   changing it.
+   ------------------------------------------------------------------------ */
+const RAGE_ODDS  = { 0: 0, 1: 0.18, 2: 0.55, 3: 0.40 };
+const RAGE_SECS  = 14;      /* the fuse, re-armed while it is still on you     */
+const RAGE_LOST  = 26000;   /* outrun it by this and it gives up               */
+const RAGE_LOOK  = 0.45;    /* how often it re-reads its position, in seconds  */
+const RAGE_GIVEUP = 3.2;    /* how long it will try to get past before settling */
+const RAGE_NEAR  = 1600;    /* within this along the road it is ON you          */
+const RAGE_PUSH  = 1.45;    /* how much harder than its cruise it will drive    */
+/* how angry a driver of this mind gets about a provocation, 0 to 1 */
+function rageOdds(mind){ return RAGE_ODDS[mind] === undefined ? 0 : RAGE_ODDS[mind]; }
+/* ---- ANGER ONE DRIVER ---------------------------------------------------
+   Called from the two provocations. It rolls the driver's own odds ONCE per
+   provocation rather than per frame, and a driver already raging simply has
+   its fuse re-armed - so leaning on the horn at someone who is already coming
+   for you does not roll again and does not stack. */
+function anger(c, why){
+  if(!c || c.dead || c.gone || isCrossing(c)) return false;
+  if(c.rage > 0){ c.rage = RAGE_SECS; return true; }
+  if(Math.random() >= rageOdds(c.mind)) return false;
+  c.rage = RAGE_SECS;
+  c.rageWhy = why;
+  c.rageMove = 'CUT';       /* everyone reaches for the overtake first */
+  c.rageTry = RAGE_GIVEUP;
+  c.rageLook = 0;
+  ragesStarted++;
+  return true;
+}
+let ragesStarted = 0;
+/* ---- WHAT AN ANGERED DRIVER DOES, THIS FRAME (RLG-241) ------------------
+   Returns true when it has taken the frame, so the caller skips the ordinary
+   lane logic. Everything it does is expressed as speed and lane, exactly as an
+   ordinary driver's is - there is no second physics here and no collision of
+   its own, because [[RLG-277]] already makes any two overlapping bodies a
+   contact and that is the one this needs.
+   ------------------------------------------------------------------------ */
+function rageStep(c, dt, pz){
+  c.rage -= dt;
+  const dz = c.z - pz;                       /* + is ahead of the player      */
+  const gap = Math.abs(dz);
+  /* OUTRUN, OR COOLED OFF. Distance is checked before the fuse so a driver you
+     have left behind stops chasing on the frame you lose it rather than on the
+     frame its timer happens to run out. */
+  if(gap > RAGE_LOST || c.rage <= 0){
+    c.rage = 0; c.rageMove = null; c.rageWhy = null;
+    /* it goes back to its own cruise rather than to a standard one - a driver
+       calming down is still the driver it was */
+    if(c.cruiseFloor !== undefined) c.cruise = c.cruiseFloor;
+    return false;
+  }
+  /* STILL ON YOU, so the fuse is re-armed. This is why RAGE_SECS is a fuse and
+     not a duration: a driver that keeps up stays angry, and one that cannot
+     keep up runs out of it. */
+  if(gap < RAGE_NEAR) c.rage = Math.min(RAGE_SECS, c.rage + dt * 1.6);
+
+  /* ---- IT RE-READS ITS POSITION RATHER THAN HOLDING A PLAN ------------
+     Owner's own answer: "what they try to do would depend on their position
+     from you and maybe they should try to get in front of you and brake check
+     you first but if they're not faster than you, they quickly give up on that
+     and do one of the others based position instead." */
+  c.rageLook = (c.rageLook || 0) - dt;
+  if(c.rageLook <= 0){
+    c.rageLook = RAGE_LOOK;
+    if(c.rageMove === 'CUT'){
+      c.rageTry -= RAGE_LOOK;
+      /* CAN it actually get past? Its own top against the speed you are
+         actually doing. A driver slower than you abandons the overtake fast,
+         which is the half of the owner's answer that stops every rager
+         hanging uselessly off your back bumper trying to pass. */
+      const canPass = (TYPE_VMAX[c.type] || 0.58) * MAX_SPD > spd * 1.04;
+      if(dz > 260) c.rageMove = 'BLOCK';          /* made it - now brake-check */
+      else if(!canPass || c.rageTry <= 0)
+        c.rageMove = (dz > -160) ? 'SWIPE' : 'RAM';
+    } else {
+      /* not trying to pass any more: take the move the position affords */
+      c.rageMove = dz > 260 ? 'BLOCK' : (dz > -160 ? 'SWIPE' : 'RAM');
+    }
+  }
+
+  const lane = clamp(playerX, -0.92, 0.92);
+  const move = (to, rate) => {
+    const step = LANE_RATE * LANE_W * dt * rate;
+    c.x += clamp(to - c.x, -step, step);
+  };
+  /* ---- AN ANGRY DRIVER STILL DRIVES THE CAR IT HAS (RLG-241) ----------
+     ONE PHYSICS FOR EVERY CAR is the owner's standing rule and rage is not an
+     exception to it: the driver decides to chase, and the VEHICLE decides
+     whether it can. `TYPE_VMAX` is what the thing is capable of, so a truck
+     that takes against you closes exactly as fast as a truck can.
+
+     THE FIRST BUILD LEFT THIS OUT and every rager passed the player whatever it
+     was driving - so a van parked behind and told to ram simply overtook and
+     brake-checked instead, and no staged position survived long enough to test.
+     It also meant nothing could be outrun, which is half the ruling's ending. */
+  const top = (TYPE_VMAX[c.type] || 0.58) * MAX_SPD;
+  const drive = (want) => { c.spd = clamp(want, 0, top); };
+
+  if(c.rageMove === 'BLOCK'){
+    /* in front and braking. It holds your line so you cannot simply go round,
+       and it sheds speed - the brake-check. */
+    move(lane, 1.25);
+    drive(Math.max(spd * 0.55, (c.cruise || 0) * 0.45));
+    c.braking = true; c.brakeT = 0.35;
+  } else if(c.rageMove === 'SWIPE'){
+    /* alongside: it leans into your lane. It matches your speed so it stays
+       there rather than sliding past. */
+    move(lane, 1.6);
+    drive(spd);
+  } else if(c.rageMove === 'RAM'){
+    /* behind: it lines up and drives at you, harder than it would ever cruise */
+    move(lane, 1.4);
+    drive(Math.max(spd * 1.12, (c.cruise || 0) * RAGE_PUSH));
+  } else {
+    /* CUT: get past, on whichever side there is more room */
+    const side = playerX > 0 ? -0.62 : 0.62;
+    move(side, 1.5);
+    drive((c.cruise || 0) * RAGE_PUSH);
+  }
+  /* ---- IT DOES NOT ADVANCE ITSELF, AND THE FIRST BUILD DID ------------
+     Every car's `z` is integrated in the COLLISION loop further down, not in
+     this one - the note beside a wrecked car there says so in as many words:
+     "it advances HERE like everything else so that it cannot be moved twice in
+     one frame". Advancing here as well doubled a rager's speed, so a van told
+     to ram a player doing 6,900 closed at 7,590 instead of 3,795 - it passed
+     whatever it was driving, every staged position came out as BLOCK, and
+     nothing could be outrun. The lane is set here; the distance is not. */
+  c.lane = 0;
+  return true;
+}
 /* ---- THE INDICATOR IS A HABIT, AND IT FOLLOWS THE DRIVER (RLG-207) ------
    Owner, 2026-09-10: "when a vehicle is spawned into the world, their chance to
    indicate is decided and assigned to them" - and, asked whether the habit
@@ -17183,6 +17360,21 @@ function scatter(chance, fromZ, fromLane, fromSpd){
     /* a RACER answers nothing: never asked, never worn down, never recovers */
     if(c.obedience <= 0){ scatterStat.deaf++; continue; }
     if(Math.random() > odds * c.obedience){
+      /* ---- AND BEING LEANED ON IS THE SECOND PROVOCATION (RLG-241) ----
+         Owner, 2026-09-16, took the horn and the collision and left the near
+         miss and the cut-off alone. It is rolled HERE, on the frame a driver
+         REFUSES to move, which is the moment the horn has actually annoyed
+         somebody rather than the moment it was pressed - a driver who obliges
+         has nothing to be angry about. `anger` rolls the driver's own odds, so
+         a commuter still never rages however long you lean on it.
+
+         ONLY THE PLAYER'S HORN. `scatter` is the one path for the horn AND for
+         every siren - a passing ambulance, a cruiser, the player's own bar in a
+         police car - so it is gated on `horning`, which is the player leaning
+         on the horn and nothing else. Without it an ambulance would enrage the
+         traffic it was asking to move over, and a player driving a cruiser
+         would enrage it with the siren. */
+      if(fromSpd === undefined && horning) anger(c, 'horn');
       c.obedience = Math.max(obeyOf(c) * OBEY_FLOOR, c.obedience * 0.62);
       scatterStat.obey++;
       continue;
@@ -19473,6 +19665,12 @@ function step(dt){
       if(Math.abs(c.x) > DEER_FROM + 0.1) c.gone = true;
       continue;
     }
+    /* ---- AND A DRIVER YOU HAVE ANGERED IS NOT COMMUTING (RLG-241) -----
+       It runs BEFORE the ordinary lane and gap logic and `continue`s past it,
+       because everything below is a driver reading the road for a safe line
+       and this one has stopped doing that. The same shape `isCrossing` uses
+       just above, and for the same reason. */
+    if(c.rage > 0 && rageStep(c, dt, pz)) continue;
     const wasSpd = c.spd || 0;
     let want = c.cruise;
 
@@ -19853,6 +20051,11 @@ function step(dt){
            running into the back of a van is your nose and its tail */
         hurtTraffic(c, 13 * (c.hitSev === undefined ? sev : c.hitSev));
         burst(c, '#ffb066');
+        /* ---- AND SOME OF THEM TAKE IT PERSONALLY (RLG-241) ----------
+           Hung on the contact event rather than on the overlap, so one rub is
+           one provocation - which is exactly what RLG-277 made `contactFires`
+           mean. Rolled inside `anger` against the driver's own mind. */
+        anger(c, 'hit');
       }
       iframe = 0.9;
     } else if(!c.near && Math.abs(dz) < 260 && dx < overlap+0.20){
@@ -30908,6 +31111,38 @@ requestAnimationFrame(frameLoop);
              stepF: TEMP_STEP_F };
   };
   API.placeMiles = function(){ return PLACE_MILES.slice(); };
+  /* ---- WHO IS COMING AFTER YOU, AND WHAT THEY ARE TRYING (RLG-241) -----
+     Rage is a driver's STATE, and a state cannot be read off a picture: a car
+     closing on you looks the same whether it is angry or merely faster. This
+     reports who is raging, the move each has chosen and why it started, so a
+     check can assert that the move follows the POSITION rather than watch a
+     crash and assume. */
+  API.ragers = function(){
+    const out = [];
+    for(const c of traffic){
+      if(!(c.rage > 0)) continue;
+      out.push({ mind: c.mind, move: c.rageMove, why: c.rageWhy,
+                 fuse: +c.rage.toFixed(2),
+                 dz: Math.round(c.z - (pos + PLAYER_Z)),
+                 dx: +(c.x - playerX).toFixed(3),
+                 spd: Math.round(c.spd || 0) });
+    }
+    return { raging: out, started: ragesStarted,
+             odds: RAGE_ODDS, secs: RAGE_SECS, lost: RAGE_LOST };
+  };
+  /* anger one car outright, so a check can watch the BEHAVIOUR without having
+     to provoke a driver whose mind may never roll one */
+  /* roll the FIRST car's own odds, which is what a provocation does. A check
+     measuring who rages must go through this rather than through `enrage`,
+     which skips the roll (RLG-241). */
+  API.angerFirst = function(){ const c = traffic[0]; return c ? anger(c, 'test') : false; };
+  API.enrage = function(i, why){
+    const c = traffic[i || 0];
+    if(!c) return null;
+    c.rage = RAGE_SECS; c.rageWhy = why || 'test';
+    c.rageMove = 'CUT'; c.rageTry = RAGE_GIVEUP; c.rageLook = 0;
+    return { mind: c.mind, move: c.rageMove };
+  };
   API.biomeCountdown = function(v){
     if(v !== undefined) biomeNext = v;
     return biomeNext;
