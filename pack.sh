@@ -186,6 +186,14 @@ process.exit(bad?1:0);
 ' "$TMP" || fail "a cabinet does not parse"
 say "every cabinet parses"
 
+# THE ENGINE'S TEST SURFACE HAS NO NAME ASSIGNED TWICE (RLG-275). The API
+# object takes the last assignment silently, and two harnesses went dead that
+# way before anyone looked. tools/api-dup-check.js says why the two-stage
+# helpers are allowed. It is a tool rather than inline so it can be run alone.
+node tools/api-dup-check.js road.js >"$TMP/dup" 2>&1 || {
+  sed 's/^/      /' "$TMP/dup" >&2; fail "an API member is assigned twice"; }
+say "no API member is assigned twice"
+
 # =====================================================================
 # 3. SCRIPTS RESOLVE + THE MINIMUM STANDARD
 #    Read the file AND every same-origin script it includes, which is

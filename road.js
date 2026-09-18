@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.77';
+window.ROAD_BUILD = '0.14.78';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -32834,7 +32834,11 @@ requestAnimationFrame(frameLoop);
              rail:knobRail, y:knobY, gear:gear, manual:!!optManual,
              plateW: el ? +el.getBoundingClientRect().width.toFixed(1) : 0 };
   };
-  API.shift = function(dx, dy){ shiftStep(dx, dy); return API.gate(); };
+  /* `API.shift(dx, dy)` WAS HERE and is gone (RLG-275). It stepped the gate
+     through `shiftStep`, the keyboard path, and RLG-203's `API.shift()` further
+     down replaced it the day that one was added - so it was dead from then on.
+     gate-test walks the knob with a real pointer instead (RLG-244), which is
+     the path a thumb takes. The name belongs to the police shift now. */
   /* which car the player is actually in. A harness that asserts a speed has to
      know what it is sitting in, or it reports the fleet as an engine fault. */
   API.bodyKey = function(){ return optBody; };
@@ -34404,9 +34408,8 @@ requestAnimationFrame(frameLoop);
      the sea did or did not reach the horizon */
   API.farSea = function(){ return farSea; };
   API.farRoad = function(){ return farRoad; };
-  /* which side the water is on, so a check reads it rather than assuming (RLG-093) */
-  API.seaSide  = function(){ return sideRoll; };   /* the old name, kept: harnesses use it */
-  API.sideRoll = function(){ return sideRoll; };
+  /* which side the water is on (RLG-093): `seaSide` and `sideRoll` are defined
+     once, beside the road-table readers, and were defined here a second time */
   API.seaStraight = function(on){ seaStraight = !!on; return seaStraight; };
   /* how much haze the water has taken by the end of the draw. Live, so the value
      can be SWEPT inside one frame - the road is generated per load and the day is
@@ -34894,7 +34897,6 @@ requestAnimationFrame(frameLoop);
   /* where the title card's car was last drawn, in CSS pixels of that canvas. The
      car sways, so a check cannot know where it is without asking (RLG-077). */
   API.titleCar = function(){ return titleCar; };
-  API.hasNos = function(){ return hasNos(); };
   API.roundRim = function(){
     const MK = (BODY[optBody]||{}).rear || "GENERIC";
     return (MK==="TUNER"||MK==="MUSCLE"||MK==="CRUISER"||MK==="GENERIC"||MK==="ROADSTER")
