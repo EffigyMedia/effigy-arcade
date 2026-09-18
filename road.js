@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.78';
+window.ROAD_BUILD = '0.14.79';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -17243,8 +17243,8 @@ function stepRacers(dt){
        --------------------------------------------------------------------- */
     const pRdz = r.z - (pos + PLAYER_Z), pRdx = Math.abs(r.x - playerX);
     /* a rival is a body before it is an opponent (RLG-277) */
-    contactHold(r, dt);
-    if(contactFires(r)){
+    /* ASKED BEFORE THE PUSH, NOT AFTER IT (RLG-279) - see `contactFirst` */
+    if(contactFirst(r, dt)){
       /* ---- THE SAME COLLISION AS EVERYTHING ELSE (RLG-131) -------------
          What was here pushed both cars apart and took speed off both, which was
          closer to right than the traffic path - and it still read no geometry,
@@ -20301,9 +20301,9 @@ function step(dt){
     const overlap = carW(c.w + playerW())/2;
     /* SOLID FIRST, AND ALWAYS (RLG-277). This runs inside the mercy window too -
        the window silences the crash, it does not delete the car. */
-    contactHold(c, dt);
-    /* and the crash fires once when contact begins, not on every frame of it */
-    if(contactFires(c)){
+    /* and the crash fires once when contact begins, not on every frame of it.
+       Asked before the push, not after it (RLG-279) - see `contactFirst`. */
+    if(contactFirst(c, dt)){
       /* where it landed decides everything, and both cars move (RLG-131) */
       const sev = impactWith(c);
       /* ---- WHAT THE THING YOU HIT DOES TO YOU (owner, 2026-09-08) -----
@@ -21083,8 +21083,8 @@ function step(dt){
     const pdz = k.z - pz;
     /* a cruiser is a body too, and it was the easiest one to drive through -
        a pursuit hit sets the LONGEST mercy window on the road at 1.0s (RLG-277) */
-    contactHold(k, dt);
-    if(contactFires(k)){
+    /* asked before the push, not after it (RLG-279) - see `contactFirst` */
+    if(contactFirst(k, dt)){
       /* ---- THE PIT IS GONE (owner, 2026-09-07) ---------------------------
          "I don't think there is enough collision granularity to really do the
          PIT justice reliably. We could get rid of the PIT manoeuvre and just
@@ -21845,6 +21845,29 @@ function contactFires(o){
   contactLog.fired++;
   return true;
 }
+/* ---- ASK FIRST, THEN PUSH THEM APART (owner, 2026-09-16, RLG-279) -------
+   "For the cars to consistently hit the edge physics objects we need their
+   collider to be perfectly correct."
+
+   A GRAZING HIT NEVER REGISTERED, AND THE ORDER WAS WHY. Every body - rival,
+   traffic car and cruiser - called `contactHold` and then `contactFires`. The
+   hold resolves overlap at `CONTACT.rate`, about 0.011 of the road per step,
+   so an overlap shallower than that was fully resolved inside the same step,
+   and the crash check then found two bodies not touching. Measured with a
+   parked car: an overlap of 0.012 hit every time, and 0.008, 0.004, 0.002 and
+   0.001 produced no hit, no damage and no contact counted at all. A clip on
+   the corner of a car is exactly that shallow, so the shallowest hits were the
+   ones that went missing.
+
+   So whether contact BEGAN is decided on the geometry as it arrived, and the
+   bodies are pushed apart afterwards. Nothing else moves: the push is the same
+   push, the latch is the same latch, and the severity is still read after the
+   push, as it was. */
+function contactFirst(o, dt){
+  const fires = contactFires(o);
+  contactHold(o, dt);
+  return fires;
+}
 function contactBegan(o){
   const wide = contactWidth(o), g = contactSquare(o);
   const gap  = Math.abs((o.x || 0) - playerX);
@@ -21905,8 +21928,13 @@ function gore(o){
              r:rnd(3,8), c: i%2 ? '#6d0d18' : '#3f070f'});
 }
 
+/* damage taken this run, BY WHAT DEALT IT (RLG-279). A check that reads the
+   damage total cannot tell a staged hit from a stray one: collide-test read a
+   hit at an offset well clear of its parked car, and the total had no author. */
+let hurtLog = {};
 function hurt(n, src){
   if(state!=='driving') return;
+  hurtLog[src || '?'] = (hurtLog[src || '?'] || 0) + n;
   dmg = Math.min(100, dmg + n);
   snd.bump(n >= 20);
   combo = 0; comboTime = 0;
@@ -34887,6 +34915,7 @@ requestAnimationFrame(frameLoop);
                                     type: c.type })) };
   };
   API.damage = function(){ return +dmg.toFixed(2); };
+  API.hurtLog = function(reset){ const out = Object.assign({}, hurtLog); if(reset) hurtLog = {}; return out; };
   /* damage is capped at 100, so a harness staging a hundred collisions stops being able to
      see one. It clears the panel between measurements rather than reading a saturated gauge. */
   API.setDamage = function(v){ dmg = Math.max(0, Math.min(100, +v || 0)); return dmg; };

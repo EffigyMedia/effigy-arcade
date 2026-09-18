@@ -124,12 +124,26 @@ def main():
         # of a second invulnerability window, so every step after the first read as a miss. The
         # window is cleared when a car is parked now, and a search costs fourteen readings
         # instead of two hundred.
+        stalls = [0]
+        strays = []
+        suspects = []
+
         def hits_with(dx, t):
+            # ---- A HIT MUST REPEAT (RLG-279) --------------------------------------
+            # After every cause above was removed, one false hit in about five runs
+            # remained: the parked car where it should be, the damage from traffic, at an
+            # offset where the two cannot touch - and only on the first car measured after
+            # a swap, while the browser's frames come back in a burst. A real overlap is a
+            # hit every time it is staged; this one is not. So a HIT is staged again and
+            # counts only if it repeats. A miss is not repeated: false misses are the
+            # stalls, and those are already retaken inside `reading`.
+            first = reading(dx, t)
+            return first and reading(dx, t)
+
+        def reading(dx, t):
             # DAMAGE IS CAPPED AT 100. The first version ran the sedan's search first and every
             # truck reading afterwards came back a miss, converging on an offset of zero - the
             # gauge was full, not the car missing. It is cleared before each staged collision.
-            page.evaluate('() => window.__probe.road.setDamage(0)')
-            before = page.evaluate('() => window.__probe.road.damage()')
             # THE LANE IS PINNED, NOT SET ONCE. A contact PUSHES the player sideways,
             # so a car placed at an offset and then left alone is no longer at that
             # offset by the time the damage is read - the reading belongs to wherever
@@ -137,14 +151,57 @@ def main():
             # waited: at 90ms a roadster measured 0.005 too wide, and at 220ms a muscle
             # car measured 0.08 too narrow. Holding the lane every few milliseconds
             # takes the settle time out of the measurement entirely.
-            page.evaluate("([dx, t]) => { const R = window.__probe.road;"
-                          " clearInterval(window.__pin);"
-                          " R.parkTraffic(0, 0, t); R.setSpd(0); R.setLane(dx);"
-                          " window.__pin = setInterval(() => { R.setSpd(0);"
-                          " R.setLane(dx); }, 4); }", [dx, t])
-            page.wait_for_timeout(220)
-            page.evaluate('() => clearInterval(window.__pin)')
-            return page.evaluate('() => window.__probe.road.damage()') > before + 0.5
+            # ---- A READING TAKEN WHILE THE WORLD WAS STOPPED IS NOT A READING -------
+            # (RLG-279) The browser can deliver no frames for a while - after a body
+            # swap it stopped for 1.1 seconds - and a staged hit inside that gap reads as
+            # a MISS. In a binary search a false miss pulls the edge IN, which is why the
+            # roadster read 0.2020, 0.2066 and 0.2050 on one build while the muscle car
+            # held to 0.0002: every error was on the narrow side. So each reading must
+            # show the simulation advanced by most of its window, and is taken again if
+            # it did not. Three tries, then it is reported as it stands.
+            #
+            # AND THE PARKED CAR IS THE ONLY CAR. Damage is the signal, and damage has
+            # no author: the spawner kept laying traffic during the window, and a car
+            # arriving from behind a player pinned at zero speed hits it. That read as a
+            # hit at an offset well clear of the parked car - the roadster measured
+            # 0.3000 against 0.2066 once, and the muscle car the same on another run.
+            # The pin removes every car but the staged one every 4ms, and it finds the
+            # staged car BY IDENTITY. The first version kept "the first car in the list",
+            # and the spawner does not always add at the end: a trace of five failing runs
+            # found a moving coupe, van or sedan 8,000 units back in the parked car's
+            # place, and the parked car gone. That car then drove into a player pinned at
+            # zero speed, which read as a hit at 0.3 of the road.
+            for _ in range(3):
+                page.evaluate('() => { const R = window.__probe.road; R.setDamage(0); R.hurtLog(true); }')
+                t0 = page.evaluate('() => window.__probe.road.simTime()')
+                page.evaluate("([dx, t]) => { const R = window.__probe.road;"
+                              " clearInterval(window.__pin);"
+                              " R.parkTraffic(0, 0, t); R.setSpd(0); R.setLane(dx);"
+                              " const me = R.traffic[R.traffic.length - 1];"
+                              " window.__pin = setInterval(() => { R.setSpd(0);"
+                              " R.setLane(dx);"
+                              " for(let i = R.traffic.length - 1; i >= 0; i--)"
+                              "   if(R.traffic[i] !== me) R.traffic.splice(i, 1); }, 4); }",
+                              [dx, t])
+                page.wait_for_timeout(220)
+                page.evaluate('() => clearInterval(window.__pin)')
+                ran = page.evaluate('() => window.__probe.road.simTime()') - t0
+                # ONLY DAMAGE FROM TRAFFIC COUNTS, and anything else is named (RLG-279)
+                log = page.evaluate('() => window.__probe.road.hurtLog()')
+                hit = log.get('traffic', 0) > 0.5
+                if hit and dx > 0.24:
+                    suspects.append((round(dx, 4), page.evaluate(
+                        "() => { const R = window.__probe.road; return { cs: R.contactState(0),"
+                        " n: R.traffic.length, st: R.contactStats(), t: R.traffic.map(c =>"
+                        " ({ x: +c.x.toFixed(3), dz: Math.round(c.z - R.pos - R.PLAYER_Z),"
+                        " spd: Math.round(c.spd), type: c.type })) }; }")))
+                for src, n in log.items():
+                    if src != 'traffic':
+                        strays.append((round(dx, 4), src, round(n, 2)))
+                if hit or ran > 0.15:
+                    return hit
+                stalls[0] += 1
+            return hit
 
         # ---- ONE STAGING PATH, NOT TWO ------------------------------------------
         # There were two ways of putting a car on top of the player in this file and
@@ -193,6 +250,38 @@ def main():
             res.check(abs(found - want) <= 0.004,
                       'and it stops exactly at the sum of the two half-widths',
                       'measured %.4f against %.4f' % (found, want))
+
+        # ---- A GRAZING HIT IS A HIT (RLG-279) ------------------------------------
+        # The body push ran BEFORE the crash check, and it resolves about 0.011 of the
+        # road a step - so an overlap shallower than that was gone before anything asked
+        # whether the cars touched. Measured: 0.012 hit, and 0.008 down to 0.001 produced
+        # no hit, no damage and no contact counted. Each depth is staged ONCE, from rest,
+        # with nothing re-pinning the player, so the first step the engine runs is the
+        # one that decides it - which is the moment a clip on a corner happens in play.
+        # `seen` is read as well as the damage, so "no damage" and "never touched" are
+        # told apart.
+        def graze(depth):
+            return page.evaluate("""(d) => new Promise(res => { const R = window.__probe.road;
+              R.setDamage(0); R.contactStats(true); R.parkTraffic(0, 0, 'sedan');
+              const w = R.contactState(0).wide; R.setSpd(0); R.setLane(w - d);
+              const me = R.traffic[R.traffic.length - 1];
+              let n = 0; const iv = setInterval(() => { R.setSpd(0);
+                for(let i = R.traffic.length - 1; i >= 0; i--)
+                  if(R.traffic[i] !== me) R.traffic.splice(i, 1);
+                if(++n > 60){ clearInterval(iv);
+                  res({ st: R.contactStats(), dmg: R.damage() }); } }, 4); })""", depth)
+        shallow = {d: graze(d) for d in (0.012, 0.008, 0.004, 0.002, 0.001)}
+        print('      grazing overlaps: %s' % ', '.join(
+            '%.3f %s' % (d, 'hit' if r['st']['fired'] else 'MISSED') for d, r in shallow.items()))
+        res.check(all(r['st']['fired'] == 1 and r['dmg'] > 0 for r in shallow.values()),
+                  'an overlap as shallow as a thousandth of the road is a hit',
+                  ', '.join('%.3f' % d for d, r in shallow.items() if not r['st']['fired']))
+        # THE CONTROL: the same staging with daylight between the two cars must NOT hit,
+        # or the check above would pass on a collider that hits everything.
+        clear = graze(-0.002)
+        res.check(clear['st']['fired'] == 0 and clear['dmg'] == 0,
+                  'and two cars with daylight between them are not',
+                  'fired %d, damage %.2f' % (clear['st']['fired'], clear['dmg']))
 
         # ---- AND THE PLAYER'S OWN HALF-WIDTH, MEASURED RATHER THAN READ ----------
         # The edge is the SUM of two half-widths, so measuring it against one car only proves
@@ -282,7 +371,24 @@ def main():
         edges = {}
         for key in ('ROADSTER', 'MUSCLE'):
             page.evaluate("(k) => window.__probe.road.setBody(k)", key)
-            page.wait_for_timeout(400)
+            # ---- AND THE WORLD HAS TO BE RUNNING AGAIN (RLG-279) --------------------
+            # This waited 400ms and the ROADSTER failed every run with "no hit at zero
+            # offset", which read as a broken collider for two sessions. It was not.
+            # `setBody` rebuilds every sprite on the road, and the BROWSER then delivers
+            # no animation frames for about 1.1 seconds while it takes them in: a frame
+            # counter that knows nothing about the game stopped with the simulation
+            # clock (EVD in RLG-279). The next three staged hits, 220ms each, all landed
+            # in that gap, so the contact path was never reached - `seen 0` - and the
+            # car was blamed. The MUSCLE car passed only because it was measured second.
+            #
+            # SO IT WAITS FOR THE CONDITION, NOT FOR A CLOCK: the simulation time has to
+            # move. A fixed pause long enough for this machine is the wrong length for
+            # the next one.
+            t0 = page.evaluate('() => window.__probe.road.simTime()')
+            res.check(until(page, "(t) => window.__probe.road.simTime() > t + 0.1",
+                            arg=t0, timeout=10000, required=False),
+                      'the world runs again after a change of car (%s)' % key.lower(),
+                      'the simulation clock did not move in ten seconds')
             # THE SCENE HAS TO BE REBUILT AFTER A BODY SWAP and proved to be there
             # before anything is measured through it. Without this the muscle car's
             # two searches both found nothing, both converged on zero, and the width
@@ -337,6 +443,11 @@ def main():
                       'edges %.4f and %.4f, %.4f apart against about %.4f expected'
                       % (edges['ROADSTER'], edges['MUSCLE'], spread, want_spread))
 
+        # how many readings had to be retaken because the world was not running
+        print('      readings retaken because the world stood still: %d' % stalls[0])
+        print('      damage from anything but the parked car: %s' % (strays[:6] or 'none'))
+        for s in suspects[:3]:
+            print('      SUSPECT hit at %.4f: %s' % s)
         errs = page.evaluate('() => window.__probe.errors')
         res.check(not errs, 'no page errors', str(errs))
         browser.close()
