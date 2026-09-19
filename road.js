@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.92';
+window.ROAD_BUILD = '0.14.93';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -24995,6 +24995,18 @@ function drawDeckFar(B){
    knowing what a bridge is made of, which no check was asking.
    ------------------------------------------------------------------------- */
 const DECK_FACE = [74,74,82];
+/* the fade of the farthest slice the road pass draws, where the band joins it:
+   the road pass writes fade as `1 - n/DRAW`, and the farthest `n` is DRAW */
+function joinFade(){ return clamp(1 - DRAW/DRAW, 0, 1); }
+/* ---- THE FAR BAND'S COLOUR (RLG-281) ----------------------------------------
+   The mean of the two parities, because at the join the drawn road's dark and
+   light blocks are sub-pixel and the eye reads their average - and at the
+   JOIN'S fade, so every weather term is the one the last drawn slice has. The
+   renderer and `API.farRoadTone` both read this; neither writes its own. */
+function farBandTone(onDeck){
+  return mixRGB(tarmacTone(false, joinFade(), onDeck), 0.5,
+                hexRGB(tarmacTone(true, joinFade(), onDeck)));
+}
 function tarmacTone(dark, fade, onDeck){
   const nAmt = nightFall(), gAmt = goldenHour();
   const snowLight = nAmt > 0.5 ? SNOW_NIGHT : gAmt > 0.25 ? SNOW_GOLD : SNOW_DAY;
@@ -27728,15 +27740,32 @@ function draw(){
          cone, which is the thing this was built to stop being. A square-law
          stride puts points at 1, 4, 9, 16 segments out, which is where the
          pixels actually are. */
+      let capped = false, missed = 0;
+      /* ---- EACH POINT IS A FIXED DISTANCE AHEAD OF THE CAR (RLG-281) -------
+         It was a fixed number of segments past `fFar`, which is a WHOLE segment
+         index - so every point jumped a segment's length along the road each
+         time the car crossed one, and on a bend or over a rise the outline was
+         re-cut several times a second. Measured from `pos`, the points slide
+         with the car and the outline moves as the road does. */
       for(let k = 1; k <= FAR_ROAD_STEPS; k++){
-        const q = proj(0, (fFar + k*k*FAR_ROAD_STEP) * SEG);
-        if(!q || !q.ok) continue;
-        /* it has to be rising toward the horizon and not past it */
-        if(!(q.y < lastY - 0.05 && q.y > horizon + 0.05)) continue;
+        const z = pos + (DRAW + k*k*FAR_ROAD_STEP) * SEG;
+        /* how far ahead of the car the first point is, read off the value
+           actually projected, for a check that it never changes */
+        if(k === 1) farRoad.ahead0 = z - pos;
+        const q = proj(0, z);
+        if(!q || !q.ok){ missed++; continue; }
         /* and the road has to still be on the screen (the corner cap) */
-        if(Math.abs(q.x - W/2) > W) break;
-        pts.push(q);
-        lastY = q.y;
+        if(Math.abs(q.x - W/2) > W){ capped = true; break; }
+        /* it has to be rising toward the horizon and not past it - and a point
+           that is not is CLAMPED to that, not dropped (RLG-281). Dropping it
+           changed how many points the outline had from one frame to the next
+           wherever a point sat on the line, beside the horizon or behind a
+           crest, and a third of all frames re-cut the outline that way. A
+           point held at the last height draws nothing, since the edges either
+           side of it are level, and the count stays the same every frame. */
+        const y = Math.max(horizon + 0.05, Math.min(q.y, lastY));
+        pts.push({ x:q.x, y:y, w:q.w });
+        lastY = y;
       }
       /* ---- AND IT IS THE ROAD'S OWN COLOUR (RLG-281) ------------------
          Owner, 2026-09-16: "the simulated roadway that goes off into the
@@ -27761,21 +27790,19 @@ function draw(){
          distance has a deck surface out there rather than asphalt.
          ------------------------------------------------------------ */
       const fDeck = !!bioAt(fFar).overWater;
-      /* ---- AT THE FADE OF THE JOIN, NOT AT ZERO (RLG-281) -------------
-         `tarmacTone`'s LAST term is the sky coming back off wet tarmac at a
-         grazing angle, and it is scaled by `1 - fade` so it is absent at your
-         feet and strongest at the far end of the draw... which is where this
-         band BEGINS. Painted at fade 0 it took the full sheen while the slice
-         it joins, at the far end of the draw, had lost all of it - measured
-         at [56,66,87] against [21,24,36] in rain, a gap of 72 where dry and
-         snow-covered both read under 1.
+      /* ---- AT THE FADE OF THE JOIN, WHICH IS ZERO (RLG-281, 2026-09-19) --
+         Owner, from the device: the far road "is not the same color as the
+         near road so it doesn't read right."
 
-         SO IT TAKES THE JOIN'S OWN FADE, which is 1: this band is further away
-         than anything the road pass draws, so if the sheen has gone by the last
-         slice it is gone here too. Dry and snow-covered are unaffected - the
-         term is multiplied by `rainDark`, which is zero unless it is wet. */
-      ctx.fillStyle = mixRGB(tarmacTone(false, 1, fDeck), 0.5,
-                             hexRGB(tarmacTone(true, 1, fDeck)));
+         `fade` IS 1 AT THE CAR AND 0 AT THE FAR END OF THE DRAW - the road pass
+         writes it as `1 - n/DRAW`. A fix of 2026-09-16 read it the other way
+         round and gave this band fade 1, the value at the car's own feet. In
+         dry weather that changes nothing, but in the wet the slice it joins,
+         at fade 0, carries the whole sheen of the sky off wet tarmac and this
+         band carried none: a darker road beside the one it continues. The
+         check agreed with it, because it asked both sides at fade 1 as well.
+         `farBandTone` is the one answer now, read here and by the probe. */
+      ctx.fillStyle = farBandTone(fDeck);
       ctx.beginPath();
       ctx.moveTo(fa.x - fa.w, fa.y);
       for(const q of pts) ctx.lineTo(q.x - q.w, q.y);
@@ -27786,6 +27813,10 @@ function draw(){
       ctx.fill();
       farRoad.drew = true;
       farRoad.walked = pts.length;
+      /* why a walk ended short, if it did: a bend that took the road off the
+         screen, or a point the projection would not give */
+      farRoad.capped = capped;
+      farRoad.missed = missed;
       farRoad.joinY = +fa.y.toFixed(1);
       farRoad.joinW = +fa.w.toFixed(2);
       farRoad.vx = +vx.toFixed(1);
@@ -35577,12 +35608,13 @@ requestAnimationFrame(frameLoop);
      far band is painted at fade 0 and the slice it joins is at the far end of
      the draw, so any term scaled by `1 - fade` is at full strength on one side
      of the join and absent on the other. */
+  /* the band's colour as the renderer paints it, and the drawn road's two
+     parities at `fadeAtJoin` - by default the join's own fade (RLG-281) */
   API.farRoadTone = function(fadeAtJoin){
-    const f = fadeAtJoin === undefined ? 1 : fadeAtJoin;
+    const f = fadeAtJoin === undefined ? joinFade() : fadeAtJoin;
     const deck = !!bioAt(Math.floor(pos / SEG) + DRAW).overWater;
     return {
-      far:      mixRGB(tarmacTone(false, 1, deck), 0.5,
-                       hexRGB(tarmacTone(true, 1, deck))),
+      far:      farBandTone(deck),
       nearLit:  tarmacTone(false, f, deck),
       nearDark: tarmacTone(true,  f, deck),
       settle: +settle.toFixed(3), wet: +wet.toFixed(3), pool: +pool.toFixed(3)

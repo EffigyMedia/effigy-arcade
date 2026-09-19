@@ -147,7 +147,8 @@ SAMPLE = """() => {
   const beside = darkest(midY, midX + 55, midX + 95);
   const dist = (a, b) => a && b
     ? Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2) : null;
-  return { drew: true, walked: fr.walked,
+  return { drew: true, walked: fr.walked, capped: !!fr.capped, missed: fr.missed || 0,
+           ahead0: fr.ahead0,
            reaches: Math.abs(fr.topY - fr.horizon) < 0.51 && Math.abs(fr.topW) < 0.01,
            step: +dist(below, above).toFixed(2),
            roadVsGround: +dist(atRoad, beside).toFixed(2) };
@@ -280,6 +281,33 @@ def main():
         # one straight cone: over a stretch of road it has to walk somewhere.
         ok(max(walked) >= 5, 'and it walks rather than drawing one straight cone',
            'up to %d points, median %d' % (max(walked), sorted(walked)[len(walked)//2]))
+        # ---- AND IT HOLDS STILL: THE SAME POINTS EVERY FRAME (RLG-281) ---------
+        # Owner, 2026-09-19, from the device: "The far road flickers. Maybe
+        # z-fighting?" It was the outline re-cutting itself. A point that failed the
+        # rising test was DROPPED, so the count changed from frame to frame wherever a
+        # point sat on the line - beside the horizon or behind a crest - and a third of
+        # all frames drew a differently shaped band. Its points were also placed from a
+        # whole segment index, so every one of them jumped each time the car crossed a
+        # segment. A point is clamped now rather than dropped, and placed from the car's
+        # own position, so the count is the same on every frame the band is drawn.
+        # A walk may still END EARLY, by design, where a hard bend takes the road off the
+        # screen (the corner cap) or a point will not project. Those frames say so; every
+        # other frame must walk every point.
+        open_ = [d['walked'] for d in seen if not d.get('capped') and not d.get('missed')]
+        print('  ..    %d of %d frames walked with no bend cap and no missed point'
+              % (len(open_), len(seen)))
+        # AND THE POINTS STAY THE SAME DISTANCE AHEAD. Placed from a whole segment index
+        # they jumped a segment along the road each time the car crossed one, which kept
+        # the count steady and still re-cut the outline - so it is asked separately.
+        ahead = [d['ahead0'] for d in seen if d.get('ahead0') is not None]
+        ok(bool(ahead) and max(ahead) - min(ahead) < 1,
+           'and its points stay the same distance ahead of the car, so none of them jumps',
+           'the first point ranged %.0f to %.0f units ahead' % (min(ahead) if ahead else -1,
+                                                              max(ahead) if ahead else -1))
+        ok(bool(open_) and min(open_) == max(open_),
+           'and its outline keeps the same points on every frame, so it does not re-cut itself',
+           'the count ran %s to %s on uncapped frames' % (min(open_) if open_ else None,
+                                                          max(open_) if open_ else None))
         # ---- AND THE TONE STEP IS PRINTED, BECAUSE IT COULD NOT BE MEASURED -----
         # THE RULING ASKED FOR THIS NUMBER BY NAME and this session could not make
         # it into an assertion that means anything. Four sampling schemes were tried
@@ -391,7 +419,7 @@ def main():
             R.setBiomePair(key, key);
             for(const [wn, w, sn, po] of weather){
               R.setWet(w); R.setSnow(sn); R.setPool(po);
-              const t = R.farRoadTone(1);
+              const t = R.farRoadTone();
               for(const which of ['far','nearLit','nearDark']){
                 c.fillStyle = '#000000';
                 c.fillStyle = t[which];
@@ -424,11 +452,13 @@ def main():
         # one or two pixels wide, and two runs of one build sampled [33,32,46] and
         # [73,80,64] from the same place depending on where the bend put it.
         #
-        # RAIN WAS THE ONE THAT DID NOT MATCH. tarmacTone's last term is the sky coming
-        # back off wet tarmac, scaled by 1 - fade, so it is strongest at the far end of
-        # the draw - which is where this band BEGINS. Painted at fade 0 it took the full
-        # sheen while the slice it joins had lost all of it: [56,66,87] against
-        # [21,24,36], a gap of 72 where dry and snow-covered both read under 1.
+        # RAIN IS THE ONE THAT CAN DISAGREE. tarmacTone's last term is the sky coming back
+        # off wet tarmac, scaled by 1 - fade, and FADE IS 0 AT THE FAR END OF THE DRAW (the
+        # road pass writes it as 1 - n/DRAW) - so the slice the band joins carries the
+        # whole sheen. The 2026-09-16 version of this check asked both sides at fade 1,
+        # the value at the car, and so passed a band with no sheen at all beside a slice
+        # with all of it: the owner saw it on the device on 2026-09-19. `farRoadTone()`
+        # now answers at the join's own fade, and its `far` is the renderer's own colour.
         print()
         print('  AND IT TRACKS THE WEATHER')
         rgb = rgb_of
@@ -437,7 +467,7 @@ def main():
             page.evaluate("([w, sn, po]) => { const R = window.__road;"
                           " R.setWet(w); R.setSnow(sn); R.setPool(po); }", [w, sn, po])
             page.wait_for_timeout(140)
-            t = page.evaluate('() => window.__road.farRoadTone(1)')
+            t = page.evaluate('() => window.__road.farRoadTone()')
             far, lit, dark = rgb(t['far']), rgb(t['nearLit']), rgb(t['nearDark'])
             mid = [(a + b) / 2.0 for a, b in zip(lit, dark)]
             gap = sum((a - b) ** 2 for a, b in zip(far, mid)) ** 0.5
@@ -450,11 +480,11 @@ def main():
         page.evaluate("() => { const R = window.__road;"
                       " R.setWet(0); R.setSnow(0.9); R.setPool(0); }")
         page.wait_for_timeout(140)
-        snowy_far = rgb(page.evaluate('() => window.__road.farRoadTone(1)')['far'])
+        snowy_far = rgb(page.evaluate('() => window.__road.farRoadTone()')['far'])
         page.evaluate("() => { const R = window.__road;"
                       " R.setWet(0); R.setSnow(0); R.setPool(0); }")
         page.wait_for_timeout(140)
-        dry_far = rgb(page.evaluate('() => window.__road.farRoadTone(1)')['far'])
+        dry_far = rgb(page.evaluate('() => window.__road.farRoadTone()')['far'])
         moved = sum((a - b) ** 2 for a, b in zip(snowy_far, dry_far)) ** 0.5
         ok(moved > 80,
            'and snow really does whiten the far band, so the match is not two constants',
