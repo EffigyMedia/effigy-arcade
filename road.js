@@ -33139,6 +33139,13 @@ requestAnimationFrame(frameLoop);
     return { clock: cw ? cw.className : '', nos: nb ? nb.className : '' };
   };
   API.clockRuns = function(){ return clockRuns(); };
+  /* the clock's rules as the engine holds them, for the car in the garage
+     (RLG-234). A harness printed "checkpoints pay 20s" as a sentence for weeks
+     after RLG-233 made the award depend on the class; it asks now. */
+  API.clockRules = function(){
+    return { start: CLOCK_START, cpMiles: CP_MILES, cpSeconds: cpSeconds(),
+             body: optBody, fuelCans: fuelOn() };
+  };
   /* ---- WHERE THE NEXT GANTRY IS (RLG-233) -------------------------------
      `checkpoint-pay-test` measures what a checkpoint actually pays, which means
      driving a car over a real one. The gantries are laid two miles apart as the

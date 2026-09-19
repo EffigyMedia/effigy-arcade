@@ -36,7 +36,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import reboot, console_utf8, launch_chromium, boot, until
 
 GAME = 'games/sw/interstate.html'
 
@@ -195,17 +195,34 @@ def main():
         # ============================================ RLG-100, the checkpoint budget
         print()
         print('  RLG-100 - CAN A CAR HOLD ITS CLOCK AT FULL THROTTLE')
-        print('      checkpoints are 2 miles apart and pay 20s; a crate pays 10s;')
-        print('      the run starts with 60s on the clock')
         top_of = {'TUNER': int(0.73 * 200), 'ROADSTER': int(0.765 * 200),
                   'MUSCLE': int(0.8 * 200)}
         for body in ('TUNER', 'ROADSTER', 'MUSCLE'):
             page = browser.new_page(viewport={'width': 480, 'height': 900})
             page.add_init_script(INIT)
+            # ---- THE CAR HAS TO BE ONE THE PLAYER CAN DRIVE (RLG-234) --------------
+            # RLG-213 moved the start of the ladder to production, so these three sports
+            # cars are LOCKED in a fresh save, and a locked car's DRIVE does nothing
+            # (RLG-223). This tool pressed DRIVE, stayed in the garage, and watched a
+            # frozen clock for 95 seconds - three green marks for three cars that never
+            # moved. The unlock is written the way a tournament gold writes it.
             open_game(page, port)
+            page.evaluate("() => window.Arcade.save.merge('interstate-opts',"
+                          " { sports:true, super:true })")
+            reboot(page)
+            page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
+            page.click('[data-act="play"]')
+            page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
             page.evaluate("(b) => window.__probe.road.setBody(b)", body)
             page.click('[data-act="drive"]')
             page.wait_for_timeout(400)
+            # AND THE CLOCK HAS TO RUN. A test drive keeps no time unless TIMED is on, and
+            # RLG-100 is a question about a timed run.
+            page.evaluate("() => window.__probe.road.setTimed(true)")
+            rules = page.evaluate("() => window.__probe.road.clockRules()")
+            print('      %-9s the engine says: start %ds, a gantry every %d miles pays %ds,'
+                  ' jerry cans %s' % (body, rules['start'], rules['cpMiles'], rules['cpSeconds'],
+                                      'ON' if rules['fuelCans'] else 'OFF'))
             page.dispatch_event('#gas', 'pointerdown')
             rows = page.evaluate(WATCH_CLOCK, args.seconds)
             page.dispatch_event('#gas', 'pointerup')
@@ -228,9 +245,33 @@ def main():
             peak_mph = max(r['spd'] for r in rows) / 15333.0 * 200
             print('                reached %d mph of the %d this car declares'
                   % (round(peak_mph), top_of.get(body, 0)))
-            res.check(low > 2.0,
-                      '%s does not run the clock out at full throttle' % body,
-                      'the clock reached %.1f seconds' % low)
+            # ---- A CAR THAT DID NOT DRIVE HAS NOT PASSED (RLG-234) ------------------
+            # "Does the clock reach zero" is passed by a clock that never starts. So the
+            # drive itself is asserted first, and a run that did not happen fails loudly
+            # instead of answering the question it never asked.
+            drove = mi > 1.0 and peak_mph > 0.6 * top_of.get(body, 0) and low < start - 5
+            res.check(drove, '%s actually drove, and its clock actually ran' % body,
+                      'BLOCKED: %.2f miles, %d mph, clock %.1f -> %.1f'
+                      % (mi, round(peak_mph), start, low))
+            # THE RATE, NOT ONLY THE WINDOW. "Did the clock reach zero in 95 seconds" is a
+            # statement about 95 seconds. What RLG-100 asks is whether the clock HOLDS, so
+            # the net rate is printed, with how long the run lasts at that rate. A reading,
+            # not an assertion: whether a timed run should end, and when, is the owner's
+            # (RLG-235 - "a timed run is designed to END").
+            secs = rows[-1]['t'] - rows[0]['t']
+            if drove and secs > 0:
+                rate = (end - start) / secs
+                if rate < 0:
+                    print('                the clock falls %.2f s every second driven, gantries'
+                          ' included: a full-throttle run lasts about %.1f minutes'
+                          % (-rate, (start / -rate) / 60.0))
+                else:
+                    print('                the clock GROWS %.2f s every second driven: this car'
+                          ' can run forever at full throttle' % rate)
+            if drove:
+                res.check(low > 2.0,
+                          '%s does not run the clock out at full throttle' % body,
+                          'the clock reached %.1f seconds' % low)
             page.close()
 
         # ---- DOES A PICKUP ACTUALLY PAY ITS TEN SECONDS -------------------------------
