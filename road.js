@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.90';
+window.ROAD_BUILD = '0.14.91';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14588,6 +14588,25 @@ let biomeFrom = 'FOREST', biomeTo = 'FOREST', biomeEdge = -1e9;
    `leftAt` IS WHEN, so the span can shrink with distance rather than with a
    frame count. It is the segment index of the boundary just crossed. */
 let biomePrev = 'FOREST', leftAt = -1e9;
+/* ---- AND HOW MUCH OF THE HORIZON THE NEW PLACE ALREADY HELD (RLG-252) -----
+   Owner, 2026-09-19, from the device: the new biome's skyline "happens twice
+   like a glitch". Measured: the place ahead grows to the whole horizon by the
+   time the car reaches the boundary - and then, when the pair settles, the
+   place just left came BACK round the edges at full width and was squeezed out
+   a second time. The desert held 1.00 of the horizon on one frame and 0.04 on
+   the next, and grew again over `SKY_RECEDE`.
+
+   The approach had already done the leaving: as the place ahead grows, the
+   place you are in is pushed out to the edges, and that IS the place you are
+   leaving, receding. So the ring that recedes after the handover starts from
+   what the new place held at that moment, not from nothing. This is that
+   width, 0 to 1, set where `leftAt` is. */
+let leftFrom = 1;
+/* how far the place just left has gone from the horizon, 0 to 1 */
+function skyGone(hereSeg){
+  if(leftAt <= -1e8) return 1;
+  return leftFrom + (1 - leftFrom) * clamp((hereSeg - leftAt) / SKY_RECEDE, 0, 1);
+}
 /* ---- THE PLACE THE ROAD IS BEING MADE INTO (RLG-150) --------------------
    WHERE a place begins and WHEN it was chosen are two questions, and they used
    to be one variable. `biomeEdge` answers the first and must stay at the
@@ -15476,7 +15495,10 @@ function stepBiome(dt){
     }
     if(cross >= 1){
       /* the place being left is the one the pair is dropping (RLG-252) */
-      if(biomeFrom !== biomeTo){ biomePrev = biomeFrom; leftAt = biomeEdge; }
+      if(biomeFrom !== biomeTo){
+        biomePrev = biomeFrom; leftAt = biomeEdge;
+        leftFrom = clamp(1 - (biomeEdge - Math.floor(pos/SEG)) / SKY_NEAR, 0, 1);
+      }
       biomeFrom = biomeTo;
       biome = biomeTo;
       bandBase = -1;
@@ -23505,8 +23527,7 @@ function drawSky(){
   const appEdge = pending ? biomeEdge : planEdge;
   const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
              : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
-  const gone = leftAt <= -1e8 ? 1
-             : clamp((hereSeg - leftAt) / SKY_RECEDE, 0, 1);
+  const gone = skyGone(hereSeg);
   /* ---- THREE CONCENTRIC REGIONS, MEASURED OUT FROM THE VANISHING POINT.
      0 to `aHalf` is the place ahead, `aHalf` to `bHalf` the place you are in,
      and everything beyond `bHalf` the place you have left.
@@ -32466,8 +32487,7 @@ requestAnimationFrame(frameLoop);
     const appEdge = pending ? biomeEdge : planEdge;
     const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
                : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
-    const gone = leftAt <= -1e8 ? 1
-               : clamp((hereSeg - leftAt) / SKY_RECEDE, 0, 1);
+    const gone = skyGone(hereSeg);
     return { ahead: appKey, here: biomeFrom, left: biomePrev,
              near: +near.toFixed(3), gone: +gone.toFixed(3),
              aHalf: +(reach*near).toFixed(1),

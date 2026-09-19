@@ -1148,6 +1148,32 @@ def main():
             three = [d for d in seen if d['left'] != d['here']]
             print('      %d of those frames had a third place still on the edges' % len(three))
 
+            # AND IT ARRIVES ONCE (owner, 2026-09-19, from the device): "happens twice like a
+            # glitch". The checks above stop at the boundary, and the fault was AFTER it - at
+            # the handover the place just left came back round the edges and the new place
+            # fell from the whole horizon to a sliver, then grew again. So the drive goes on
+            # through the handover, reading how much of the horizon DESERT holds in whichever
+            # ring it is in, and that share may never fall.
+            def share(d):
+                r = d['reach'] or 1
+                return (d['aHalf'] / r if d['ahead'] == 'DESERT'
+                        else d['bHalf'] / r if d['here'] == 'DESERT' else 0.0)
+            shares = [share(d) for d in seen]
+            for _ in range(300):
+                page.evaluate("() => { const R = window.__probe.road;"
+                              " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.22); }")
+                page.wait_for_timeout(45)
+                d = page.evaluate("() => window.__probe.road.skySpans()")
+                shares.append(share(d))
+                if d['here'] == 'DESERT' and len(shares) > len(seen) + 40:
+                    break
+            falls = [(a, b) for a, b in zip(shares, shares[1:]) if b < a - 0.05]
+            print('      through the handover DESERT held %.2f, then %.2f at the last frame'
+                  % (max(shares), shares[-1]))
+            res.check(not falls and shares[-1] > 0.95,
+                      'and the new place arrives ONCE: its share of the horizon never falls back',
+                      'fell %s' % ', '.join('%.2f -> %.2f' % f for f in falls[:3]))
+
         # ------------------------------------------- and the distinction can fail
         print()
         print('  NOT VACUOUS - the old flip goes back and the sweep check must catch it')
