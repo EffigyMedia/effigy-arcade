@@ -44,7 +44,7 @@ var A = window.Arcade = window.Arcade || {};
    over would have said "nearly done" about work that has barely started. The
    version tracks THIS product. The maturity of the engine underneath it is
    recorded in the git history, which came across whole. */
-A.version = '0.14.81';
+A.version = '0.14.82';
 
 /* ---- WHICH BUILD AM I PLAYING? -------------------------------------------
    Asked for by the owner, 2026-08-29, and it is a testing tool rather than
@@ -541,6 +541,14 @@ function pollPad(){
 }
 
 A.paused = function(){ return paused; };
+/* ---- TELL A GAME IT HAS BEEN RESUMED (RLG-147) ----------------------------
+   The pause holds the game's animation frame back, so a game is simply not
+   called while paused and cannot see the moment it is handed back - a long
+   frame is not the same signal, because a browser stall looks identical. This
+   is the signal. It knows nothing about any game; a driving game uses it to
+   count the player back in. */
+var resumeFns = [];
+A.onResume = function(fn){ if (typeof fn === 'function') resumeFns.push(fn); };
 
 A.pad = {
   connected: function(){ return padOn; },
@@ -1048,6 +1056,9 @@ function boot(){
     if (v === paused) return;
     if (!v) { var cb = held; held = null; if (cb) { try { cb(performance.now()); } catch(e){} } }
     paused = v;
+    /* a game that wants to know it has been handed back (RLG-147) - after
+       `paused` is false, so a listener that asks the shell gets the truth */
+    if (!v) for (var ri = 0; ri < resumeFns.length; ri++) { try { resumeFns[ri](); } catch(e){} }
     veil.classList.toggle('on', v);
     tag.textContent = v ? 'PAUSED' : 'RUNNING';
     if (AU){ AU.init(); AU.hush(v); if (v) paintAudio(); }

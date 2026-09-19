@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.81';
+window.ROAD_BUILD = '0.14.82';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1119,6 +1119,27 @@ let clock = CLOCK_START, nextCP = 0, cpGantries = [], lastBeep = -1, wreckWait =
    rather than sixty times a second.
    ------------------------------------------------------------------- */
 let countIn = 0, countPip = -1, countFrom = 0;
+/* ---- COMING BACK FROM A PAUSE (owner, 2026-09-01 and 2026-09-19, RLG-147) --
+   "Whenever you pause the game and you return during a run, we need a new
+   countdown." Ruled: the world stays FROZEN until GO, then the car carries on
+   at the speed it paused at, so pausing costs nothing; and the count is three
+   seconds, the same as the start line.
+
+   IT IS THE SAME COUNT, NOT A SECOND ONE. `countIn` and `countPip` drive the
+   numbers, the pips and GO, so the resume sets them and everything that paints
+   or sounds the start line follows. What differs is `resumeHold`: the start
+   count holds only the PLAYER (RLG-121 - the world runs behind the numbers),
+   and this one holds EVERYTHING, because the picture was already frozen by the
+   pause and the count only makes that pause three seconds longer. A frozen
+   world resuming at GO is exactly what an ordinary unpause already does. */
+const RESUME_COUNT = 3.0;
+let resumeHold = false;
+function startResumeCount(){
+  if(state !== 'driving' || finished || coasting || countIn > 0) return;
+  resumeHold = true;
+  countFrom = countIn = RESUME_COUNT;
+  countPip = -1;
+}
 /* ---- AND A SPEED A CHECK CAN HOLD (RLG-199) ----------------------------
    `API.setSpd` writes the speed ONCE and the car starts slowing down again on
    the very next frame, because nothing is on the throttle. A harness that pins
@@ -12300,6 +12321,7 @@ function start(){
   snd.begin();
   /* the count runs after `reset`, which has already put the car at rest */
   countFrom = countIn = 3.0;
+  resumeHold = false;       /* a new run is never mid-resume (RLG-147) */
   countPip = -1;
   /* ---- AND THE BOX GOES TO NEUTRAL (RLG-110) --------------------------
      Both gearboxes, because the launch is the same skill on either. `reset`
@@ -18792,6 +18814,8 @@ window.addEventListener('keyup',e=>{
   if(e.key===' '||e.key==='Shift') nosOn=false;
 });
 
+/* the shell tells us when a pause ends, and a run in progress counts back in (RLG-147) */
+if(AR && AR.onResume) AR.onResume(startResumeCount);
 if(AR && AR.pad) AR.pad.onPress(name=>{
   if (AR.paused && AR.paused()) return;
   if(state==='driving') return;
@@ -18804,6 +18828,16 @@ if(AR && AR.pad) AR.pad.onPress(name=>{
 /* ---------- simulation ---------- */
 let simT = 0;
 function step(dt){
+  /* ---- A RESUME HOLDS THE WHOLE WORLD (RLG-147) ------------------------
+     Only the count runs: nothing moves, nothing scores, nothing spends the
+     clock. See `startResumeCount`. */
+  if(resumeHold){
+    countIn -= dt;
+    const n = Math.max(0, Math.ceil(countIn));
+    if(n !== countPip){ countPip = n; snd.startPip(n); }
+    if(countIn <= 0){ countIn = 0; resumeHold = false; goFor = 0.85; }
+    return;
+  }
   /* ---- HELD ON THE LINE, AND THE WORLD IS NOT (RLG-121) ---------------
      THIS COMMENT USED TO SAY "everything below this runs, so the road, the
      traffic and the sky are all alive behind the numbers" - AND THE CODE
@@ -29120,7 +29154,8 @@ const FIXED=1/120;
 function frameLoop(now){
   if(last===undefined) last=now;
   let dt = Math.min(0.05,(now-last)/1000); last=now;
-  dayClock += dt;
+  /* the sky and the sea hold too while a resume counts you in (RLG-147) */
+  if(!resumeHold) dayClock += dt;
   /* ---- THE SEA HAS ITS OWN CLOCK (RLG-112) --------------------------
      Boats move, and what they move against must be TIME rather than the
      camera - a position derived from `pos` is not a position in the world,
@@ -29129,7 +29164,7 @@ function frameLoop(now){
      the sun where it wants it, and moving the sun must not teleport the
      shipping.
      -------------------------------------------------------------- */
-  if(!seaHold) seaClock += dt;
+  if(!seaHold && !resumeHold) seaClock += dt;
   if(state==='driving'){
     acc += dt;
     let g=0;
@@ -33354,6 +33389,7 @@ requestAnimationFrame(frameLoop);
      has been sounded, and whether GO is still on the glass (RLG-088) */
   API.startLine = function(){
     return { left:+countIn.toFixed(3), pip:countPip, go:+goFor.toFixed(3),
+             resuming: resumeHold,
              seen:seenStart, clock:+clock.toFixed(2), spd:Math.round(spd),
              /* `pos` is where the ROAD has got to and `dist` is what the
                 ODOMETER has counted. They are not the same question and a
