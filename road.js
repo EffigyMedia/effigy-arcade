@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.94';
+window.ROAD_BUILD = '0.14.95';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -778,6 +778,25 @@ function timeAward(secs){
 function timeFlash(label, secs){ return label + '  ' + timeAward(secs); }
 /* TEST DRIVE is practice: the clock is optional there. A race always has one. */
 let timedRun = true;
+/* ---- DRAG RACE (owner, 2026-09-05 and 2026-09-19, RLG-156) -------------------
+   "an empty straight highway for a mile ... two of the same car are pitted
+   against each other with a forced manual mode." Open from the start on every
+   car ("any car can enter it"), one mile, a best time kept per car, and a
+   rival driver drawn at random each race.
+
+   IT IS A RACE, SO `mode` IS 'race' AND THIS IS A FLAG ON IT - the shape
+   INTERCEPT already uses. A third value of `mode` would have switched off every
+   `mode === 'race'` gate at once: the finish line, the rival stepping, the
+   place readout. `optDrag` is the player's pick on the MODE control, kept
+   apart from `raceMode` and `duty` so it never overwrites either; `dragOn` is
+   what a run reads, set by `enforceModeRules`. */
+let optDrag = false, dragOn = false;
+/* the run's own clock, from GO: `simT` runs on across runs */
+let dragT = 0;
+/* the player's own gearbox setting while a drag race forces MANUAL, or null */
+let dragKeepBox = null;
+/* the result of the last drag race, for its end card */
+let dragResult = null;
 /* ---- THE LIVERY, AND THE FOUR COLOURS OF IT (RLG-071) ---------------------
    Owner, 2026-09-19: "we get to choose the color for each of the two tones,
    the striped colors and the under glow if all are turned on." So each livery
@@ -865,6 +884,22 @@ let optTime = 0;
    opened every class on the ladder with it. The third switch, for the work
    vehicles, went with RLG-249. */
 let dbgRacers = false, dbgPolice = false;
+/* ---- THE DRAG RACE'S NUMBERS (RLG-156) -------------------------------------
+   The distance the owner set, and the rival drivers a race draws from. A
+   driver is a TRAIT of the rival, never a number on the body (RLG-042,
+   RLG-054): the same car, driven better, wins. `at` is how far up each gear's
+   band the driver changes up, `miss` the chance of a late change that sits on
+   the limiter, `slop` how long a change takes against the field's own, and
+   `launch` where its start falls between the field's worst and best. */
+const DRAG_MILES = 1;
+const DRAG_DRIVERS = [
+  { name:'SHARP',  share:0.20, at:[0.95, 1.00], miss:0.05, slop:[0.80, 1.00], launch:[0.75, 1.00] },
+  { name:'STEADY', share:0.60, at:[0.88, 0.98], miss:0.15, slop:[1.00, 1.35], launch:[0.30, 0.85] },
+  { name:'SLOPPY', share:0.20, at:[0.76, 0.90], miss:0.35, slop:[1.30, 1.90], launch:[-0.30, 0.35] }
+];
+/* whether this machine offers drag racing at all: a circuit has no straight
+   mile, so the seam that already keeps traffic off Motorsport keeps this off */
+function dragOffered(){ return !CFG.circuitOnly; }
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -910,7 +945,7 @@ function stripesAllowed(){ return stripesOn(optBody); }
 /* A FUNCTION, not a const: it was declared halfway down step() and read above
    it, so the temporal dead zone threw on the FIRST frame and killed the whole
    update — which is why the skyline looked frozen even after being fixed. */
-function clockRuns(){ return (mode === 'race') || timedRun; }
+function clockRuns(){ return !dragOn && ((mode === 'race') || timedRun); }
 
 /* ===========================================================================
    THE TOURNAMENT
@@ -12474,7 +12509,7 @@ function reset(){
   /* and the field itself: `buildField` only ever ADDS, so a race left eleven
      cars on the road that TEST DRIVE then inherited */
   racers = [];
-  if(mode === 'race') buildField();
+  if(mode === 'race') (dragOn ? buildDragField : buildField)();
   /* the shift's tally is per-run like the rest of these. Left out of this list
      it would be module state that survives every restart (RLG-203). */
   stopped = 0;
@@ -12527,10 +12562,24 @@ function reset(){
      runs is worth less than a run that starts where it says it does.
      ---------------------------------------------------------------- */
   freshWorld();
+  /* ---- A DRAG STRIP IS STRAIGHT AND FLAT (RLG-156) ----------------------
+     One segment of each list with no bend and no grade, long enough to run
+     past the line and the coast-down after it - and finite: `rebuildBend`
+     integrates the whole span every quarter second, so a debug-style 1e9 would
+     be three million steps. Here, after `freshWorld`, because the reset's
+     first `rebuildBend` runs before the place is chosen. The player takes the
+     lane left of centre and the rival the lane right of it. */
+  if(dragOn){
+    const L = (DRAG_MILES + 1) * MILE + GEN_AHEAD;
+    curveSegs.length = 0; hillSegs.length = 0; bendZ0 = 0;
+    curveSegs.push({ k:0, len:L }); hillSegs.push({ k:0, len:L });
+    rebuildBend();
+    playerX = targetX = LANE_X[1]; camX = playerX;
+  }
   traffic=[]; cops=[]; blocks=[]; crates=[]; fx=[];
   shake=0; hitFlash=0; sirenPhase=0; lastKmh=0; iframe=0;
   acc=0;
-  if(!CFG.circuitOnly)
+  if(!CFG.circuitOnly && !dragOn)
     for(let z=9000; z<52000; z+=rnd(5200,8600)) spawnWave(z);
     /* THE SEED IS NOT A SPAWN. This lays traffic down the road at reset so the
        first mile is not empty, and it is placed while `pos` is 0 - so some of
@@ -12617,6 +12666,11 @@ const IDLE_SPD = MAX_SPD * (60/200);   /* exactly 60 on the readout */
 const BRAKE_SPD = 0;   /* the brakes stop the car, they do not settle it */
 
 function start(){
+  /* ---- THE GEARBOX IS MANUAL FOR A DRAG RACE (RLG-156) ------------------
+     The player's own setting is kept and put back, so a drag race never
+     writes the choice they made in SETTINGS. */
+  if(dragOn){ if(dragKeepBox === null) dragKeepBox = optManual; optManual = true; }
+  else dragBoxBack();
   syncBoxClass();
   runs++;
   reset();
@@ -13469,13 +13523,36 @@ function stepAiGearbox(r, dt, braking){
   if(!r.gear){ r.gear = gearBandAt(rr, table).g; r.shiftT = 0; }
   if(r.shiftT > 0){ r.shiftT = Math.max(0, r.shiftT - dt); return; }
   const G = table[r.gear - 1] || table[table.length - 1];
+  /* ---- A DRAG DRIVER CHANGES UP WHERE IT CHOOSES, AND SOMETIMES LATE ------
+     (RLG-156) "we will need the NPC AI to not shift absolutely perfectly all
+     the time." The field changes up exactly at the redline; a drag driver
+     changes at its own point in the band, and a late change waits on the
+     limiter, where `torqueAt` gives almost nothing - so a miss costs time
+     through the one torque curve every car shares, with no special case. */
+  if(r.drag && r.gear < table.length){
+    const cut = G.from + (G.to - G.from) * r.shiftAt;
+    if(rr >= cut){
+      if(r.lateT === undefined)
+        r.lateT = Math.random() < r.missP ? rnd(0.08, 0.35) : 0;
+      r.lateT -= dt;
+      if(r.lateT <= 0){
+        r.lateT = undefined;
+        r.gear++; r.shiftT = AI_SHIFT_TIME * (r.shiftSlop || 1);
+        r.shifts = (r.shifts || 0) + 1;
+      }
+      return;
+    }
+  }
   /* PAST THE TOP OF THE BAND IS THE REDLINE, so that is the upshift */
   if(rr > G.to && r.gear < table.length){
     r.gear++; r.shiftT = AI_SHIFT_TIME * (r.shiftSlop || 1); return;
   }
   /* and below the floor the engine is lugging - which is what happens when a
      rival slams on the brakes beside you */
-  if(rr < G.from && r.gear > 1){
+  /* a drag driver never lifts, so a gear it changed into early is one it LUGS
+     in rather than one it changes back out of - which is the cost of an early
+     change (RLG-156) */
+  if(rr < G.from && r.gear > 1 && !r.drag){
     r.gear--; r.shiftT = AI_SHIFT_TIME * (r.shiftSlop || 1); return;
   }
 }
@@ -13595,7 +13672,8 @@ const LAUNCH = {
 
    Zero means a standing start, so a machine that says nothing gets the grid.
    ------------------------------------------------------------------------- */
-function rollStartMph(){ return CFG.rollStartMph || 0; }
+/* a drag race starts from rest, whatever the machine's own start is (RLG-156) */
+function rollStartMph(){ return dragOn ? 0 : (CFG.rollStartMph || 0); }
 function standingStart(){ return rollStartMph() <= 0; }
 /* the held speed in the engine's own units - 200mph is MAX_SPD */
 function startSpeed(){ return MAX_SPD * (rollStartMph() / 200); }
@@ -15881,7 +15959,7 @@ function boltFlash(){
    Lifted out of the stepper so `freshWorld` can roll once at the reset and a
    run does not begin with a roll already due (RLG-090). */
 function rollWeather(){
-  if(optWeather === 'dry'){ wetTarget = 0; snowy = 0; wetNext = rnd(35, 80); return; }
+  if(optWeather === 'dry' || dragOn){ wetTarget = 0; snowy = 0; wetNext = rnd(35, 80); return; }
   const B = climate();
   /* the moment's temperature, and the share of this fall that is snow at it */
   const mt = clamp(B.temp + rnd(-CLIMATE_SWING, CLIMATE_SWING), 0, 1);
@@ -15922,7 +16000,7 @@ function rollWeather(){
 }
 function stepWeather(dt){
   stepSky(dt);
-  if(optWeather === 'dry'){ wet = wetTarget = 0; return; }
+  if(optWeather === 'dry' || dragOn){ wet = wetTarget = 0; return; }
   wetNext -= dt;
   if(wetNext <= 0) rollWeather();
   /* ---- SNOW ACCUMULATES. IT DOES NOT SETTLE TO A LEVEL ------------------
@@ -16814,7 +16892,8 @@ let duty = false;
    EVERY READER USES THE FUNCTION. The bare flag is read only by the garage's
    own label and cycle, where `dutyLegal` has already been asked.
    ------------------------------------------------------------------------- */
-function playerIsPolice(){ return duty && dutyLegal(optBody); }
+/* a police car in a drag race is a car in a drag race, not a car on shift */
+function playerIsPolice(){ return duty && dutyLegal(optBody) && !dragOn; }
 let racers = [], place = 12, finished = false, finishZ = 0;
 /* how many of the field this shift has stopped. Reset with the run (RLG-203). */
 let stopped = 0;
@@ -16851,6 +16930,63 @@ function gridSlot(){
      default here, it is the mode. */
   if(gridPinLast || playerIsPolice() || !tourOn || tourRound <= 0) return FIELD;
   return Math.min(Math.max(tourStanding() - 1, 0), FIELD);
+}
+/* ---- ONE RIVAL: THE SAME CAR, ANOTHER PAINT, ANOTHER DRIVER (RLG-156) ------
+   Level with the player's car, in the next lane, from rest. It chases its
+   body's own top speed: no rubber band and no field ceiling, because a drag
+   race is decided by the driver, and ONE PHYSICS FOR EVERY CAR is the rule the
+   band is the only exception to. Its paint is drawn from what that body may
+   wear, never the player's own. */
+function buildDragField(){
+  racers = [];
+  const body = optBody, B = BODY[body] || BODY.MATADOR;
+  const from = dutyLegal(body) ? NPC_COP_PAINTS : (body === 'CAB' ? ['GOLD'] : PAINT_KEYS);
+  const pool = from.filter(k => k !== optPaint);
+  const paint = pool.length ? pool[(Math.random() * pool.length) | 0] : from[0];
+  const r = {
+    z: pos + PLAYER_Z, rank: 0, lane: 2, x: LANE_X[2], base: 0, spd: 0, num: 2,
+    paint: paint, wreck: 0, ang: 0, w: 0.265, len: 390,
+    /* it never thinks about changing lane: a drag rival holds its own */
+    fromLane: undefined, settleT: 1e9, thinkT: 1e9,
+    body: body, dmg: 0, iframe: 0, mind: RACER,
+    nos: hasNosFor(body) ? 40 : 0, nosOn: false, nosNerve: rnd(0.6, 1.4),
+    striped: false, drag: true
+  };
+  r.vmax = MAX_SPD * B.vmax;
+  r.pull = accelOf(body);
+  r.base = r.vmax;
+  rollDragDriver(r);
+  r.launchT = LAUNCH.aiFor;
+  racers.push(r);
+  dragSprite(body, paint);
+  /* the player finishes when `pos` reaches this, and the rival when its own z
+     reaches this plus PLAYER_Z - both one mile from where each car stood */
+  finishZ = pos + DRAG_MILES * MILE;
+  place = 1; finished = false; dragT = 0; dragResult = null;
+}
+/* draw the rival's driver: SHARP, STEADY or SLOPPY, and where it falls in it */
+/* a check can name the next race's driver, so it can compare two; never set by play */
+let dragForce = null;
+function rollDragDriver(r){
+  let u = Math.random(), d = DRAG_DRIVERS[DRAG_DRIVERS.length - 1];
+  for(const c of DRAG_DRIVERS){ if(u < c.share){ d = c; break; } u -= c.share; }
+  if(dragForce) d = DRAG_DRIVERS.find(c => c.name === dragForce) || d;
+  r.driver  = d.name;
+  r.shiftAt = rnd(d.at[0], d.at[1]);
+  r.missP   = d.miss;
+  r.shiftSlop = rnd(d.slop[0], d.slop[1]);
+  r.launchQ = LAUNCH.aiLo + (LAUNCH.aiHi - LAUNCH.aiLo) * rnd(d.launch[0], d.launch[1]);
+}
+/* ---- ANY BODY CAN BE THE RIVAL, SO ITS SPRITE IS MADE ON DEMAND -----------
+   The field's cache is built for the racing classes only, and a rival with no
+   entry was drawn as the PLAYER'S sprite - their own paint on the other car.
+   A van, a cab or a police car can be drag raced, so the tail is painted here
+   through `carSprites`, the garage's own path, the first time it is needed. */
+function dragSprite(body, paint){
+  const k = body + '|' + paint;
+  if(RACER_SP[k]) return;
+  const pt = dutyLegal(body) ? copPaintOf(paint) : (PAINT[paint] || PAINT.WHITE);
+  RACER_SP[k] = carSprites(body, pt, { stripes:false, stripeCol:null, twotone:false, tone:null, glow:null }).rear;
 }
 function buildField(){
   racers = [];
@@ -17615,7 +17751,8 @@ function stepRacers(dt){
        band is gentle — up to 14% either way — so it closes the field without
        ever making a rival feel like it is teleporting. */
     const lead = (r.z - pos) / MILE;              /* miles ahead of you */
-    const band = clamp(-lead * 0.11, -0.14, 0.14);
+    /* no band in a drag race: it is the driver's race (RLG-156) */
+    const band = r.drag ? 0 : clamp(-lead * 0.11, -0.14, 0.14);
     want *= (1 + band);
     /* ---- THE TOW NEEDS A CEILING OF ITS OWN -------------------------------
        This used to be `want = Math.min(want, AI_TOP)`, and that one line threw
@@ -17645,7 +17782,7 @@ function stepRacers(dt){
        the target without raising the drivetrain and the tow is lifted but
        toothless: the rival would crawl toward a speed it never reaches.
        ---------------------------------------------------------------------- */
-    const ceiling = AI_TOP * (1 + Math.max(0, band));
+    const ceiling = r.drag ? Infinity : AI_TOP * (1 + Math.max(0, band));
     want = Math.min(want, ceiling);
     /* ---- THE BOTTLE, AND IT LIFTS THE SAME CEILING THE PLAYER'S DOES ----
        `NOS_REV` is the player's own stretch, read from the same constant, so a
@@ -17766,8 +17903,14 @@ function stepRacers(dt){
      per visible car and would redo the whole comparison each time.
      -------------------------------------------------------------------- */
   let ahead = 0;
-  for(const r of racers) if(r.z > pos) ahead++;
+  /* in a drag race both cars started level, so they are compared where they
+     both are: the player's car stands PLAYER_Z up the road from `pos` */
+  const meZ = dragOn ? pos + PLAYER_Z : pos;
+  for(const r of racers) if(r.z > meZ) ahead++;
   place = ahead + 1;
+  /* and the rival's own time at the line, when it gets there (RLG-156) */
+  if(dragOn) for(const r of racers)
+    if(r.dragTime === undefined && r.z >= finishZ + PLAYER_Z) r.dragTime = dragT;
 
   for(const r of racers){
     let n = 0;
@@ -17816,6 +17959,15 @@ function stepRacers(dt){
     coasting = true;
     setGas(false); setBrake(false); nosOn = false;
     state = 'wrecked';
+    /* ---- A DRAG RACE ENDS ON ITS OWN CARD (RLG-156) --------------------
+       Before the best-distance write below: that one prints BEST x MI on the
+       launcher's cabinet card, and a mile is not a run. */
+    if(dragOn){
+      dragFinish();
+      snd.quiet(); menuMusic(); snd.checkpoint();
+      setTimeout(showDragEnd, 700);
+      return;
+    }
     bestScore = Math.max(bestScore, Math.round(dist*10)/10);
     bestDist  = Math.max(bestDist, dist);
     if(AR && AR.save) AR.save.merge(GAME_ID, {
@@ -19684,7 +19836,7 @@ function step(dt){
 
   /* the planned crossing, put on the road once the car is near enough for it to
      come out of the trees rather than to appear in the middle of them */
-  if(!CFG.circuitOnly) stepDeer();
+  if(!CFG.circuitOnly && !dragOn) stepDeer();
 
   /* ---- SERVING A PENALTY, AND THE WORLD KEEPS GOING (owner, 2026-09-06) ---
      "When the player gets the 2 seconds penalty, the world shouldn't freeze.
@@ -19917,7 +20069,7 @@ function step(dt){
      otherwise summon a queue of traffic in behind the grid */
   if(held) slowFor = 0;
   else if(spd < FLOW) slowFor += dt; else slowFor = 0;
-  if(!held && !CFG.circuitOnly && slowFor > 2){
+  if(!held && !CFG.circuitOnly && !dragOn && slowFor > 2){
     behindT -= dt;
     if(behindT <= 0){
       /* the further below the flow you are, the more of it arrives */
@@ -19933,7 +20085,7 @@ function step(dt){
      sirens at once is a road accident rather than an emergency, and the
      scatter would be asked twice for the same lane.
      ------------------------------------------------------------------- */
-  if(!held && !CFG.circuitOnly){
+  if(!held && !CFG.circuitOnly && !dragOn){
     ambT -= dt;
     if(ambT <= 0){
       if(traffic.some(c => c.emergency)) ambT = 8;
@@ -19950,6 +20102,8 @@ function step(dt){
      yard when the count reaches zero.
      ------------------------------------------------------------------- */
   if(mode === 'race' && !finished){
+    /* the drag race's own clock, from GO to the line (RLG-156) */
+    if(dragOn && !held && !finished) dragT += dt;
     if(!held) stepRacers(dt);
     else if(!standingStart()) rollField(dt);
   }
@@ -20233,7 +20387,8 @@ function step(dt){
      `CFG.circuitOnly` turns all of it off. What is left is the road, you, and
      the rivals.
      ------------------------------------------------------------------- */
-  const roadFurniture = !CFG.circuitOnly;
+  /* nothing on the road in a drag race but the two cars (RLG-156) */
+  const roadFurniture = !CFG.circuitOnly && !dragOn;
 
   if(roadFurniture) for(const P of PICKUPS){
     nextPickT[P.kind] -= dt;
@@ -20401,7 +20556,7 @@ function step(dt){
   /* A roadblock across a bend is a wall you cannot see until you are in it,
      so they only go up on a stretch that is straight where it stands AND
      still straight a little further on. */
-  if(!optEasy && nextBlockT<=0 && heat>=2 && isStraight(pos + 26000) &&
+  if(!optEasy && !dragOn && nextBlockT<=0 && heat>=2 && isStraight(pos + 26000) &&
      isStraight(pos + 26000 + roadblockReach())){
     spawnRoadblock();
     nextBlockT = Math.max(8, rnd(30,44) - heat*2);
@@ -29571,8 +29726,9 @@ function hud(){
     const onShift = playerIsPolice();
     const lab = $('placeWrap').querySelector('span');
     if(lab) lab.textContent = onShift ? 'LEFT' : 'PLACE';
-    $('place').textContent = onShift ? (running() + '/' + FIELD) : (place + '/12');
-    const legMi = tourOn ? legMiles() : RACE_MILES;
+    $('place').textContent = onShift ? (running() + '/' + FIELD)
+                           : dragOn ? (place + '/2') : (place + '/12');
+    const legMi = dragOn ? DRAG_MILES : tourOn ? legMiles() : RACE_MILES;
     $('dist').innerHTML = Math.max(0, legMi - dist).toFixed(1) + '<i>MI</i>';
   }
   drawDials();
@@ -30416,6 +30572,7 @@ function showGarage(){
     endRun(true); state = 'garage'; menuMusic();
     garageEnd = 'front';
     garageView = 'main';
+    dragBoxBack();
   }
   state = 'garage';
   /* ---- A CAR YOU DO NOT OWN OFFERS ONLY THE WAY TO ANOTHER CAR (RLG-223) --
@@ -30566,6 +30723,14 @@ function showGarage(){
            than the only one - a hardware back-press or a stale veil must not be
            able to walk a bus into a tournament */
         if(!modesOffered(optBody)) return;
+        /* ---- DRAG RACE IS THE LAST STOP ON EVERY CAR (RLG-156) ------------
+           Out of it goes back to the first stop, which is TEST DRIVE; into it
+           comes from each car's own last stop below. A car with no race of its
+           own - a van, a cab - has TEST DRIVE and DRAG RACE and nothing else. */
+        if(optDrag){ optDrag = false; enforceModeRules(); showGarage(); return; }
+        if(!raceLegal(optBody) && !dutyLegal(optBody)){
+          optDrag = dragOffered(); enforceModeRules(); showGarage(); return;
+        }
         /* ---- A POLICE CAR HAS THREE MODES TOO (owner, 2026-09-16, RLG-212)
            TEST DRIVE, INTERCEPT, INTERCEPT TOURNAMENT - the same three-stop
            shape the racing control has, which is the symmetry the owner asked
@@ -30584,7 +30749,7 @@ function showGarage(){
              one they quit. `tourLoad` resets first and lays the save over the
              top, so a class with nothing saved still starts clean. */
           else if(!dutyTour){ dutyTour = true; tourLoad(classOf(optBody)); }
-          else { duty = false; dutyTour = false; }
+          else { duty = false; dutyTour = false; optDrag = dragOffered(); }
           enforceModeRules();
           showGarage();
           return;
@@ -30602,7 +30767,7 @@ function showGarage(){
            for that. `tourLoad` resets first and then lays the save over the
            top, so a class with nothing saved still starts clean. */
         else if(!raceTour){ raceTour = true; tourLoad(classOf(optBody)); }
-        else { raceMode = 'endless'; raceTour = false; }
+        else { raceMode = 'endless'; raceTour = false; optDrag = dragOffered(); }
         enforceModeRules();
         showGarage();
       },
@@ -30884,7 +31049,7 @@ function raceLegal(k){ return !RACE_BANNED[bodyClass(k)]; }
 function dutyLegal(k){ const B = BODY[k]; return !!(B && B.force); }
 /* whether the MODE control has anything to offer at all. A production car has
    one mode and the button says so; these two have two. */
-function modesOffered(k){ return raceLegal(k) || dutyLegal(k); }
+function modesOffered(k){ return raceLegal(k) || dutyLegal(k) || dragOffered(); }
 /* ---- WHAT THE MODE BUTTON READS ------------------------------------------
    One answer, because the label and the cycle that changes it must not be able
    to disagree - and they nearly did: the old label was an expression inside the
@@ -30892,6 +31057,8 @@ function modesOffered(k){ return raceLegal(k) || dutyLegal(k); }
    would have been added by hand.
    ------------------------------------------------------------------------- */
 function modeLabel(){
+  /* DRAG RACE is the last stop on every car's control (RLG-156) */
+  if(optDrag && dragOffered()) return 'DRAG RACE';
   /* ---- A POLICE CAR HAS THREE STOPS NOW (owner, 2026-09-16, RLG-212) -----
      "as a [symmetry] to the single race and tournament modes for the race
      cars." The shape matches: three stops on both controls, and the police
@@ -30945,6 +31112,11 @@ function enforceModeRules(){
      would load a completed ladder off disk and the retirement above would have
      been undone by the save it did not know about. */
   if(tourDone){ tourClear(tourClass || classOf(optBody)); tourReset(); tourDone = false; }
+  /* ---- A DRAG RACE IS A RACE OF TWO (RLG-156) ---------------------------
+     Above the police branch, because a police car can be raced as well and
+     must not go on shift to do it - `playerIsPolice` reads `dragOn` too. */
+  dragOn = optDrag && dragOffered();
+  if(dragOn){ mode = 'race'; tourOn = false; tourSwap(); return; }
   if(playerIsPolice()){
     /* on shift: the race machinery on, the SHIFT's own tournament setting, and
        the racing car's choice left exactly where it was. `tourOn` read `false`
@@ -32193,6 +32365,56 @@ function showTourEnd(reason){
                      out ? showGarage() : showTitle(); } });
 }
 
+/* ---- THE RESULT OF A DRAG RACE (RLG-156) ---------------------------------
+   The rival stops being stepped the moment the player crosses, so a rival
+   still short of the line is timed by what it had left at the speed it was
+   doing - it is at full stride by then, so the estimate is within a few
+   hundredths - and the card says so. The best is kept per car, in this
+   machine's own save (`<id>-drag`), and only for a win or a loss, never for a
+   race abandoned. */
+function dragFinish(){
+  const r = racers[0];
+  const mine = dragT;
+  let theirs = null, est = false;
+  if(r){
+    if(r.dragTime !== undefined) theirs = r.dragTime;
+    else { theirs = dragT + Math.max(0, finishZ + PLAYER_Z - r.z) / Math.max(1, r.spd); est = true; }
+  }
+  const all = (AR && AR.save) ? (AR.save.get(GAME_ID + '-drag') || {}) : {};
+  const was = typeof all[optBody] === 'number' ? all[optBody] : null;
+  const best = was === null ? mine : Math.min(was, mine);
+  if(AR && AR.save && best !== was) AR.save.merge(GAME_ID + '-drag', { [optBody]: +best.toFixed(3) });
+  dragResult = { mine: mine, theirs: theirs, est: est, win: theirs === null || mine <= theirs,
+                 best: best, newBest: was === null || mine < was, driver: r ? r.driver : null,
+                 body: optBody, rivalPaint: r ? r.paint : null };
+  return dragResult;
+}
+function dragSecs(t){ return t === null ? '-' : t.toFixed(3) + ' S'; }
+function showDragEnd(){
+  const R = dragResult || dragFinish();
+  openVeil(
+    '<div class="eyebrow">DRAG RACE \u00B7 ' + DRAG_MILES + ' MILE</div>' +
+    '<h1>' + (R.win ? 'YOU WIN' : 'YOU LOSE') + '</h1>' +
+    '<div class="grid2">' +
+      '<div class="gc"><span>YOUR TIME</span><b>' + dragSecs(R.mine) + '</b></div>' +
+      '<div class="gc"><span>RIVAL</span><b>' + (R.est ? '~' : '') + dragSecs(R.theirs) + '</b></div>' +
+      '<div class="gc"><span>BEST \u00B7 ' + R.body + '</span><b>' + dragSecs(R.best) + '</b></div>' +
+      '<div class="gc"><span>TOP SPEED</span><b>' + Math.round(runTopMph) + ' MPH</b></div>' +
+    '</div>' +
+    (R.newBest ? '<div class="gnote">NEW BEST IN THIS CAR</div>' : '') +
+    '<div class="gstack">' +
+      '<button class="go" data-act="again">RACE AGAIN</button>' +
+      '<button class="go ghost" data-act="garage">CHANGE CAR</button>' +
+      '<button class="go ghost" data-act="menu">MAIN MENU</button>' +
+    '</div>',
+    { again: start, garage: showGarage, menu: showTitle });
+}
+/* put back the gearbox a drag race forced to manual */
+function dragBoxBack(){
+  if(dragKeepBox === null) return;
+  optManual = dragKeepBox; dragKeepBox = null;
+  syncBoxClass();
+}
 function showEnd(reason){
   /* the tournament has its own end card - see `showTourEnd`. This is the one
      door both `wreck()` and the clock come through. */
@@ -32240,6 +32462,13 @@ if (AR && AR.options) AR.options.define([
   if(key === 'manual'){
     /* kept in the pause menu as well as the garage: changing your mind about
        the box mid-run is reasonable, changing your CAR is not */
+    /* a drag race is manual whatever this says: the choice is kept for after
+       it, and the box stays where the race put it (RLG-156) */
+    if(dragOn && dragKeepBox !== null){
+      dragKeepBox = (val === 'MANUAL');
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { manual:dragKeepBox });
+      return;
+    }
     optManual = (val === 'MANUAL');
     syncBoxClass();
     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { manual:optManual });
@@ -35312,6 +35541,46 @@ requestAnimationFrame(frameLoop);
      the sea did or did not reach the horizon */
   API.farSea = function(){ return farSea; };
   API.farRoad = function(){ return farRoad; };
+  /* ---- THE DRAG RACE, AS NUMBERS (RLG-156) ------------------------------ */
+  API.drag = function(){
+    const r = racers[0];
+    return { on: dragOn, pick: optDrag, t: +dragT.toFixed(3), finished: finished, place: place,
+             manual: optManual, kept: dragKeepBox, finishZ: finishZ, pos: pos, playerZ: pos + PLAYER_Z,
+             playerX: playerX, traffic: traffic.length, cops: cops.length, racers: racers.length,
+             clock: clockRuns(), wet: wet,
+             rival: r ? { body: r.body, paint: r.paint, z: r.z, x: r.x, spd: r.spd, gear: r.gear,
+                          driver: r.driver, shiftAt: r.shiftAt, shifts: r.shifts || 0,
+                          time: r.dragTime === undefined ? null : r.dragTime } : null,
+             result: dragResult, best: (AR && AR.save) ? (AR.save.get(GAME_ID + '-drag') || {}) : {} };
+  };
+  /* ---- A DRIVER FOR A HARNESS: THE PEDAL, AND A GEAR THROUGH THE GATE ----
+     `putGear` moves the knob to that gear's own slot and calls `placeKnob`,
+     the function a thumb's drag ends in, so the gear is set exactly as a
+     player sets it; a harness that is testing the MODE, not the shifting,
+     uses it rather than dragging a knob through an H (RLG-156). */
+  API.gas = function(on){ setGas(!!on); return !!on; };
+  /* whether the player's car is at the top of its gear's band - where a
+     driver changes up. On the limiter the speed sits exactly at the band's
+     top, so "which band is this speed in" never answers the next gear. */
+  API.shiftDue = function(k){
+    const T = gearTable(), G = T[gear - 1];
+    return !!G && gear < T.length && spd / vmaxOf(optBody) >= G.to * (k || 0.97);
+  };
+  API.putGear = function(g){
+    const sl = gateSlots().find(s2 => s2.g === g);
+    if(!sl) return false;
+    knobRail = sl.rail; knobY = sl.y; placeKnob();
+    return gear === g;
+  };
+  API.dragDriver = function(name){ dragForce = name || null; return dragForce; };
+  API.dragBends = function(){
+    let k = 0, g = 0;
+    for(let z = pos; z < finishZ + PLAYER_Z; z += SEG){
+      k = Math.max(k, Math.abs(curvatureAt(z) || 0));
+      g = Math.max(g, Math.abs(gradeAt(z) || 0));
+    }
+    return { maxCurve: k, maxGrade: g };
+  };
   /* ---- IS THE GROUND PAST A DROP A PLANE BELOW THE ROAD? (RLG-278) ------
      At the row where slice `n`'s rim is drawn, which floor slice was painted
      there - the nearest one covering that row, since the pass paints far to

@@ -209,14 +209,18 @@ with sync_playwright() as p:
             stops.append(label(pg))
             pg.click('[data-act="mode"]')
             pg.wait_for_timeout(110)
-        # THE CYCLE, NOT A SET. Three distinct stops that come back round, which is
-        # what "the same three-stop shape" means - a fourth would be a control the
-        # player has to press four times to get home.
+        # THE CYCLE, NOT A SET. Three distinct stops of the police car's own, which is
+        # what "the same three-stop shape" means - and then DRAG RACE, which the owner
+        # put on EVERY car on 2026-09-19 (RLG-156), the racing cars' control included.
+        # So the shape is still the racing car's shape: its own three, then a drag race,
+        # then home.
         first3 = stops[:3]
         check(sorted(first3) == sorted(['TEST DRIVE', 'INTERCEPT', 'INTERCEPT TOURNAMENT']),
-              'the MODE control has exactly three stops', ' -> '.join(stops[:4]))
-        check(stops[3] == stops[0], 'and the fourth press is back to the first',
-              f"{stops[0]} ... {stops[3]}")
+              'the MODE control has the three police stops', ' -> '.join(stops[:5]))
+        check(stops[3] == 'DRAG RACE', 'then DRAG RACE, as every car has',
+              ' -> '.join(stops[:5]))
+        check(stops[4] == stops[0], 'and the fifth press is back to the first',
+              f"{stops[0]} ... {stops[4]}")
         # the racing modes are still gone, and a BARE 'TOURNAMENT' is the racing one
         check('SINGLE RACE' not in stops and 'TOURNAMENT' not in stops,
               'and no RACING mode is reachable in a police car', ' -> '.join(stops[:4]))

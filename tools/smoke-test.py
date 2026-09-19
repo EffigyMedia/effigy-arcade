@@ -272,6 +272,9 @@ def saves(page, base):
       // "what does this machine store", and a store missing from it is a store
       // nobody thinks about when the eraser changes.
       A.save.set('inter-tour', { sports: { round: 2, pts: 40 } });
+      // RLG-156's best drag time per car: the same `-suffix` path, registered here
+      // for the same reason as the tournament store above.
+      A.save.set('inter-drag', { HATCH: 31.2 });
       localStorage.setItem('effigyarcade.inter.tally.v1', '{}');         // its own key
       localStorage.setItem('effigyarcade.inter.opts.v1', '{"mirror":"OFF"}');  // shell options
       localStorage.setItem('effigyarcade.inter.audio.v1', '{"music":false}');  // audio prefs
