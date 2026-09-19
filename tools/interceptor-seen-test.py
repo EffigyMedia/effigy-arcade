@@ -45,7 +45,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
+from harness import console_utf8, launch_chromium, boot, until, garage_screen  # noqa: E402
 
 GAME = 'games/sw/interstate.html'
 MPH = 170
@@ -97,7 +97,10 @@ def main():
         pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         pg.click('[data-act="play"]')
         pg.wait_for_timeout(400)
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(pg, 'settings')
         pg.click('[data-act="chase"]')      # HOT PURSUIT on, or nothing is dispatched
+        garage_screen(pg, 'main')
         pg.wait_for_timeout(200)
         pg.click('[data-act="drive"]')
         until(pg, '() => window.__probe.road.startLine().left <= 0', timeout=10000)

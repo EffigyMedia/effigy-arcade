@@ -23,8 +23,9 @@ WHAT EACH CHECK WOULD CATCH
                       rather than standing as two 46 px squares.
     arrows stay put   the arrows on a locked car are at the height an owned car put them, so
                       tapping through the fleet does not move the button under the thumb.
-    owned car full    an owned car still has DRIVE, the gearbox, the paint swatches and MODE, so
-                      the rule has not removed the garage for everybody.
+    owned car full    an owned car still has DRIVE, CUSTOMISE CAR, SETTINGS and MODE, so the rule
+                      has not removed the garage for everybody. The paint and the gearbox are one
+                      screen further in since RLG-071 (owner, 2026-09-19), behind those two.
 
 Both driving cabinets are walked, because Motorsport adds its own QUALIFY button through
 `CFG.garageButtons` and that must go too.
@@ -130,7 +131,7 @@ def main():
             page.evaluate("(k) => { const R = window.__road; R.setBody(k); R.showGarage(); }", own)
             page.wait_for_timeout(200)
             acts = page.evaluate(ACTS)
-            missing = [a for a in ('drive', 'box', 'paint', 'mode', 'prev', 'next', 'back') if a not in acts]
+            missing = [a for a in ('drive', 'custom', 'settings', 'mode', 'prev', 'next', 'back') if a not in acts]
             ok(not missing, 'owned %s keeps the whole garage' % own,
                'missing: %s' % ', '.join(missing))
             if cab == 'motorsport':

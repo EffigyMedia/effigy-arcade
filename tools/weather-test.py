@@ -37,7 +37,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 ROOT = Path(__file__).resolve().parent.parent
 GAME = 'games/sw/interstate.html'
@@ -217,6 +217,8 @@ def main():
         # red on one run in six for exactly that reason, at a margin of about three.
         # Loosening the threshold would have hidden a real thing about the effect;
         # measuring it in daylight is what makes the number mean anything.
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(page, 'settings')
         for _ in range(6):
             label = page.eval_on_selector('[data-act="time"] b', 'el => el.textContent').strip()
             if label == 'MIDDAY':
@@ -226,6 +228,7 @@ def main():
         res.check(page.eval_on_selector('[data-act="time"] b',
                                         'el => el.textContent').strip() == 'MIDDAY',
                   'the run is pinned to MIDDAY, so the readings are comparable')
+        garage_screen(page, 'main')
         page.click('[data-act="drive"]')
         page.wait_for_timeout(1600)
 

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.89';
+window.ROAD_BUILD = '0.14.90';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -778,29 +778,58 @@ function timeAward(secs){
 function timeFlash(label, secs){ return label + '  ' + timeAward(secs); }
 /* TEST DRIVE is practice: the clock is optional there. A race always has one. */
 let timedRun = true;
-/* ---- THE LIVERY, AS THREE CHOICES (RLG-071) ------------------------------
-   `optPattern` is a key of `PATTERNS` - a stripe pattern, or TWO-TONE - and
-   `optTone` is the paint the lower half of a two-tone takes. `optGlow` is the
-   underglow's colour, a key of `GLOW`, or 'OFF'. Each is a choice the player
-   makes once the bronze that pays it is won. They replace `optStripes`, which
-   was the first pattern on its own; a save that holds `stripes: true` loads as
-   STRIPES, and still paints nothing until stripes are won. */
-let optPattern = 'NONE', optTone = null, optGlow = 'OFF';
-/* the colour the road last drew under the player, for a check to read */
-let glowDrawn = null;
+/* ---- THE LIVERY, AND THE FOUR COLOURS OF IT (RLG-071) ---------------------
+   Owner, 2026-09-19: "we get to choose the color for each of the two tones,
+   the striped colors and the under glow if all are turned on." So each livery
+   is a switch and a colour, and they are worn together:
+
+     `optPattern`  a key of `PATTERNS` - a stripe pattern, or NONE
+     `optStripeC`  the stripes' paint, or null for the darker shade of the car
+     `optTwoTone`  TWO-TONE on or off - its own switch, so it goes under stripes
+     `optTone`     the second tone's paint, or null for the car's contrast
+     `optGlowOn`   UNDERGLOW on or off
+     `optGlow`     the glow's colour, a key of `GLOW`, kept while it is off
+
+   Each is a choice the player makes once the bronze that pays it is won. They
+   replace `optStripes`, the first pattern on its own; a save that holds
+   `stripes: true` loads as STRIPES and paints nothing until stripes are won. */
+let optPattern = 'NONE', optStripeC = null, optTwoTone = false, optTone = null,
+    optGlowOn = false, optGlow = 'CYAN';
+/* a paint key the car may wear, or null - a colour chosen and then lost to an
+   erased prize falls back to the automatic one rather than painting what the
+   player can no longer choose */
+function wornPaint(k){
+  return (k && PAINT[k] && paintChoices().indexOf(k) >= 0) ? PAINT[k] : null;
+}
 /* what the car in the garage is actually wearing: anything not won, or a car
    that takes no livery, paints as nothing */
 function livery(){
-  const none = { stripes:false, twotone:false, tone:null, glow:null };
+  const none = { stripes:false, stripeCol:null, twotone:false, tone:null, glow:null };
   if(!stripesAllowed()) return none;
   const P = PATTERNS.find(p => p.key === optPattern);
   const ok = !!P && (!P.needs || won(P.needs));
-  const tone = (optTone && PAINT[optTone] && paintChoices().indexOf(optTone) >= 0) ? optTone : null;
+  const sc = wornPaint(optStripeC);
   return { stripes: ok ? (P.stripes || false) : false,
-           twotone: ok && !!P.twotone,
-           tone: tone ? PAINT[tone] : null,
-           glow: (unlocked('underglow') && GLOW[optGlow]) ? GLOW[optGlow] : null };
+           stripeCol: sc ? sc.body : null,
+           twotone: optTwoTone && unlocked('twotone'),
+           tone: wornPaint(optTone),
+           glow: (optGlowOn && unlocked('underglow') && GLOW[optGlow]) ? GLOW[optGlow] : null };
 }
+/* ---- ONE SETTER FOR THE LIVERY'S SWATCHES ----------------------------------
+   A swatch's action is `<what>:<key>`, as the paint's always was. Each writes
+   its own save key; `twotone` and `underglow` are the PRIZE flags in the same
+   save, so the switches are saved as `toneOn` and `glowOn`. */
+function setLivery(what, k){
+  const save = {};
+  if(what === 'stripe'){ optStripeC = (k === 'AUTO') ? null : k; save.stripeC = optStripeC; }
+  if(what === 'tone')  { optTone = (k === 'AUTO') ? null : k;    save.tone = optTone; }
+  if(what === 'glowc' && GLOW[k]){ optGlow = k;                  save.glow = optGlow; }
+  if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), save);
+  buildPlayer();
+  showGarage();
+}
+/* the colour the road last drew under the player, for a check to read */
+let glowDrawn = null;
 /* the patterns this save has won, by key, in the order the button walks them */
 function patternsOffered(){
   return PATTERNS.filter(p => !p.needs || won(p.needs)).map(p => p.key);
@@ -5037,7 +5066,7 @@ function paintRigFront(kind, o){
        ------------------------------------------------------------------ */
     if(P.stripes){
       /* roof and bonnet, never across the windscreen */
-      g.fillStyle = shade(P.body, 0.42);
+      g.fillStyle = P.stripeCol || shade(P.body, 0.42);
       for(const b of stripeBands(P.stripes, 0.055, 0.060)){
         g.fillRect(w*b.x, pRoof, w*b.w, h*0.030);
         g.fillRect(w*b.x, pDeck, w*b.w, bot - pDeck);
@@ -5996,7 +6025,7 @@ function paintRig(kind, o){
        below `deckY` into the door, so the deck run starts where that glass
        ends - the one value the pane itself is drawn to. */
     if(P.stripes){
-      g.fillStyle = shade(P.body, 0.42);
+      g.fillStyle = P.stripeCol || shade(P.body, 0.42);
       const sY = isHatch ? hatchGlassEnd : deckY;
       for(const b of stripeBands(P.stripes, 0.055, 0.060)){
         g.fillRect(w*b.x, roofY, w*b.w, h*0.030);
@@ -6604,7 +6633,7 @@ function paintFront(o){
 
     if(stripeOn){
       /* the same table the rear reads, so front and back match exactly */
-      g.fillStyle = shade(o.body, 0.42);
+      g.fillStyle = o.stripeCol || shade(o.body, 0.42);
       for(const b of stripeCols(kind, o.stripes)){
         g.fillRect(w*b.x, roofT, w*b.w, h*0.030);
         g.fillRect(w*b.x, topY, w*b.w, botY - topY - h*0.05);
@@ -7088,7 +7117,7 @@ function paintCar(o){
         g.save();
         if(cabinPath) cabinPath(); else g.rect(0, h*o.cabinTop, w, h);
         g.clip();
-        g.fillStyle = shade(o.body, 0.42);
+        g.fillStyle = o.stripeCol || shade(o.body, 0.42);
         for(const b of stripeCols(o.bodyKey, o.stripes))
           g.fillRect(w*b.x, 0, w*b.w, h);
         g.restore();
@@ -7166,7 +7195,7 @@ function paintCar(o){
          cannot drift again: roof from `cabinTop` to `bodyTop`, deck from
          `bodyTop` to the bottom of the body.
          ------------------------------------------------------------------ */
-      g.fillStyle = shade(o.body, 0.42);
+      g.fillStyle = o.stripeCol || shade(o.body, 0.42);
       /* ---- FIND THE ROOF, DO NOT GUESS IT -------------------------------
          Measured at the stripe's own x: the first solid pixel of the car is at
          y=42 on STALLION and y=55 on MATADOR, while `cabinTop` is 32 and 40. The
@@ -7673,8 +7702,7 @@ const PATTERNS = [
   { key:'RALLY',     stripes:'rally',    needs:'stripeset' },
   { key:'BAND',      stripes:'band',     needs:'stripeset' },
   { key:'TRIPLE',    stripes:'triple',   needs:'stripeset' },
-  { key:'PINSTRIPE', stripes:'pin',      needs:'stripeset' },
-  { key:'TWO-TONE',  twotone:true,       needs:'twotone' }
+  { key:'PINSTRIPE', stripes:'pin',      needs:'stripeset' }
 ];
 /* ---- THE UNDERGLOW'S COLOURS ----------------------------------------------
    Static: the owner dropped the flash and pulse patterns, because nothing is
@@ -8082,7 +8110,7 @@ function carSprites(bodyKey, pt, L){
                                 cab: { body:pt.body, hi:pt.hi, lo:pt.lo } })
       : pt;
     const base = Object.assign({ lamp:'#d61b3c', lamp2:'#ff7a86', player:true,
-                                 marque:shape.rear, stripes:L.stripes }, rigPaint);
+                                 marque:shape.rear, stripes:L.stripes, stripeCol:L.stripeCol }, rigPaint);
     const rear = sprite(rz[0], rz[1], liveryPass(o => paintRig(shape.rig, o), base, L));
     /* the SAME box as its tail. A different one is a different car. */
     const front = sprite(rz[0], rz[1], liveryPass(o => paintRigFront(shape.rig, o), base, L));
@@ -8092,7 +8120,7 @@ function carSprites(bodyKey, pt, L){
       cabin:true, spoiler:true, shape, bodyKey:bodyKey, force:!!shape.force,
       bar:shape.bar,
       bodyTop:shape.bodyTop, cabinTop:shape.cabinTop,
-      stripes:L.stripes,
+      stripes:L.stripes, stripeCol:L.stripeCol,
       lamp:'#d61b3c', lamp2:'#ff7a86'
     }, pt), L));
     /* ---- AND THE FACE OF IT --------------------------------------------
@@ -8108,7 +8136,7 @@ function carSprites(bodyKey, pt, L){
        of a menu. */
     const front = sprite(CAR_BOX[0], CAR_BOX[1], liveryPass(paintFront, Object.assign({
       bodyType:bodyKey, marque:shape.rear, player:true,
-      stripes:L.stripes,
+      stripes:L.stripes, stripeCol:L.stripeCol,
       lamp:'#d61b3c', lamp2:'#ff7a86'
     }, pt), L));
     return { rear:rear, front:front };
@@ -29590,13 +29618,11 @@ function openVeil(html, go){
       buildPlayer();
       showGarage();
     }));
-  /* and the second tone of a two-tone (RLG-071) */
-  veilBody.querySelectorAll('[data-act^="tone:"]').forEach(b =>
+  /* and the livery's three rows of colours (RLG-071) */
+  veilBody.querySelectorAll('[data-act^="tone:"],[data-act^="stripe:"],[data-act^="glowc:"]').forEach(b =>
     b.addEventListener('click', () => {
-      optTone = b.dataset.act.slice(5);
-      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { tone:optTone });
-      buildPlayer();
-      showGarage();
+      const a = b.dataset.act, i = a.indexOf(':');
+      setLivery(a.slice(0, i), a.slice(i + 1));
     }));
   veilBody.querySelectorAll('[data-act]').forEach(b => {
     /* SWATCHES ARE NOT ACTIONS. This hid the veil for EVERY [data-act] button
@@ -29604,7 +29630,7 @@ function openVeil(html, go){
        has no entry in `go`, tore the menu down and left the game rendering a
        state it had never entered: a black screen with the HUD on top.
        Only a button with a real action closes the menu now. */
-    if(b.dataset.act.indexOf('paint:') === 0 || b.dataset.act.indexOf('tone:') === 0) return;
+    if(/^(paint|tone|stripe|glowc):/.test(b.dataset.act)) return;
     b.addEventListener('click', () => {
       const fn = go && go[b.dataset.act];
       if(!fn) return;                 /* no action, no dismissal */
@@ -29774,16 +29800,17 @@ function syncPaintForBody(){
   if(allowed.length >= BASE_PAINT_KEYS.length) optPaint = freePaint;
   else if(allowed.indexOf(optPaint) < 0)   optPaint = allowed[0];
 }
-/* ---- THE SECOND TONE, FROM THE SAME PALETTE (owner, 2026-09-19) ----------
-   Shown only while TWO-TONE is worn. The swatches are the car's own won
-   palette, so a second tone can never be a colour the first could not be. */
-function toneSwatches(){
-  if(!livery().twotone) return '';
-  const cur = livery().tone;
-  return '<div class="gnote">SECOND TONE</div><div class="swatches">' + paintChoices().map(k =>
-    '<button class="sw' + (cur === PAINT[k] ? ' on' : '') + '" data-act="tone:' + k +
-    '" style="background:' + PAINT[k].body + '" aria-label="' + k + '"></button>'
-  ).join('') + '</div>';
+/* ---- A ROW OF COLOURS FOR ONE PART OF THE LIVERY (RLG-071) ----------------
+   The second tone and the stripes choose from the car's own won palette, so
+   neither can be a colour the paint could not be; the glow chooses from its
+   neon. AUTO, first in a paint row, is the colour the car would pick itself -
+   the stripes' darker shade of the body, the second tone's contrast. */
+function swatchRow(what, keys, colour, cur, auto){
+  const b = (k, bg, on) => '<button class="sw' + (on ? ' on' : '') + '" data-act="' + what +
+    ':' + k + '" style="background:' + bg + '" aria-label="' + k + '"></button>';
+  return '<div class="swatches">' +
+    (auto ? b('AUTO', auto, !cur) : '') +
+    keys.map(k => b(k, colour(k), cur === k)).join('') + '</div>';
 }
 function paintSwatches(){
   return '<div class="swatches">' + paintChoices().map(k =>
@@ -30172,12 +30199,13 @@ function drawGarageCar(){
      wrap is the positioning context the flip button already uses. */
   if(cv.parentNode && cv.parentNode.style)
     cv.parentNode.style.setProperty('--gfloor', FLOOR + 'px');
-  /* ---- THE UNDERGLOW IN THE GARAGE IS A CSS SHADOW (RLG-071) ----------
+  /* ---- THE UNDERGLOW IN THE GARAGE IS ON THE FLOOR (RLG-071) ----------
      For the reason the floor is: this canvas is the car, and garage-card-test
-     measures the car by its pixels. A filter is drawn by the page, not into
-     the canvas, so the glow is seen and the measurement is untouched. */
+     measures the car by its pixels. The pool of light is `.gwrap::after`, and
+     this only hands it the colour. */
   const gl = livery().glow;
-  cv.style.filter = gl ? 'drop-shadow(0 ' + Math.round(8*dpr/2) + 'px 10px ' + gl + ')' : '';
+  if(cv.parentNode && cv.parentNode.style)
+    cv.parentNode.style.setProperty('--glow', gl || 'transparent');
   const put = (img, box, cx, sci) => {
     if(!img) return;
     const k = sci === undefined ? sc : sci;
@@ -30261,6 +30289,7 @@ function showGarage(){
   if(state !== 'garage'){
     endRun(true); state = 'garage'; menuMusic();
     garageEnd = 'front';
+    garageView = 'main';
   }
   state = 'garage';
   /* ---- A CAR YOU DO NOT OWN OFFERS ONLY THE WAY TO ANOTHER CAR (RLG-223) --
@@ -30284,11 +30313,18 @@ function showGarage(){
      `next` and `back`, so a stale veil or a hardware press cannot reach a
      setting whose button is not drawn. */
   const locked = carLocked(optBody);
-  const picker = '<div class="gbox' + (locked ? ' pick' : '') + '">' +
+  /* ---- THE CUSTOMISE SCREEN IS ITS OWN VIEW OF THE GARAGE (RLG-071) --------
+     A locked car has nothing to customise, so it always shows the main view. */
+  if(locked) garageView = 'main';
+  if(garageView === 'custom'){ showCustomise(); return; }
+  if(garageView === 'settings'){ showSettings(); return; }
+  /* ---- THE ARROWS ARE A ROW OF THEIR OWN (owner, 2026-09-19) ---------------
+     "The left and right selection buttons on the main garage screen should be
+     its own row with the transmission being its own toggle button." The row
+     is the two arrows split down the middle, which is the shape a locked car
+     already had; the gearbox is a button in the stack below. */
+  const picker = '<div class="gbox pick">' +
       '<button class="go ghost" data-act="prev">\u2039</button>' +
-      (locked ? '' :
-        '<button class="go ghost" data-act="box">GEARBOX \u00B7 <b>' +
-          (optManual ? 'MANUAL' : 'AUTO') + '</b></button>') +
       '<button class="go ghost" data-act="next">\u203A</button>' +
     '</div>';
   /* ---- AND THE ARROWS DO NOT MOVE UNDER THE THUMB (owner, 2026-09-14) ----
@@ -30326,47 +30362,19 @@ function showGarage(){
        one row wider than the screen, centred, with the ends cut off. Silver
        took a racing palette to 27 in 0.14.87 and the outer swatches could
        not be reached. Capped at twelve, the grid wraps them onto new rows. */
-    '<style>.swatches{--sw:' + Math.min(12, paintChoices().length) + '}</style>' +
-    paintSwatches() +
-    toneSwatches() +
     picker +
     /* the run's SHAPE belongs with the car, not on the title card: both are
        choices about the drive you are about to take */
     '<div class="gstack">' +
+      /* ---- EVERY LOOK OF THE CAR IS ONE SCREEN AWAY (owner, 2026-09-19) ----
+         "a customize car button that opens us a new window that still shows
+         the car, but is only all the paint design stuff so none of that
+         happens on the main screen where you choose the mode options and
+         start a run." Offered only where there is something to choose. */
+      (customisable()
+        ? '<button class="go ghost" data-act="custom">CUSTOMISE CAR</button>' : '') +
       /* a formula car has a livery, not stripes — and on that narrow engine
          cover they were lost between the tyres anyway */
-      /* ---- THE LIVERY CONTROLS, EACH ONCE ITS BRONZE IS WON (RLG-071) ------
-         Nothing is offered that cannot be worn: PATTERN appears once stripes
-         or two-tone are won, and UNDERGLOW once it is. The caption under the
-         paint says how to win each one, as it does for every other prize. */
-      (stripesAllowed() && patternsOffered().length > 1
-        ? '<button class="go ghost" data-act="pattern">PATTERN \u00B7 <b>' +
-            patternKey() + '</b></button>'
-        : '') +
-      (stripesAllowed() && unlocked('underglow')
-        ? '<button class="go ghost" data-act="glow">UNDERGLOW \u00B7 <b>' +
-            (GLOW[optGlow] ? optGlow : 'OFF') + '</b></button>'
-        : '') +
-      /* ---- WHICH CLASS A FORMULA CAR IS ENTERING (RLG-213) ---------------
-         The one part of the ladder that needed a control that did not exist.
-         A formula car has no league, so without this it has no grid at all.
-
-         IT IS ONLY THERE FOR A FORMULA CAR, and that is not the usual rule on
-         this screen - RLG-115 argues for greying a control out with the reason
-         given rather than hiding it. That reasoning does not carry here: MODE
-         is shut for a van to explain a RULE the player meets again, while a
-         class choice for a car that HAS a class is nothing to teach.
-
-         AND IT CARRIES NO CAPTION. It shipped with a note reading NO FORMULA
-         LEAGUE . PICK A CLASS TO RACE, and the owner cut it the same day: the
-         button is only there for a formula car, so its presence already says
-         the car needs telling. A caption that states what the control's own
-         existence states is text the player reads once and never needs.
-         ---------------------------------------------------------------- */
-      (isFormula(optBody) ?
-        '<button class="go ghost" data-act="entry">ENTER · <b>' +
-          entryClass().toUpperCase() + '</b></button>'
-        : '') +
       /* ---- THE MODE CONTROL, AND WHY IT MAY BE SHUT (RLG-115) ------------
          Owner, 2026-09-05, choosing between three shapes for what the player
          sees: the modes GREY OUT WITH THE REASON GIVEN. Not hidden - a control
@@ -30394,10 +30402,6 @@ function showGarage(){
          ---------------------------------------------------------------- */
       (dutyLegal(optBody) ?
         '<div class="gnote">POLICE \u00B7 NO RACE ENTRY \u00B7 INTERCEPT INSTEAD</div>' : '') +
-      /* what time you set off. The cycle still runs from there - this picks the
-         start, not a fixed light (RLG-051). */
-      '<button class="go ghost" data-act="time">TIME \u00B7 <b>' +
-        TIMES[optTime].key + '</b></button>' +
       /* ---- WHAT THE LADDER UNDER YOU SAYS -------------------------------
          The tail differs because the two ladders carry different state: a
          racing round is worth points and a standing, and a shift round is
@@ -30410,16 +30414,12 @@ function showGarage(){
             ? ' \u00B7 ' + Math.max(0, tourRetries|0) + ' ATTEMPTS LEFT'
             : (tourRound ? ' \u00B7 ' + tourPts + ' PTS, P' + tourStanding() : '')) +
           '</div>' : '') +
-      /* practice has a clock only if you ask for one */
-      (mode === 'race' ? '' :
-        '<button class="go ghost" data-act="timed">TIMED \u00B7 <b>' +
-          (timedRun ? 'ON' : 'OFF') + '</b></button>') +
-      /* shut on shift, and shut the way RLG-115 shuts a mode: the reason is
-         given rather than the control vanishing (RLG-203) */
-      '<button class="go ghost' + (playerIsPolice() ? ' shut' : '') + '"' +
-        (playerIsPolice() ? ' disabled' : '') + ' data-act="chase">HOT PURSUIT \u00B7 <b>' +
-        (optEasy ? 'OFF' : 'ON') + '</b></button>' +
-      (playerIsPolice() ? '<div class="gnote">INTERCEPT IS A PURSUIT</div>' : '') +
+      /* ---- AND EVERY SETTING OF THE DRIVE IS ONE SCREEN AWAY (owner, 2026-09-19)
+         "We can further collapse the main menu by putting all the settings into
+         another button/menu." MODE stays here, because it says what DRIVE
+         starts; the gearbox, the entry class, the time, the clock and hot
+         pursuit are on SETTINGS. */
+      '<button class="go ghost" data-act="settings">SETTINGS</button>' +
       /* a fork can put its own buttons here — Motorsport adds QUALIFY */
       (CFG.garageButtons ? CFG.garageButtons() : '') +
       /* A LOCKED CAR NEVER REACHES THIS LINE - it returns above with no DRIVE
@@ -30432,23 +30432,9 @@ function showGarage(){
     Object.assign({}, (CFG.garageActions ? CFG.garageActions(start) : {}), {
       prev: () => cycleBody(-1),
       next: () => cycleBody(1),
-      box:  () => { optManual = !optManual; syncBoxClass();
-                    if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { manual:optManual });
-                    showGarage(); },
       /* three states in one control: TEST DRIVE, SINGLE RACE, TOURNAMENT */
-      pattern: () => { if(stripesAllowed()){
-                         const on = patternsOffered(), i = on.indexOf(patternKey());
-                         optPattern = on[(i + 1) % on.length];
-                       }
-                       buildPlayer();
-                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { pattern:optPattern });
-                       showGarage(); },
-      glow: () => { if(stripesAllowed() && unlocked('underglow')){
-                      const on = ['OFF'].concat(GLOW_KEYS), i = on.indexOf(optGlow);
-                      optGlow = on[(i + 1) % on.length];
-                    }
-                    if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { glow:optGlow });
-                    showGarage(); },
+      custom: () => { garageView = 'custom'; showGarage(); },
+      settings: () => { garageView = 'settings'; showGarage(); },
       mode:  () => {
         /* the button is `disabled` as well, so this is the second lock rather
            than the only one - a hardware back-press or a stale veil must not be
@@ -30494,21 +30480,6 @@ function showGarage(){
         enforceModeRules();
         showGarage();
       },
-      /* ---- CYCLE THE CLASS A FORMULA CAR ENTERS (RLG-213) -------------
-         Persisted, because it is a choice about the event rather than a look
-         at the car - it belongs with the gearbox and the paint. */
-      entry: () => { cycleEntryClass(); showGarage(); },
-      time:  () => { optTime = (optTime + 1) % TIMES.length;
-                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { time:optTime });
-                     showGarage(); },
-      timed: () => { timedRun = !timedRun;
-                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { timed:timedRun });
-                     showGarage(); },
-      /* the second lock, for the same reason every other control here has one */
-      chase: () => { if(playerIsPolice()) return;
-                     optEasy = !optEasy;
-                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
-                     showGarage(); },
       /* THE SECOND LOCK. The button is `disabled` as well; this is here for the
          same reason the mode action has one - a stale veil or a hardware press
          must not be able to drive a car that has not been won (RLG-180). */
@@ -30528,6 +30499,135 @@ function showGarage(){
   if(pk) garagePickTop = pk.getBoundingClientRect().top - veilBody.getBoundingClientRect().top;
 }
 let garagePickTop = 0;
+/* which of the garage's three screens is open: 'main', 'custom' or 'settings' */
+let garageView = 'main';
+/* ---- THE SETTINGS SCREEN (owner, 2026-09-19) ------------------------------
+   The choices about how the drive runs, off the main garage. Each control is
+   the one the main garage had, with its own lock and its own note; DONE goes
+   back. The car is not shown: nothing here changes how it looks. */
+function showSettings(){
+  openVeil(
+    '<div class="eyebrow">SETTINGS</div>' +
+    '<div class="gname">' + optBody + '</div>' +
+    '<div class="gstack">' +
+      '<button class="go ghost" data-act="box">GEARBOX \u00B7 <b>' +
+        (optManual ? 'MANUAL' : 'AUTO') + '</b></button>' +
+      /* ---- WHICH CLASS A FORMULA CAR IS ENTERING (RLG-213) ---------------
+         The one part of the ladder that needed a control that did not exist.
+         A formula car has no league, so without this it has no grid at all.
+
+         IT IS ONLY THERE FOR A FORMULA CAR, and that is not the usual rule on
+         this screen - RLG-115 argues for greying a control out with the reason
+         given rather than hiding it. That reasoning does not carry here: MODE
+         is shut for a van to explain a RULE the player meets again, while a
+         class choice for a car that HAS a class is nothing to teach.
+
+         AND IT CARRIES NO CAPTION. It shipped with a note reading NO FORMULA
+         LEAGUE . PICK A CLASS TO RACE, and the owner cut it the same day: the
+         button is only there for a formula car, so its presence already says
+         the car needs telling. A caption that states what the control's own
+         existence states is text the player reads once and never needs.
+         ---------------------------------------------------------------- */
+      (isFormula(optBody) ?
+        '<button class="go ghost" data-act="entry">ENTER · <b>' +
+          entryClass().toUpperCase() + '</b></button>'
+        : '') +
+      /* what time you set off. The cycle still runs from there - this picks the
+         start, not a fixed light (RLG-051). */
+      '<button class="go ghost" data-act="time">TIME \u00B7 <b>' +
+        TIMES[optTime].key + '</b></button>' +
+      /* practice has a clock only if you ask for one */
+      (mode === 'race' ? '' :
+        '<button class="go ghost" data-act="timed">TIMED \u00B7 <b>' +
+          (timedRun ? 'ON' : 'OFF') + '</b></button>') +
+      /* shut on shift, and shut the way RLG-115 shuts a mode: the reason is
+         given rather than the control vanishing (RLG-203) */
+      '<button class="go ghost' + (playerIsPolice() ? ' shut' : '') + '"' +
+        (playerIsPolice() ? ' disabled' : '') + ' data-act="chase">HOT PURSUIT \u00B7 <b>' +
+        (optEasy ? 'OFF' : 'ON') + '</b></button>' +
+      (playerIsPolice() ? '<div class="gnote">INTERCEPT IS A PURSUIT</div>' : '') +
+      '<button class="go" data-act="done">DONE</button>' +
+    '</div>',
+    {
+      box:  () => { optManual = !optManual; syncBoxClass();
+                    if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { manual:optManual });
+                    showGarage(); },
+      /* ---- CYCLE THE CLASS A FORMULA CAR ENTERS (RLG-213) -------------
+         Persisted, because it is a choice about the event rather than a look
+         at the car - it belongs with the gearbox and the paint. */
+      entry: () => { cycleEntryClass(); showGarage(); },
+      time:  () => { optTime = (optTime + 1) % TIMES.length;
+                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { time:optTime });
+                     showGarage(); },
+      timed: () => { timedRun = !timedRun;
+                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { timed:timedRun });
+                     showGarage(); },
+      /* the second lock, for the same reason every other control here has one */
+      chase: () => { if(playerIsPolice()) return;
+                     optEasy = !optEasy;
+                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { easy:optEasy });
+                     showGarage(); },
+      done: () => { garageView = 'main'; showGarage(); }
+    });
+}
+/* whether the car in the garage has anything to customise */
+function customisable(){ return paintChoices().length > 1 || stripesAllowed(); }
+/* ---- THE CUSTOMISE SCREEN (owner, 2026-09-19, RLG-071) -------------------
+   The car, and everything about how it looks: the paint, then each livery the
+   player has won - a switch, and the colours under it while it is on. What is
+   not won yet is named in the caption under the paint, with how to win it.
+   DONE goes back to the main garage, where the drive is chosen and started. */
+function showCustomise(){
+  const L = livery(), won_ = paintChoices();
+  const pcol = k => PAINT[k].body;
+  const row = (btn) => '<div class="gstack">' + btn + '</div>';
+  const pt = PAINT[optPaint] || PAINT.WHITE;
+  let body = '';
+  if(stripesAllowed()){
+    if(stripesWon()){
+      body += row('<button class="go ghost" data-act="pattern">STRIPES \u00B7 <b>' +
+                  patternKey() + '</b></button>');
+      if(L.stripes) body += swatchRow('stripe', won_, pcol, optStripeC && L.stripeCol ? optStripeC : null,
+                                      shade(pt.body, 0.42));
+    }
+    if(unlocked('twotone')){
+      body += row('<button class="go ghost" data-act="twotone">TWO-TONE \u00B7 <b>' +
+                  (L.twotone ? 'ON' : 'OFF') + '</b></button>');
+      if(L.twotone) body += swatchRow('tone', won_, pcol, L.tone ? optTone : null,
+                                      contrastPaint(pt).body);
+    }
+    if(unlocked('underglow')){
+      body += row('<button class="go ghost" data-act="glow">UNDERGLOW \u00B7 <b>' +
+                  (L.glow ? 'ON' : 'OFF') + '</b></button>');
+      if(L.glow) body += swatchRow('glowc', GLOW_KEYS, k => GLOW[k], optGlow, null);
+    }
+  }
+  openVeil(
+    '<div class="eyebrow">CUSTOMISE CAR</div>' +
+    garageCard() +
+    '<style>.swatches{--sw:' + Math.min(12, won_.length + 1) + '}</style>' +
+    paintSwatches() + body +
+    row('<button class="go" data-act="done">DONE</button>'),
+    {
+      pattern: () => { if(stripesAllowed() && stripesWon()){
+                         const on = patternsOffered(), i = on.indexOf(patternKey());
+                         optPattern = on[(i + 1) % on.length];
+                       }
+                       buildPlayer();
+                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { pattern:optPattern });
+                       showGarage(); },
+      twotone: () => { if(stripesAllowed() && unlocked('twotone')) optTwoTone = !optTwoTone;
+                       buildPlayer();
+                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { toneOn:optTwoTone });
+                       showGarage(); },
+      glow:    () => { if(stripesAllowed() && unlocked('underglow')) optGlowOn = !optGlowOn;
+                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { glowOn:optGlowOn });
+                       showGarage(); },
+      flip:    () => { garageEnd = (garageEnd === 'front') ? 'rear' : 'front'; showGarage(); },
+      done:    () => { garageView = 'main'; showGarage(); }
+    });
+  drawGarageCar();
+}
 /* ---- WHAT CLASS A CAR IS, ASKED IN ONE PLACE ------------------------------
    This table used to live inside `cycleBody`, where its only job was deciding
    which cars the garage would let you cycle onto. RLG-115 gives the classes a
@@ -32098,10 +32198,14 @@ if (AR && AR.options) AR.options.define([
        the stripes switch, and ON was the first pattern (RLG-071) */
     if(typeof g0.pattern === 'string' && PATTERNS.some(p => p.key === g0.pattern))
       optPattern = g0.pattern;
+    else if(g0.pattern === 'TWO-TONE') optTwoTone = true;   /* 0.14.89 kept it in PATTERN */
     else if(g0.stripes === true) optPattern = 'STRIPES';
+    if(typeof g0.toneOn === 'boolean') optTwoTone = g0.toneOn;
+    if(typeof g0.stripeC === 'string' && PAINT[g0.stripeC]) optStripeC = g0.stripeC;
+    if(typeof g0.glowOn === 'boolean') optGlowOn = g0.glowOn;
     /* the second tone and the glow, each validated where it is read */
     if(typeof g0.tone === 'string' && PAINT[g0.tone]) optTone = g0.tone;
-    if(typeof g0.glow === 'string' && (g0.glow === 'OFF' || GLOW[g0.glow])) optGlow = g0.glow;
+    if(typeof g0.glow === 'string' && GLOW[g0.glow]) optGlow = g0.glow;
     /* range-checked rather than trusted: a save written by a future build with
        more times in it must not index past the end of this build's table */
     if(typeof g0.time === 'number' && g0.time >= 0 && g0.time < TIMES.length)
@@ -33444,8 +33548,9 @@ requestAnimationFrame(frameLoop);
     return keys.map(k => {
       const row = [];
       for(const l of ls){
-        const L = Object.assign({ stripes:false, twotone:false, tone:null }, l);
+        const L = Object.assign({ stripes:false, stripeCol:null, twotone:false, tone:null }, l);
         if(typeof L.tone === 'string') L.tone = PAINT[L.tone] || null;
+        if(L.stripeCol && PAINT[L.stripeCol]) L.stripeCol = PAINT[L.stripeCol].body;
         const S = carSprites(k, pt, L);
         row.push(S.rear, S.front);
       }
@@ -33453,7 +33558,9 @@ requestAnimationFrame(frameLoop);
     });
   };
   API.livery = function(){
-    return Object.assign({ pattern:patternKey(), toneKey:optTone, glowKey:optGlow }, livery());
+    return Object.assign({ pattern:patternKey(), toneKey:optTone, stripeKey:optStripeC,
+                           toneOn:optTwoTone, glowOn:optGlowOn, glowKey:optGlow,
+                           view:garageView }, livery());
   };
   /* the underglow as the road draws it: its colour, or null (RLG-071) */
   API.glowDrawn = function(){ return glowDrawn; };

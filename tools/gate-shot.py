@@ -24,7 +24,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -104,6 +104,8 @@ def main():
         page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         page.click('[data-act="play"]')
         page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(page, 'settings')
         # the manual box, which is what draws a gate at all
         for _ in range(4):
             label = page.eval_on_selector('[data-act="box"] b', 'el => el.textContent').strip()
@@ -113,6 +115,7 @@ def main():
             page.wait_for_timeout(80)
         print('      gearbox: %s'
               % page.eval_on_selector('[data-act="box"] b', 'el => el.textContent').strip())
+        garage_screen(page, 'main')
         page.click('[data-act="drive"]')
         page.wait_for_timeout(1200)
 

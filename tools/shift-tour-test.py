@@ -49,7 +49,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8, boot, until, reboot
+from harness import launch_chromium, console_utf8, boot, until, reboot, garage_screen
 from playwright.sync_api import sync_playwright
 console_utf8()
 
@@ -110,6 +110,8 @@ def car(pg):
 
 
 def walk_to(pg, want, limit=40):
+    # the arrows are on the MAIN garage, and a walk may start on CUSTOMISE (RLG-071)
+    garage_screen(pg, 'main')
     seen = []
     for _ in range(limit):
         k = car(pg)
@@ -148,6 +150,7 @@ def paint_after(pg, body):
                     "        window.__road.showGarage(); }")
         pg.wait_for_timeout(200)
     walk_to(pg, body)
+    garage_screen(pg, 'custom')
     return pg.evaluate("""() => [...document.querySelectorAll('[data-act^="paint:"]')]
                                  .map(b => b.dataset.act.slice(6))""")
 
@@ -261,8 +264,10 @@ with sync_playwright() as p:
             check(False, 'the road arm reached a police car on the tournament', f'{got}')
         else:
             ladder = tour(pg)['ladder']
+            garage_screen(pg, 'custom')
             before = pg.evaluate("""() => [...document.querySelectorAll('[data-act^="paint:"]')]
                                         .map(b => b.dataset.act.slice(6))""")
+            garage_screen(pg, 'main')
             seen_legs, seen_rounds = [], []
             for n in range(len(ladder)):
                 # ROUND ONE IS ENTERED FROM THE GARAGE AND THE REST FROM THE
@@ -379,9 +384,11 @@ with sync_playwright() as p:
             # ---- A POLICE COLOUR IS ITS OWN (RLG-212) ------------------------
             # Paint the HATCH pink and the CRUISER force green through the real
             # swatches: neither may take the other's colour.
-            walk_to(pg, 'HATCH'); pg.click('[data-act="paint:PINK"]'); pg.wait_for_timeout(120)
+            walk_to(pg, 'HATCH'); garage_screen(pg, 'custom')
+            pg.click('[data-act="paint:PINK"]'); pg.wait_for_timeout(120)
             walk_to(pg, 'CRUISER')
             first = pg.evaluate("() => window.__road.paint ? window.__road.paint() : null")
+            garage_screen(pg, 'custom')
             pg.click('[data-act="paint:FORCEGREEN"]'); pg.wait_for_timeout(120)
             walk_to(pg, 'HATCH')
             hatch = pg.evaluate("() => window.__road.paint()")

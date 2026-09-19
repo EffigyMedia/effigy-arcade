@@ -33,7 +33,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -82,7 +82,10 @@ def main():
         pg.click('[data-act="play"]')
         pg.wait_for_timeout(400)
         # HOT PURSUIT on, or the whole system stands down and every number is zero
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(pg, 'settings')
         pg.click('[data-act="chase"]')
+        garage_screen(pg, 'main')
         pg.wait_for_timeout(200)
         pg.click('[data-act="drive"]')
         pg.wait_for_timeout(1500)

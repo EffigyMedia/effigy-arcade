@@ -56,7 +56,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -272,6 +272,8 @@ def main():
         page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         page.click('[data-act="play"]')
         page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
+        # the gearbox is on SETTINGS, and DRIVE is on the main garage (RLG-071)
+        garage_screen(page, 'settings')
         for _ in range(4):
             if page.eval_on_selector('[data-act="box"] b',
                                      'el => el.textContent').strip().startswith('MANUAL'):
@@ -281,6 +283,7 @@ def main():
         res.check(page.eval_on_selector('[data-act="box"] b',
                                         'el => el.textContent').strip().startswith('MANUAL'),
                   'the manual gearbox can be selected')
+        garage_screen(page, 'main')
         page.click('[data-act="drive"]')
         # WAIT FOR THE PLATE TO HAVE A BOX, do not sleep and hope (RLG-220). A drag at a plate
         # with no layout yet lands on nothing, and every reading is the knob's resting place.

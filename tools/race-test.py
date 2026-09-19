@@ -33,7 +33,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -87,6 +87,8 @@ def read_toggle(page, act):
 
 def set_toggle(page, act, want):
     """Tap a toggle until it reads what is wanted. It cycles, so this is how a thumb does it."""
+    # the drive's settings are on the SETTINGS screen (RLG-071)
+    garage_screen(page, 'settings' if act in ('time', 'timed', 'chase', 'box', 'entry') else 'main')
     for _ in range(6):
         if read_toggle(page, act) == want:
             return True

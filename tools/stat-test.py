@@ -97,7 +97,7 @@ _handover()
 
 from playwright.sync_api import sync_playwright   # noqa: E402
 
-from harness import console_utf8, launch_chromium, boot as engine_boot, until  # noqa: E402
+from harness import console_utf8, launch_chromium, boot as engine_boot, until, garage_screen  # noqa: E402
 
 
 SEED_RNG = r"""
@@ -418,6 +418,8 @@ def boot(page, base_url, race):
     until(page, '!!window.__probe.road', timeout=10_000)
     page.click('[data-act="play"]')
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5_000)
+    # the drive's settings are on the SETTINGS screen (RLG-071)
+    garage_screen(page, 'settings')
     # hot pursuit off: a roadblock or a PIT in the middle of a 0-60 is not a 0-60
     el = page.query_selector('[data-act="chase"] b')
     if el and el.inner_text().strip() == 'ON':
@@ -432,6 +434,7 @@ def boot(page, base_url, race):
     if el and el.inner_text().strip() == 'ON':
         page.click('[data-act="timed"]')
         page.wait_for_timeout(120)
+    garage_screen(page, 'main')
     if race:
         page.click('[data-act="mode"]')
         page.wait_for_timeout(150)

@@ -189,6 +189,36 @@ def reboot(page, ready=None, timeout=30_000, settle=0, required=True):
                        % (page.url, _diagnose(page)))
 
 
+# ---- THE GARAGE HAS THREE SCREENS (owner, 2026-09-19, RLG-071) ----------------------------------
+# The main garage holds the car, the arrows, CUSTOMISE CAR, MODE, SETTINGS, DRIVE and BACK. The
+# gearbox, the entry class, TIME, TIMED and HOT PURSUIT are on SETTINGS; the paint and the liveries
+# are on CUSTOMISE. A harness that taps one of those opens its screen with `garage_screen`, and goes
+# back with `garage_screen(page, 'main')` before it taps DRIVE, MODE or an arrow.
+_SCREEN_BUTTON = {'settings': 'settings', 'custom': 'custom'}
+
+
+def garage_screen(page, which, wait=120):
+    """Open the garage's `which` screen - 'main', 'settings' or 'custom' - from any of the three.
+
+    Returns True when the screen is open. It reads the engine's own `garageView` through
+    `livery().view`, so it cannot mistake one screen for another by the buttons on it."""
+    view = lambda: page.evaluate("() => { const R = (window.__probe && window.__probe.road) || window.__road;"
+                                 " return R && R.livery ? R.livery().view : null; }")
+    if view() == which:
+        return True
+    if view() != 'main' and page.query_selector('#veil:not(.hidden) [data-act="done"]'):
+        page.click('#veil:not(.hidden) [data-act="done"]')
+        page.wait_for_timeout(wait)
+    if which == 'main':
+        return view() == 'main'
+    sel = '#veil:not(.hidden) [data-act="%s"]' % _SCREEN_BUTTON[which]
+    if not page.query_selector(sel):
+        return False
+    page.click(sel)
+    page.wait_for_timeout(wait)
+    return view() == which
+
+
 def _diagnose(page):
     """What the page actually looked like when it would not boot.
 

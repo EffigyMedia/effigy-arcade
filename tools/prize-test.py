@@ -15,10 +15,11 @@ WHAT IT ASSERTS, in a fresh save, reading the swatches the garage actually draws
   . a second silver in the same class announces nothing new (RLG-202);
   . a formula car's class pays nothing, and a police car's palette gains none of them;
   . once all three are won, the captions are gone;
-  . BRONZE: before any bronze there is no PATTERN and no UNDERGLOW control and a car wears no
-    stripes, even with the old switch ON in its save; each bronze pays once and opens its own
-    control; PATTERN then walks all seven; a chosen second tone is worn; the underglow walks its
-    colours and the ROAD draws the chosen one; formula pays nothing; a police car has none of it;
+  . BRONZE, on the CUSTOMISE screen: before any bronze there is no stripe, two-tone or underglow
+    control; each bronze pays once and opens its own; STRIPES walks NONE and five patterns and
+    worn stripes take a chosen colour; TWO-TONE is its own switch, worn over the stripes, in a
+    chosen tone; UNDERGLOW shows its colours when ON and the ROAD draws the chosen one; formula pays
+    nothing; a police car has none of it; DONE returns to a main garage with no paint on it;
   . every pattern CHANGES THE DRAWN SPRITE of all nine racing cars, the five stripe patterns are
     five different drawings, and a chosen second tone differs from the automatic one;
   . a save holding only `stripes: true` loads as the STRIPES pattern.
@@ -66,15 +67,22 @@ with sync_playwright() as p:
     pg.click('[data-act="play"]')
     pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]')
 
+    # every look of the car is on the CUSTOMISE screen (owner, 2026-09-19), so this opens it
     def garage(body):
         pg.evaluate("(k) => { const R = window.__probe.road; R.setBody(k); R.showGarage(); }", body)
         pg.wait_for_timeout(300)
+        if pg.query_selector('#veil [data-act="custom"]'):
+            pg.click('#veil [data-act="custom"]')
+            pg.wait_for_timeout(200)
         return pg.evaluate("""() => ({
             swatches: [...document.querySelectorAll('[data-act^="paint:"]')].map(b => b.dataset.act.slice(6)),
             notes: [...document.querySelectorAll('#veil .gnote')].map(n => n.textContent),
             pattern: (document.querySelector('[data-act="pattern"] b') || {}).textContent || null,
             glow: (document.querySelector('[data-act="glow"] b') || {}).textContent || null,
-            tones: document.querySelectorAll('[data-act^="tone:"]').length })""")
+            twotone: (document.querySelector('[data-act="twotone"] b') || {}).textContent || null,
+            tones: document.querySelectorAll('[data-act^="tone:"]').length,
+            stripeCs: document.querySelectorAll('[data-act^="stripe:"]').length,
+            glows: document.querySelectorAll('[data-act^="glowc:"]').length })""")
 
     g0 = garage('HATCH')
     print('      a fresh HATCH offers %d paints' % len(g0['swatches']))
@@ -130,35 +138,56 @@ with sync_playwright() as p:
 
     g = garage('COUPE')
     seen = [g['pattern']]
-    for _ in range(7):
+    for _ in range(6):
         seen.append(tap('pattern', 'COUPE')['pattern'])
-    print('      PATTERN walks %s' % ' -> '.join(map(str, seen)))
-    check(set(seen) == {'NONE', 'STRIPES', 'RALLY', 'BAND', 'TRIPLE', 'PINSTRIPE', 'TWO-TONE'},
-          'once won, PATTERN walks NONE, five stripe patterns and TWO-TONE', repr(seen))
-    while g['pattern'] != 'TWO-TONE':
+    print('      STRIPES walks %s' % ' -> '.join(map(str, seen)))
+    check(set(seen) == {'NONE', 'STRIPES', 'RALLY', 'BAND', 'TRIPLE', 'PINSTRIPE'},
+          'once won, STRIPES walks NONE and five patterns', repr(seen))
+    while g['pattern'] != 'RALLY':
         g = tap('pattern', 'COUPE')
-    check(g['tones'] >= 12, 'TWO-TONE shows a row of second tones from the palette', '%d' % g['tones'])
+    check(g['stripeCs'] >= 13, 'worn stripes show a row of colours, AUTO and the palette', '%d' % g['stripeCs'])
+    pg.click('#veil [data-act="stripe:BLACK"]')
+    pg.wait_for_timeout(150)
+
+    # two-tone is its own switch now, and goes on with the stripes still worn
+    check(g['twotone'] == 'OFF', 'TWO-TONE is offered once won, OFF', repr(g['twotone']))
+    g = tap('twotone', 'COUPE')
+    check(g['tones'] >= 13, 'and ON shows a row of second tones, AUTO and the palette', '%d' % g['tones'])
     pg.click('#veil [data-act="tone:GOLD"]')
     pg.wait_for_timeout(150)
     liv = pg.evaluate("() => window.__probe.road.livery()")
     check(liv['toneKey'] == 'GOLD' and liv['twotone'] and liv['tone'] is not None,
           'and a tapped tone is the one worn', '%r %r' % (liv['toneKey'], liv['twotone']))
+    check(liv['stripes'] == 'rally' and liv['stripeCol'] is not None,
+          'and the stripes are worn with it, in the colour tapped', '%r %r' % (liv['stripes'], liv['stripeCol']))
 
     g = garage('COUPE')
-    check(g['glow'] == 'OFF', 'UNDERGLOW is offered once won, OFF', repr(g['glow']))
-    walk = [tap('glow', 'COUPE')['glow'] for _ in range(8)]
-    print('      UNDERGLOW walks %s' % ' -> '.join(walk))
-    check(len(set(walk)) == 8 and 'OFF' in walk, 'and walks seven colours and OFF', repr(walk))
-    while garage('COUPE')['glow'] != 'MAGENTA':
-        tap('glow', 'COUPE')
+    check(g['glow'] == 'OFF' and not g['glows'], 'UNDERGLOW is offered once won, OFF, with no colours shown',
+          '%r %d' % (g['glow'], g['glows']))
+    g = tap('glow', 'COUPE')
+    check(g['glow'] == 'ON' and g['glows'] == 7, 'and ON shows its seven colours', '%r %d' % (g['glow'], g['glows']))
+    pg.click('#veil [data-act="glowc:MAGENTA"]')
+    pg.wait_for_timeout(150)
     check(not any('BRONZE IN A' in n for n in garage('COUPE')['notes']),
           'once all three are won, the bronze captions are gone')
     cop = garage('CRUISER')
-    check(cop['pattern'] is None and cop['glow'] is None and not cop['tones'],
-          'a police car has no livery control', '%r %r' % (cop['pattern'], cop['glow']))
+    check(cop['pattern'] is None and cop['glow'] is None and cop['twotone'] is None and not cop['tones'],
+          'a police car has no livery control', '%r %r %r' % (cop['pattern'], cop['glow'], cop['twotone']))
+
+    # the main garage holds no look of the car: it goes back there with DONE
+    garage('COUPE')
+    pg.click('#veil [data-act="done"]')
+    pg.wait_for_timeout(200)
+    main = pg.evaluate("""() => ({ custom: !!document.querySelector('#veil [data-act="custom"]'),
+        settings: !!document.querySelector('#veil [data-act="settings"]'),
+        box: !!document.querySelector('#veil [data-act="box"]'),
+        looks: document.querySelectorAll('#veil [data-act^="paint:"],#veil [data-act="pattern"],#veil [data-act="glow"]').length,
+        arrows: document.querySelectorAll('#veil .gbox [data-act]').length })""")
+    check(main['custom'] and main['settings'] and not main['box'] and main['looks'] == 0 and main['arrows'] == 2,
+          'DONE returns to a main garage with CUSTOMISE, SETTINGS, two arrows, and no paint or gearbox',
+          repr(main))
 
     # the road draws the glow under the car
-    garage('COUPE')
     pg.click('#veil [data-act="drive"]')
     pg.wait_for_timeout(1500)
     drawn = pg.evaluate("() => window.__probe.road.glowDrawn()")
@@ -169,7 +198,8 @@ with sync_playwright() as p:
       const R = window.__probe.road;
       const keys = ['SALOON','COUPE','HATCH','ROADSTER','TUNER','MUSCLE','STALLION','MATADOR','CREST'];
       const ls = [ {}, { stripes:true }, { stripes:'rally' }, { stripes:'band' }, { stripes:'triple' },
-                   { stripes:'pin' }, { twotone:true }, { twotone:true, tone:'GOLD' } ];
+                   { stripes:'pin' }, { twotone:true }, { twotone:true, tone:'GOLD' },
+                   { stripes:true, stripeCol:'GOLD' } ];
       const rows = R.liverySheet(keys, ls, 'RED');
       const px = c => c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       const diff = (a, b) => { const A = px(a), B = px(b); let n = 0;
@@ -182,7 +212,8 @@ with sync_playwright() as p:
         let apart = 1e9;
         for (let a = 1; a <= 5; a++) for (let b = a + 1; b <= 5; b++)
           apart = Math.min(apart, diff(rows[i][2*a], rows[i][2*b]));
-        return { k: k, rear: rear, front: front, apart: apart, tone: diff(rows[i][12], rows[i][14]) };
+        return { k: k, rear: rear, front: front, apart: apart, tone: diff(rows[i][12], rows[i][14]),
+                 stripeC: diff(rows[i][2], rows[i][16]) };
       });
     }"""
     rows = pg.evaluate(SPR)
@@ -194,6 +225,8 @@ with sync_playwright() as p:
     check(all(r['apart'] > 100 for r in rows), 'and the five stripe patterns are five different drawings',
           ', '.join('%s %d' % (r['k'], r['apart']) for r in rows if r['apart'] <= 100))
     check(all(r['tone'] > 150 for r in rows), 'and a chosen second tone differs from the automatic one')
+    check(all(r['stripeC'] > 150 for r in rows), 'and a chosen stripe colour differs from the automatic one',
+          ', '.join('%s %d' % (r['k'], r['stripeC']) for r in rows if r['stripeC'] <= 150))
 
     errs = pg.evaluate("() => window.__probe.errors")
     check(not errs, 'no page errors', '; '.join(errs[:2]))

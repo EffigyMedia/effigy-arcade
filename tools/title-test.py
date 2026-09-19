@@ -35,7 +35,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -166,6 +166,8 @@ def main():
         # writes a mark on two of them and looks for it afterwards.
         page.click('[data-act="play"]')
         page.wait_for_timeout(900)
+        # the paint is on the CUSTOMISE screen (RLG-071)
+        garage_screen(page, 'custom')
         swatches = page.query_selector_all('#veil [data-act^="paint:"]')
         res.check(len(swatches) >= 2, 'the garage offers colours to tap',
                   '%d swatch(es)' % len(swatches))

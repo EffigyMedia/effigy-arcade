@@ -39,7 +39,7 @@ from playwright.sync_api import sync_playwright
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
-from harness import console_utf8, launch_chromium, boot, until  # noqa: E402
+from harness import console_utf8, launch_chromium, boot, until, garage_screen  # noqa: E402
 
 # hold the player slow with a cruiser in its line, and watch for the run to end
 BUST = """async (a) => {
@@ -137,7 +137,10 @@ def main():
             pg.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
             pg.click('[data-act="play"]')
             pg.wait_for_timeout(400)
+            # the drive's settings are on the SETTINGS screen (RLG-071)
+            garage_screen(pg, 'settings')
             pg.click('[data-act="chase"]')      # HOT PURSUIT on
+            garage_screen(pg, 'main')
             pg.wait_for_timeout(200)
             pg.click('[data-act="drive"]')
             until(pg, '() => window.__road.startLine().left <= 0', timeout=10000)

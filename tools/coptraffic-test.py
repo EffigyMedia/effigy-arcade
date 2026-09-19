@@ -50,7 +50,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 # EVERY DOWNED CRUISER, WITH WHAT PUT IT OUT AND WHERE IT WAS. Sampled from the
 # engine rather than inferred from a count, because a cruiser that goes out and is
@@ -133,7 +133,10 @@ def main():
         page.wait_for_selector('#veil:not(.hidden) [data-act="play"]', timeout=10000)
         page.click('[data-act="play"]')
         page.wait_for_timeout(400)
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(page, 'settings')
         page.click('[data-act="chase"]')          # HOT PURSUIT on, through the real menu
+        garage_screen(page, 'main')
         page.wait_for_timeout(200)
         page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
         page.click('[data-act="drive"]')

@@ -896,6 +896,19 @@ h1 u{text-decoration:none;display:block;font-size:.34em;letter-spacing:.26em;col
   mask-image:linear-gradient(to right,
     rgba(0,0,0,0) 0%, #000 22%, #000 78%, rgba(0,0,0,0) 100%);
 }
+/* ---- THE UNDERGLOW, ON THE FLOOR UNDER THE CAR (RLG-071) -----------------
+   Owner, 2026-09-19: "The under glow needs to happen underneath the vehicle
+   only instead of the shadow basically." A first build put a drop-shadow on the
+   canvas, which lit the whole outline of the car. This is a pool of light on the
+   floor line, behind the car, narrower than it. `--glow` is written by
+   `drawGarageCar`: the glow's colour, or transparent when it is off. */
+.gwrap::after{
+  content:'';position:absolute;left:14%;right:14%;pointer-events:none;
+  top:calc(var(--gfloor, 0px) - 18px);height:30px;
+  background:radial-gradient(ellipse at 50% 55%, var(--glow, transparent) 0%,
+    transparent 70%);
+  opacity:.9;
+}
 /* the car stands IN FRONT OF the floor. `.gwrap::before` is positioned, so
    without this it paints over the in-flow canvas and lays up to 40 per cent
    light across the bottom third of the car. */

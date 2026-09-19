@@ -40,7 +40,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 GAME = 'games/sw/interstate.html'
 
@@ -197,11 +197,15 @@ class Results:
 
 
 def set_time(page, want):
+    # the drive's settings are on the SETTINGS screen (RLG-071)
+    garage_screen(page, 'settings')
     for _ in range(8):
         if page.eval_on_selector('[data-act="time"] b', 'el => el.textContent').strip() == want:
+            garage_screen(page, 'main')
             return True
         page.click('[data-act="time"]')
         page.wait_for_timeout(70)
+    garage_screen(page, 'main')
     return False
 
 

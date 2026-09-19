@@ -28,7 +28,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from harness import console_utf8, launch_chromium, boot as engine_boot, until
+from harness import console_utf8, launch_chromium, boot as engine_boot, until, garage_screen
 
 ROOT = Path(__file__).resolve().parent.parent
 MPH = 200 / 15333          # MAX_SPD is 200mph, road.js:80
@@ -343,7 +343,7 @@ def no_pursuit(page):
     btn = page.query_selector('[data-act="chase"]')
     if btn and 'ON' in btn.inner_text().upper():
         btn.click()
-        page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5_000)
+        page.wait_for_selector('#veil:not(.hidden) [data-act="chase"]', timeout=5_000)
 
 
 def revs_never_exceed_redline(page):
@@ -364,9 +364,12 @@ def revs_never_exceed_redline(page):
 def drive(page, res, seconds, is_circuit):
     """Hold the throttle and watch the numbers."""
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5_000)
+    # the drive's settings are on the SETTINGS screen (RLG-071)
+    garage_screen(page, 'settings')
     no_pursuit(page)
     if not is_circuit:
         time_of_day(page, res)          # leaves the control on MIDNIGHT
+    garage_screen(page, 'main')
     page.click('[data-act="drive"]')
     page.wait_for_timeout(400)
 

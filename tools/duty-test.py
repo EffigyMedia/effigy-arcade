@@ -51,7 +51,7 @@ import sys, threading, http.server, socketserver, functools
 from pathlib import Path as _P
 ROOT = _P(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8, boot, until, reboot
+from harness import launch_chromium, console_utf8, boot, until, reboot, garage_screen
 from playwright.sync_api import sync_playwright
 console_utf8()
 
@@ -227,6 +227,8 @@ with sync_playwright() as p:
         while not control(pg, 'mode')['label'].endswith('INTERCEPT'):
             pg.click('[data-act="mode"]')
             pg.wait_for_timeout(90)
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(pg, 'settings')
         ch = control(pg, 'chase')
         check(ch['label'].endswith('ON'), 'HOT PURSUIT reads ON on shift', f"'{ch['label']}'")
         check(ch['shut'], 'and the control is shut', f"disabled/greyed: {ch['shut']}")
@@ -245,6 +247,7 @@ with sync_playwright() as p:
               f"pursuit={pg.evaluate('() => window.__road.duty().pursuit')}")
         # the DOM was deliberately corrupted above; put the real screen back
         pg.evaluate("() => window.__road.showGarage()")
+        garage_screen(pg, 'main')
         pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
 
         # ---- THE FIELD IS SYMMETRICAL ----------------------------------------
@@ -329,11 +332,13 @@ with sync_playwright() as p:
                 pg.wait_for_timeout(90)
             # HOT PURSUIT through the real button, because off shift it is a real
             # choice and the control arm has to be a thing a player could set up.
+            garage_screen(pg, 'settings')
             for _ in range(3):
                 if control(pg, 'chase')['label'].endswith('ON'):
                     break
                 pg.click('[data-act="chase"]')
                 pg.wait_for_timeout(120)
+            garage_screen(pg, 'main')
         drive(pg)
 
         d = pg.evaluate("() => window.__road.duty()")

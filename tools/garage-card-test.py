@@ -49,7 +49,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot, until
+from harness import console_utf8, launch_chromium, boot, until, garage_screen
 
 # WHERE THE INK IS. Columns and rows that carry any non-transparent pixel, plus a
 # cheap signature of the whole card so two draws can be compared.
@@ -301,7 +301,11 @@ def main():
             # A PAINT CHANGE MUST NOT UNDO THE FLIP. `showGarage` is what every
             # control calls to redraw, so a reset written at the top of it would
             # snap the card back to the front on any of them.
+            # the paint is on CUSTOMISE, and the flip carries there with the car (RLG-071).
+            # A card with no swatches is a FAILURE here: it once skipped this check silently.
+            garage_screen(page, 'custom')
             sw = page.locator('[data-act^="paint:"]')
+            res.ok(sw.count() > 1, 'the customise screen offers paint to tap', '%d swatch(es)' % sw.count())
             if sw.count() > 1:
                 sw.nth(1).click()
                 page.wait_for_timeout(250)
@@ -318,6 +322,7 @@ def main():
                        'the button offers %r, so the card flipped back' % still)
 
             # AND THE FRONT COMES BACK WHEN THE GARAGE IS REOPENED.
+            garage_screen(page, 'main')
             page.click('[data-act="back"]')
             page.wait_for_timeout(250)
             open_garage(page)

@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import console_utf8, launch_chromium, boot as engine_boot, until
+from harness import console_utf8, launch_chromium, boot as engine_boot, until, garage_screen
 from playwright.sync_api import sync_playwright
 
 GAME = 'games/sw/interstate.html'
@@ -83,7 +83,10 @@ def boot(b, base):
     page.click('[data-act="play"]')
     page.wait_for_timeout(400)
     # HOT PURSUIT ON, or no trap is ever laid: the spawner is gated on it.
+    # the drive's settings are on the SETTINGS screen (RLG-071)
+    garage_screen(page, 'settings')
     page.click('[data-act="chase"]')
+    garage_screen(page, 'main')
     page.wait_for_timeout(150)
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
     page.click('[data-act="drive"]')

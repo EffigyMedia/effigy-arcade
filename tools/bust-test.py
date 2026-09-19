@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
-from harness import launch_chromium, console_utf8, boot as engine_boot, until
+from harness import launch_chromium, console_utf8, boot as engine_boot, until, garage_screen
 from playwright.sync_api import sync_playwright
 
 console_utf8()
@@ -78,7 +78,10 @@ def boot(b, pursuit):
     page.click('[data-act="play"]')
     page.wait_for_timeout(400)
     if pursuit:
+        # the drive's settings are on the SETTINGS screen (RLG-071)
+        garage_screen(page, 'settings')
         page.click('[data-act="chase"]')
+        garage_screen(page, 'main')
         page.wait_for_timeout(200)
     page.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=5000)
     page.click('[data-act="drive"]')
