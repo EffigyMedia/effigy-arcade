@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.85';
+window.ROAD_BUILD = '0.14.86';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -7857,6 +7857,52 @@ function buildPlayer(){
    the road puts on itself. None of it reads `optPaint`, `optBody` or
    `optStripes`, which is why it does not belong on the path a garage tap
    takes (RLG-086). */
+/* ---- THE FORCE WEARS ONE LIVERY A RUN (owner, 2026-09-19, RLG-204) --------
+   "NPC police can use the regular police unlocked paint even before they are
+   unlocked. Only the player doesn't have access to those until they are
+   unlocked." And never the iridescent paints.
+
+   `copLivery` WAS CHOSEN EVERY RUN AND READ BY NOTHING - the note beside it
+   said so - and every police car on the road was painted white once, at boot.
+   Now the four drawings of the force (the CRUISER and the SUPERCRUISER, from
+   behind and from the front) are painted here from the run's livery, so every
+   police car on the road shares one colour, and it changes between runs. */
+const NPC_COP_PAINTS = ['WHITE', 'BLACK'].concat(FORCE_PAINT_KEYS);
+function copPaintOf(k){ return COP_PAINT[k] || PAINT[k] || COP_PAINT.WHITE; }
+function buildCopSprites(k){
+  const c = copPaintOf(k);
+  SP.cop = sprite(206,168, paintRig('cop', { body:c.body, hi:c.hi, lo:c.lo, lamp:'#c8102e' }));
+  /* ---- THE SUPER CRUISER ------------------------------------------------
+     A MATADOR in force colours. Built through `paintCar` with the same shape
+     record a driveable MATADOR uses, so it is unmistakably the same car — and
+     given the CRUISER's marque, because it is one of theirs.
+
+     My first attempt hand-assembled the options object and left out fields
+     `paintCar` needs; it threw a non-finite gradient and took the whole game
+     down with it. Copying the shape record wholesale is both shorter and
+     correct. */
+  {
+    /* built from its OWN record now that it has one, so its stats and its
+       picture can never drift apart */
+    const SC = BODY['SUPERCRUISER'];
+    SP.superCop = sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({}, SC, {
+      body:c.body, hi:c.hi, lo:c.lo,
+      lamp:'#d61b3c', lamp2:'#ff7a86',
+      cabin:true, spoiler:true, shape:SC,
+      bodyKey:'SUPERCRUISER', marque:'CRUISER', stripes:false, force:true, bar:'police'
+    })));
+    /* and its face, for the mirror. `paintFront` reads the body from
+       `bodyType`, not from `shape` - the same field that once put one nose on
+       five supercars. */
+    SP.superCopFront = sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({}, SC, {
+      body:c.body, hi:c.hi, lo:c.lo,
+      lamp:'#d61b3c', lamp2:'#ff7a86',
+      bodyType:'SUPERCRUISER', marque:'CRUISER', player:true, stripes:false, force:true, bar:'police'
+    })));
+  }
+  FRONT_SP.cop = [ sprite(206,168, paintRigFront('cop',
+    { body:c.body, hi:c.hi, lo:c.lo, lamp:'#c8102e' })) ];
+}
 function buildFleet(){
   /* Every rival is the SAME sports car as yours, in a different paint. They
      used to be a tinted saloon, which is why the grid never looked like a
@@ -7923,35 +7969,8 @@ function buildFleet(){
   SP.sedan2 = sprite(200,164, paintRig('sedan', { body:'#6b3346', hi:'#8f4a5f', lo:'#3d1c28', lamp:'#d2313f' }));
   SP.coupe = sprite(206,150, paintRig('coupe', { body:'#2f6b5e', hi:'#469084', lo:'#193b34', lamp:'#c8102e' }));
   SP.truck = sprite(230,250, paintRig('truck', { body:'#8a8477', hi:'#a8a293', lo:'#4e4a41', lamp:'#b8371f', lamp2:'#ffb066' }));
-  SP.cop = sprite(206,168, paintRig('cop', { body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0', lamp:'#c8102e' }));
-  /* ---- THE SUPER CRUISER ------------------------------------------------
-     A MATADOR in force colours. Built through `paintCar` with the same shape
-     record a driveable MATADOR uses, so it is unmistakably the same car — and
-     given the CRUISER's marque, because it is one of theirs.
-
-     My first attempt hand-assembled the options object and left out fields
-     `paintCar` needs; it threw a non-finite gradient and took the whole game
-     down with it. Copying the shape record wholesale is both shorter and
-     correct. */
-  {
-    /* built from its OWN record now that it has one, so its stats and its
-       picture can never drift apart */
-    const SC = BODY['SUPERCRUISER'];
-    SP.superCop = sprite(CAR_BOX[0], CAR_BOX[1], paintCar(Object.assign({}, SC, {
-      body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0',
-      lamp:'#d61b3c', lamp2:'#ff7a86',
-      cabin:true, spoiler:true, shape:SC,
-      bodyKey:'SUPERCRUISER', marque:'CRUISER', stripes:false, force:true, bar:'police'
-    })));
-    /* and its face, for the mirror. `paintFront` reads the body from
-       `bodyType`, not from `shape` - the same field that once put one nose on
-       five supercars. */
-    SP.superCopFront = sprite(CAR_BOX[0], CAR_BOX[1], paintFront(Object.assign({}, SC, {
-      body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0',
-      lamp:'#d61b3c', lamp2:'#ff7a86',
-      bodyType:'SUPERCRUISER', marque:'CRUISER', player:true, stripes:false, force:true, bar:'police'
-    })));
-  }
+  /* the force's cars, in the livery this run wears (RLG-204) */
+  buildCopSprites(copLivery);
   /* ---- one sprite per body type PER COLOUR -----------------------------
      Ten paints across five civilian shapes is fifty small canvases, built once
      at boot. Cheap, and it turns a road of identical grey saloons into
@@ -8125,8 +8144,6 @@ function buildFleet(){
   /* the patrol car, and the lorry, which were the two the mirror had no face
      for. One livery each: a lorry's cab takes a traffic paint but its FACE is
      the same shape whatever colour it is, and a patrol car is white. */
-  FRONT_SP.cop = [ sprite(206,168, paintRigFront('cop',
-    { body:'#eceff4', hi:'#ffffff', lo:'#9aa3b0', lamp:'#c8102e' })) ];
 
   /* ---- A TRACTOR UNIT AND A TRAILER ARE TWO THINGS ----------------------
      The four liveries were painting the WHOLE vehicle, so a blue lorry had a
@@ -12195,14 +12212,16 @@ function reset(){
      the force matched itself to. `inForce` asks the BODY record, which is the
      same question the light bar and the siren already ask.
 
-     AND NOTHING READS `copLivery` TODAY - it is assigned here and nowhere else
-     in the file, so the "one livery per run" rule above it is a statement of
-     intent rather than a behaviour, and the cop sprites are built at boot in
-     fixed colours. This edit does not change a pixel; it stops the dead state
-     from being WRONG for the day somebody wires it up. Tracked separately. */
-  copLivery = inForce()
-    ? (optPaint === 'BLACK' ? 'BLACK' : 'WHITE')
-    : (Math.random() < 0.5 ? 'BLACK' : 'WHITE');
+     `copLivery` WAS READ BY NOTHING until RLG-204 wired it: the police
+     sprites were built once at boot in white. They are repainted from it
+     below, every run - see `buildCopSprites`. */
+  /* one of the regular police colours - including ones the player has not
+     won - and never iridescent. A player in a police car is matched by the
+     force, unless their own paint is one the force does not wear (RLG-204). */
+  copLivery = (inForce() && NPC_COP_PAINTS.indexOf(optPaint) >= 0)
+    ? optPaint
+    : NPC_COP_PAINTS[Math.floor(Math.random() * NPC_COP_PAINTS.length)];
+  if(SP.cop) buildCopSprites(copLivery);
   /* ---- THE SKY NO LONGER KEEPS ITS OWN TIME ----------------------------
      This line used to read "dayClock deliberately NOT reset: the sky keeps its
      own time across runs", and that was a real decision rather than an
@@ -33024,6 +33043,17 @@ requestAnimationFrame(frameLoop);
      (RLG-251). The CONDITION is staged; its two buttons are what is measured. */
   API.showUnlock = function(k){ showUnlock(k); };
   /* the paint order of cars against the road, 1 lagged or 0 the old order (RLG-068) */
+  /* the livery the force wears this run, and the list it is drawn from (RLG-204) */
+  API.copLivery = function(){
+    /* and a fingerprint of the drawn CRUISER, so a check sees the PAINT change
+       rather than the variable meant to cause it */
+    let print = 0;
+    if(SP.cop){
+      const cv = SP.cop, g = cv.getContext('2d'), d = g.getImageData(0, 0, cv.width, cv.height).data;
+      for(let i = 0; i < d.length; i += 4 * 97) print = (print * 31 + d[i] + d[i+1] * 3 + d[i+2] * 7) % 1000000007;
+    }
+    return { livery: copLivery, from: NPC_COP_PAINTS.slice(), print: print };
+  };
   API.emitLag = function(v){ if(v !== undefined) EMIT_LAG = v ? 1 : 0; return EMIT_LAG; };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
