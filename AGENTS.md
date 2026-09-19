@@ -222,7 +222,9 @@ Python 3 with Playwright installed runs the two test harnesses; a browser runs e
   versions old. There are no Actions workflows and Pages is a `legacy` build from `main`, so a push
   costs one Pages build against a documented soft limit of ten an hour — keep it under about six.
   **Never force-push and never rewrite pushed history.** Say the build number when handing over, and
-  it must match the BUILD row in SETTINGS. See `docs/fragments/RLG-066.md` and `RLG-063.md`. `sync.sh` is inherited and
+  it must match the BUILD row in SETTINGS. See `docs/fragments/RLG-066.md` and `RLG-063.md`. **A push for device testing is not a release
+  for the audit gate** (owner, 2026-09-18, `RLG-287`): `audit-gate.py` gates a VERSION release - a
+  minor bump, a tag, or a game leaving the arcade - and a test push goes out ungated. `sync.sh` is inherited and
   **obsolete in its current form**: it clones the remote to a temporary folder and copies files over
   the top, from when the working folder was not a repository. This folder is the repository.
 
