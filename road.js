@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.83';
+window.ROAD_BUILD = '0.14.84';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15697,6 +15697,22 @@ function wetBrake(){ return Math.max(WET.brakeFloor, 1 - wet * (snowy ? WET.brak
 let towOverride = -1;               /* -1 = off; a harness may force a tow */
 /* debug only: a pinned road curvature, or null for the real road (RLG-048) */
 let curveHold = null;
+let cornerLoad = 0;   /* the corner's pull against the car's steering, 0 up (RLG-099) */
+/* ---- WHEN A CORNER SQUEALS (owner, 2026-08-31, RLG-099) --------------------
+   "I also feel like the tire should screech if the car is slid across the
+   ground because of the centripetal forces of a turn."
+
+   A hard steer already squealed - `scrubOf` measures how fast the car moves
+   across the road - but a loaded corner held on the line did not: the driver is
+   fighting the pull and barely moving sideways. `cornerLoad` is the pull
+   itself. Measured on a HATCH: a gentle bend at cruise is under 0.06; the
+   hardest bends at a production car's top speed reach about 0.5. The squeal
+   starts at `from` and is full at `full`, so ordinary bends stay quiet and the
+   hardest corners at speed sing. Tunables, judged by ear on a device. */
+const CORNER_SQUEAL = { from: 0.25, full: 0.60 };
+function cornerSquealNow(){
+  return clamp((cornerLoad - CORNER_SQUEAL.from) / (CORNER_SQUEAL.full - CORNER_SQUEAL.from), 0, 1);
+}
 let horning = false, hornCool = 0, bustT = 0, behindT = 2, slowFor = 0, audioTick = 0, bendT = 0, skySmooth = 0, pushK = 0;
 /* the radio's own clock - see the dispatch block in `step` */
 let nextChaseT = 6;
@@ -19260,7 +19276,9 @@ function step(dt){
      its own rubber completely — the marks were there the whole time and
      hidden by the thing making them. Half a car back puts them on the tarmac
      below the bumper where you can actually see them. */
-  if(pScrub > 0.05) layRubber(playerX, pos + PLAYER_Z - 340, pScrub, playerW());
+  /* a squealing corner lays rubber too, lighter than a snatch at the wheel (RLG-099) */
+  const pRubber = Math.max(pScrub, cornerSquealNow() * 0.6);
+  if(pRubber > 0.05) layRubber(playerX, pos + PLAYER_Z - 340, pRubber, playerW());
   stepRubber(dt);
 
   /* ---- A SIREN KEEPS ASKING ---------------------------------------------
@@ -19478,6 +19496,14 @@ function step(dt){
     if(!held)
       targetX = clamp(targetX - pushK * v * v * dt * cornerG(), -1.30, 1.30);
   }
+  /* ---- HOW HARD THE CORNER IS WORKING THE TYRES (RLG-099) -------------
+     The corner's pull, in the same lateral units a second as the steering,
+     against how fast THIS car can steer. Near one, the corner pulls about as
+     hard as the car can answer - the tyres are at their limit. `cornerG`
+     already divides by the car's grip and by the wet, so a slippery road or a
+     low-grip car reaches the limit sooner, as the ruling asks. */
+  cornerLoad = held ? 0
+    : Math.abs(pushK) * (spd / MAX_SPD) * (spd / MAX_SPD) * cornerG() / Math.max(1e-6, steerRate());
   stepWheel(dt);
   /* ---- the bottle refills itself -----------------------------------------
      Crates were the only way to get nitrous back, which meant scoring points
@@ -21587,7 +21613,7 @@ function step(dt){
   /* once the run is over the car makes no noise — see `coasting` */
   if(coasting){ snd.quiet(); }
   else snd.drive(revFrac * MAX_SPD, MAX_SPD, offRoad, nosOn, near,
-            Math.max(decel, pScrub * 0.9), slipT || 0, false, ambNear);
+            Math.max(decel, pScrub * 0.9, cornerSquealNow()), slipT || 0, false, ambNear);
 
   /* ---- stopping with the law behind you --------------------------------
      Braking to a halt is free on an empty road and fatal in a pursuit. A
@@ -31965,6 +31991,14 @@ requestAnimationFrame(frameLoop);
      its own sky needs it. It is also the only way to test that the garage's
      TIME control does anything: a button label proves a button changed. */
   API.phase = function(){ return +phase().toFixed(4); };
+  API.cornerLoad = function(){ return +cornerLoad.toFixed(4); };
+  /* how much the squeal voices are open right now - read off the audio layer's
+     own gain, so a check hears the sound rather than the number meant to cause it */
+  API.squealLevel = function(){
+    const v = snd && snd.sqA;
+    if(!v) return null;
+    return v.level !== undefined ? v.level : (v.gain && v.gain.gain ? v.gain.gain.value : null);
+  };
   API.throttle = function(){ return (gas||nosOn) ? 1 : 0; };
   API.revs = function(){ return engineRpm(); };
   /* ---- WHAT THE START LINE IS DOING, FOR A HARNESS (RLG-110/RLG-118) ---
