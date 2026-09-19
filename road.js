@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.82';
+window.ROAD_BUILD = '0.14.83';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -31364,7 +31364,12 @@ function showUnlock(key){
       '<button class="go" data-act="drive">DRIVE IT</button>' +
       '<button class="go ghost" data-act="keep">KEEP MY CAR</button>' +
     '</div>',
-    { drive: () => { tourOn = false; showGarage(); },
+    /* DRIVE IT is a choice of car, so it is saved like one (RLG-251): the
+       arrows save `body`, and this did not, so a reload after DRIVE IT put the
+       player back in the car they had before the prize */
+    { drive: () => { tourOn = false; syncPaintForBody();
+                     if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { body:optBody });
+                     showGarage(); },
       keep:  () => { optBody = was; buildPlayer(); tourOn = false; showGarage(); } });
   drawGarageCar();
 }
@@ -32956,6 +32961,9 @@ requestAnimationFrame(frameLoop);
      barred body is in it. `API.garageBodies`, above, is what it lists now. */
   API.garageFleet = function(){ return garageFleet(); };
   API.showGarage = function(){ showGarage(); };
+  /* the prize screen for a won car, without winning a tournament to reach it
+     (RLG-251). The CONDITION is staged; its two buttons are what is measured. */
+  API.showUnlock = function(k){ showUnlock(k); };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
      copy of the rules - a harness that reimplements the gate proves that the

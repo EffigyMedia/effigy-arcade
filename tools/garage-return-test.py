@@ -231,6 +231,85 @@ def main():
 
         arm('PAUSE > RESTART', pause_restart)
 
+        # ---- THE DOORS RLG-251 NAMED THAT WERE NOT YET WALKED (2026-09-19) -----------
+        # A RELOAD is closing the app and opening it again, which on a phone is the most
+        # common way back to the garage of all. The car has to come back from the SAVE.
+        def reload_app():
+            pg.reload()
+            until(pg, '() => !!window.__road', timeout=30000)
+            pg.wait_for_timeout(800)
+
+        arm('RELOAD', reload_app)
+
+        # A TOURNAMENT ROUND lost on the clock ends on its own card (RLG-268), whose way
+        # out is QUIT & SAVE - a different door from the ordinary end card's.
+        def tour_quit():
+            # the run is already going; make it a tournament run by the garage's control
+            # is not possible mid-run, so this arm sets the mode BEFORE driving - see below
+            end_the_run_tour()
+            tap('quit', 900)
+
+        def end_the_run_tour():
+            pg.evaluate('() => { window.__road.setTimed(true); window.__road.setClock(0.2); }')
+            for _ in range(60):
+                pg.evaluate('() => window.__road.setSpd(0)')
+                if has('quit'):
+                    return
+                pg.wait_for_timeout(250)
+            raise DoorShut('the tournament round never ended on the clock - %s' % screen())
+
+        def tour_arm():
+            car = None
+            try:
+                car = pick_car()
+                for _ in range(4):
+                    lab = pg.evaluate("() => { const b = document.querySelector("
+                                      "'#veil [data-act=\"mode\"]'); return b ? b.textContent : ''; }")
+                    if lab.strip().endswith('TOURNAMENT'):
+                        break
+                    tap('mode', 200)
+                drive_a_bit()
+                tour_quit()
+                to_garage()
+                after = pg.evaluate('() => window.__road.body()')
+            except DoorShut as e:
+                print('      %-17s BLKD  %s' % ('TOURNAMENT > QUIT', e))
+                ok(False, 'TOURNAMENT > QUIT returns to the car driven', 'the walk never happened: %s' % e)
+                return
+            print('      %-17s drove %s, garage shows %s' % ('TOURNAMENT > QUIT', car, after))
+            ok(after == car, 'TOURNAMENT > QUIT returns to the car driven', '%s -> %s' % (car, after))
+
+        tour_arm()
+
+        # ---- THE PRIZE SCREEN (RLG-251) ------------------------------------------------
+        # A won car is loaded into the garage to be shown. DRIVE IT is a choice of that car and
+        # must survive a reload; KEEP MY CAR is the control and must put the old car back. The
+        # screen is opened through a seam, because winning a tournament to reach it measures the
+        # race. What is measured is its two buttons and the save behind them.
+        def prize_arm(button, label):
+            try:
+                to_garage()
+                pg.evaluate("() => window.Arcade.save.merge('interstate-opts', { sports:true })")
+                before = pg.evaluate('() => window.__road.body()')
+                won = 'ROADSTER' if before != 'ROADSTER' else 'TUNER'
+                pg.evaluate('(k) => window.__road.showUnlock(k)', won)
+                pg.wait_for_timeout(300)
+                tap(button, 600)
+                pg.reload()
+                until(pg, '() => !!window.__road', timeout=30000)
+                pg.wait_for_timeout(800)
+                to_garage()
+                after = pg.evaluate('() => window.__road.body()')
+            except DoorShut as e:
+                ok(False, label, 'the walk never happened: %s' % e)
+                return
+            want = won if button == 'drive' else before
+            print('      %-17s had %s, won %s, after a reload shows %s' % (label, before, won, after))
+            ok(after == want, '%s survives a reload' % label, 'wanted %s, got %s' % (want, after))
+
+        prize_arm('drive', 'PRIZE > DRIVE IT')
+        prize_arm('keep', 'PRIZE > KEEP MY CAR')
+
         ok(not errs, 'no page errors', errs[0][:120] if errs else '')
         b.close()
     httpd.shutdown()
