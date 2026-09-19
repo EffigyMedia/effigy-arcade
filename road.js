@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.79';
+window.ROAD_BUILD = '0.14.80';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15942,8 +15942,31 @@ const RAIL = {
      the player has, in four biomes out of twelve, which is a gameplay change
      the owner did not ask for. Moving the rail changes a picture. Moving the
      limit changes the game.
+
+     ---- AND NOW IT IS THE DRIVEN CAR'S FLANK (owner, 2026-09-16, RLG-279) --
+     "For the cars to consistently hit the edge physics objects we need their
+     collider to be perfectly correct."
+
+     MEASURED, NO CAR MET THE RAIL. Driven hard into a city barrier on both
+     sides, every body in the garage stopped short: the formula cars by
+     0.016-0.035 of a road half-width, the supercars and police by 0.036-0.065,
+     the production and sports cars by 0.047-0.072. Two causes. The rail cleared
+     the WIDEST body, so every narrower car stopped short by the difference. And
+     a 0.015 skin stood on top of that.
+
+     SO THE RAIL IS DRAWN AT THE FLANK OF THE CAR BEING DRIVEN. This takes the
+     note's own rule - move the picture, not the limit - one step further, and
+     it answers the note's worry: a rail is only ever drawn with ONE player car
+     on the road, so no car can pass through a rail drawn for another. Traffic
+     and rivals are held inside 0.92 and never reach it. The car's limit is
+     untouched, so the lateral room is exactly what it was.
+
+     THE SKIN IS 0.004 NOW. The car rests anywhere from 0.03 to 0.05 inside the
+     limit (the wall's pin, below), so the flank-to-rail gap runs from the skin
+     to the skin plus 0.02. At 0.015 that read as daylight; at 0.004 the car
+     meets the rail. `rail-fit-test` measures it per body.
      ---------------------------------------------------------------- */
-  skin:  0.015, /* daylight between the flank and the rail, in road half-widths */
+  skin:  0.004, /* daylight between the flank and the rail, in road half-widths */
   h:      63,   /* the steel beam's top, in world units above the road          */
   deep:   26,   /* how deep the beam itself is, world units                     */
   post:    2,   /* a post every N segments                                      */
@@ -15964,10 +15987,11 @@ function widestHalf(){
   }
   return widestW / 2;
 }
-/* the rail's line, in road half-widths: just outside where the widest car's
-   flank comes to rest. `EDGE_X - 0.03` is where the engine holds the car -
-   see the barrier block - and it is read from the constant rather than typed. */
-function railX(){ return EDGE_X - 0.03 + widestHalf() + RAIL.skin; }
+/* the rail's line, in road half-widths: just outside where the DRIVEN car's
+   flank comes to rest (RLG-279). `EDGE_X - 0.03` is the furthest out the engine
+   holds the car - see the barrier block - and it is read from the constant
+   rather than typed. */
+function railX(){ return EDGE_X - 0.03 + playerW() / 2 + RAIL.skin; }
 /* ---- THE CLIFF'S EDGE IS BROKEN ROCK (owner, 2026-09-16, RLG-284) --------
    "The cliff edge in the mountain biome should be jagged a non-uniform."
 
@@ -33575,6 +33599,18 @@ requestAnimationFrame(frameLoop);
                        what the owner photographed.
        carGap          how far the car's sides are inside the wall at the car,
                        off `borePointAt`. Below zero is through the wall. */
+  /* ---- THE CAR'S FLANK AGAINST THE RAIL (RLG-279) ----------------------
+     Where the car's side is, against where the rail is drawn, in road
+     half-widths. `gap` above zero is daylight between the flank and the rail;
+     below zero is the car through it. Read, not asserted: a check drives the
+     car into the barrier and asks this. */
+  API.railFit = function(){
+    const half = playerW() / 2;
+    return { body: optBody, playerX: +playerX.toFixed(4), half: +half.toFixed(4),
+             flank: +(Math.abs(playerX) + half).toFixed(4),
+             rail: +railX().toFixed(4), skin: RAIL.skin, edge: +edgeX().toFixed(4),
+             gap: +(railX() - Math.abs(playerX) - half).toFixed(4) };
+  };
   API.boreClearance = function(){
     const zk = pos + PLAYER_Z, kb = borePointAt(zk), half = playerW() / 2;
     const kl = proj((playerX - half) * ROAD, zk), kr = proj((playerX + half) * ROAD, zk);
