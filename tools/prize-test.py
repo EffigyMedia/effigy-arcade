@@ -4,9 +4,10 @@
     .venv/Scripts/python tools/prize-test.py
 
 RLG-071. Signed off by the owner 2026-09-19: silver pays a paint set - production METALLIC, sports
-PEARL, super the racing IRIDESCENT set - and bronze a livery: production RALLY stripes, sports a
-number ROUNDEL, super TWO-TONE. All nine racing cars wear every livery, and the roundel stacks on a
-pattern (owner, 2026-09-19).
+PEARL, super the racing IRIDESCENT set - and bronze a livery, as the owner reproposed it the same
+day: production STRIPES (locked until then, five patterns), sports TWO-TONE with the second colour
+the player's choice, super a static UNDERGLOW in the player's colour. All nine racing cars wear
+every livery.
 
 WHAT IT ASSERTS, in a fresh save, reading the swatches the garage actually draws:
   . before any silver, a racing car offers the base dozen, and its card names each set and how to win it;
@@ -14,11 +15,13 @@ WHAT IT ASSERTS, in a fresh save, reading the swatches the garage actually draws
   . a second silver in the same class announces nothing new (RLG-202);
   . a formula car's class pays nothing, and a police car's palette gains none of them;
   . once all three are won, the captions are gone;
-  . BRONZE: the garage's PATTERN control walks only what is won, ROUNDEL appears only once won, each
-    bronze pays once, formula pays nothing, a police car has no livery control;
-  . every livery CHANGES THE DRAWN SPRITE of all nine racing cars, and the roundel finds paint on
-    every tail;
-  . a save from before this build, holding only `stripes: true`, loads as the STRIPES pattern.
+  . BRONZE: before any bronze there is no PATTERN and no UNDERGLOW control and a car wears no
+    stripes, even with the old switch ON in its save; each bronze pays once and opens its own
+    control; PATTERN then walks all seven; a chosen second tone is worn; the underglow walks its
+    colours and the ROAD draws the chosen one; formula pays nothing; a police car has none of it;
+  . every pattern CHANGES THE DRAWN SPRITE of all nine racing cars, the five stripe patterns are
+    five different drawings, and a chosen second tone differs from the automatic one;
+  . a save holding only `stripes: true` loads as the STRIPES pattern.
 The payout is called through `API.paySilver`, the same function the finish line calls: finishing a
 tournament in second place is a whole race, which measures the race and not the prize.
 
@@ -70,7 +73,8 @@ with sync_playwright() as p:
             swatches: [...document.querySelectorAll('[data-act^="paint:"]')].map(b => b.dataset.act.slice(6)),
             notes: [...document.querySelectorAll('#veil .gnote')].map(n => n.textContent),
             pattern: (document.querySelector('[data-act="pattern"] b') || {}).textContent || null,
-            roundel: (document.querySelector('[data-act="roundel"] b') || {}).textContent || null })""")
+            glow: (document.querySelector('[data-act="glow"] b') || {}).textContent || null,
+            tones: document.querySelectorAll('[data-act^="tone:"]').length })""")
 
     g0 = garage('HATCH')
     print('      a fresh HATCH offers %d paints' % len(g0['swatches']))
@@ -113,14 +117,10 @@ with sync_playwright() as p:
     check(sum(1 for n in g['notes'] if 'BRONZE IN A' in n) == 3,
           'before any bronze, a racing car names all three liveries and how to win them',
           '; '.join(n for n in g['notes'] if 'BRONZE' in n))
-    check(g['roundel'] is None, 'and offers no ROUNDEL control', repr(g['roundel']))
-    seen = [g['pattern']]
-    for _ in range(3):
-        seen.append(tap('pattern')['pattern'])
-    print('      PATTERN walks %s' % ' -> '.join(map(str, seen)))
-    check(set(seen) == {'NONE', 'STRIPES'}, 'and PATTERN walks only NONE and STRIPES', repr(seen))
+    check(g['pattern'] is None and g['glow'] is None, 'and offers no PATTERN and no UNDERGLOW control',
+          '%r %r' % (g['pattern'], g['glow']))
 
-    for cls, flag in (('production', 'rally'), ('sports', 'roundel'), ('super', 'twotone')):
+    for cls, flag in (('production', 'stripeset'), ('sports', 'twotone'), ('super', 'underglow')):
         got = pg.evaluate("(c) => window.__probe.road.payBronze(c)", cls)
         again = pg.evaluate("(c) => window.__probe.road.payBronze(c)", cls)
         check(got == flag, '%s bronze pays %s' % (cls, flag), repr(got))
@@ -130,60 +130,98 @@ with sync_playwright() as p:
 
     g = garage('COUPE')
     seen = [g['pattern']]
-    for _ in range(4):
+    for _ in range(7):
         seen.append(tap('pattern', 'COUPE')['pattern'])
     print('      PATTERN walks %s' % ' -> '.join(map(str, seen)))
-    check(set(seen) == {'NONE', 'STRIPES', 'RALLY', 'TWO-TONE'},
-          'once won, PATTERN walks all four patterns', repr(seen))
-    check(g['roundel'] == 'OFF', 'and ROUNDEL is offered, OFF', repr(g['roundel']))
-    check(tap('roundel', 'COUPE')['roundel'] == 'ON', 'and a tap turns it ON')
+    check(set(seen) == {'NONE', 'STRIPES', 'RALLY', 'BAND', 'TRIPLE', 'PINSTRIPE', 'TWO-TONE'},
+          'once won, PATTERN walks NONE, five stripe patterns and TWO-TONE', repr(seen))
+    while g['pattern'] != 'TWO-TONE':
+        g = tap('pattern', 'COUPE')
+    check(g['tones'] >= 12, 'TWO-TONE shows a row of second tones from the palette', '%d' % g['tones'])
+    pg.click('#veil [data-act="tone:GOLD"]')
+    pg.wait_for_timeout(150)
     liv = pg.evaluate("() => window.__probe.road.livery()")
-    check(bool(liv['roundel']), 'and the car in the garage carries the number', repr(liv))
+    check(liv['toneKey'] == 'GOLD' and liv['twotone'] and liv['tone'] is not None,
+          'and a tapped tone is the one worn', '%r %r' % (liv['toneKey'], liv['twotone']))
+
+    g = garage('COUPE')
+    check(g['glow'] == 'OFF', 'UNDERGLOW is offered once won, OFF', repr(g['glow']))
+    walk = [tap('glow', 'COUPE')['glow'] for _ in range(8)]
+    print('      UNDERGLOW walks %s' % ' -> '.join(walk))
+    check(len(set(walk)) == 8 and 'OFF' in walk, 'and walks seven colours and OFF', repr(walk))
+    while garage('COUPE')['glow'] != 'MAGENTA':
+        tap('glow', 'COUPE')
     check(not any('BRONZE IN A' in n for n in garage('COUPE')['notes']),
           'once all three are won, the bronze captions are gone')
     cop = garage('CRUISER')
-    check(cop['pattern'] is None and cop['roundel'] is None,
-          'a police car has no livery control', '%r %r' % (cop['pattern'], cop['roundel']))
+    check(cop['pattern'] is None and cop['glow'] is None and not cop['tones'],
+          'a police car has no livery control', '%r %r' % (cop['pattern'], cop['glow']))
 
-    # every livery changes the drawn sprite of every racing car, and the roundel lands on every tail
+    # the road draws the glow under the car
+    garage('COUPE')
+    pg.click('#veil [data-act="drive"]')
+    pg.wait_for_timeout(1500)
+    drawn = pg.evaluate("() => window.__probe.road.glowDrawn()")
+    check(drawn == '#ff3fd2', 'and the road draws the chosen glow under the car', repr(drawn))
+
+    # every pattern changes the drawn sprite of every racing car
     SPR = """() => {
       const R = window.__probe.road;
       const keys = ['SALOON','COUPE','HATCH','ROADSTER','TUNER','MUSCLE','STALLION','MATADOR','CREST'];
-      const ls = [ {}, { stripes:true }, { stripes:'rally' }, { twotone:true }, { roundel:7 } ];
+      const ls = [ {}, { stripes:true }, { stripes:'rally' }, { stripes:'band' }, { stripes:'triple' },
+                   { stripes:'pin' }, { twotone:true }, { twotone:true, tone:'GOLD' } ];
       const rows = R.liverySheet(keys, ls, 'RED');
       const px = c => c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       const diff = (a, b) => { const A = px(a), B = px(b); let n = 0;
         for (let i = 0; i < A.length; i += 4)
           if (Math.abs(A[i]-B[i]) + Math.abs(A[i+1]-B[i+1]) + Math.abs(A[i+2]-B[i+2]) > 40) n++;
         return n; };
-      return keys.map((k, i) => ({ k: k,
-        rear:  [1, 2, 3, 4].map(j => diff(rows[i][0], rows[i][2*j])),
-        front: [1, 2, 3].map(j => diff(rows[i][1], rows[i][2*j+1])),
-        pairVsRally: diff(rows[i][2], rows[i][4]) }));
+      return keys.map((k, i) => {
+        const rear = [1, 2, 3, 4, 5, 6].map(j => diff(rows[i][0], rows[i][2*j]));
+        const front = [1, 2, 3, 4, 5, 6].map(j => diff(rows[i][1], rows[i][2*j+1]));
+        let apart = 1e9;
+        for (let a = 1; a <= 5; a++) for (let b = a + 1; b <= 5; b++)
+          apart = Math.min(apart, diff(rows[i][2*a], rows[i][2*b]));
+        return { k: k, rear: rear, front: front, apart: apart, tone: diff(rows[i][12], rows[i][14]) };
+      });
     }"""
     rows = pg.evaluate(SPR)
     for r in rows:
-        print('      %-9s rear px changed  stripes %4d  rally %4d  two-tone %4d  roundel %4d'
-              % (r['k'], r['rear'][0], r['rear'][1], r['rear'][2], r['rear'][3]))
-    check(all(min(r['rear'][:3]) > 150 and min(r['front']) > 150 for r in rows),
+        print('      %-9s rear px changed  %s   least apart %4d   chosen tone %4d'
+              % (r['k'], ' '.join('%4d' % n for n in r['rear']), r['apart'], r['tone']))
+    check(all(min(r['rear']) > 150 and min(r['front']) > 150 for r in rows),
           'every pattern changes the tail and the face of all nine racing cars')
-    check(all(r['rear'][3] > 60 for r in rows), 'and the roundel is drawn on all nine tails',
-          ', '.join('%s %d' % (r['k'], r['rear'][3]) for r in rows if r['rear'][3] <= 60))
-    check(all(r['pairVsRally'] > 100 for r in rows), 'and RALLY is a different drawing from STRIPES')
+    check(all(r['apart'] > 100 for r in rows), 'and the five stripe patterns are five different drawings',
+          ', '.join('%s %d' % (r['k'], r['apart']) for r in rows if r['apart'] <= 100))
+    check(all(r['tone'] > 150 for r in rows), 'and a chosen second tone differs from the automatic one')
 
     errs = pg.evaluate("() => window.__probe.errors")
     check(not errs, 'no page errors', '; '.join(errs[:2]))
-    # an older save holds only the stripes switch, and ON was the first pattern
-    pg2 = b.new_page(viewport={'width': 480, 'height': 900})
-    pg2.add_init_script(INIT)
-    boot(pg2, f'http://127.0.0.1:{port}/games/sw/interstate.html')
-    until(pg2, '!!window.__probe.road', timeout=10000)
-    pg2.evaluate("""() => { const k = 'interstate-opts', s = window.Arcade.save.get(k) || {};
-                            delete s.pattern; s.stripes = true; window.Arcade.save.set(k, s); }""")
-    boot(pg2, f'http://127.0.0.1:{port}/games/sw/interstate.html')   # boot, not reload: it survives the load wedge
-    until(pg2, '!!window.__probe.road', timeout=10000)
-    old = pg2.evaluate("() => window.__probe.road.livery().pattern")
-    check(old == 'STRIPES', 'a save with only stripes: true loads as the STRIPES pattern', repr(old))
+    # AN OLDER SAVE HOLDS ONLY THE STRIPES SWITCH. It is read at boot, so each case boots a page on
+    # it: ON with nothing won paints no stripes, and ON with stripes won loads as the STRIPES pattern.
+    URL = f'http://127.0.0.1:{port}/games/sw/interstate.html'
+
+    def booted_on(extra):
+        pg2 = b.new_page(viewport={'width': 480, 'height': 900})
+        pg2.add_init_script(INIT)
+        boot(pg2, URL)
+        until(pg2, '!!window.__probe.road', timeout=10000)
+        pg2.evaluate("""(x) => { const k = 'interstate-opts', s = window.Arcade.save.get(k) || {};
+                                 delete s.pattern; s.stripes = true; Object.assign(s, x);
+                                 window.Arcade.save.set(k, s); }""", extra)
+        boot(pg2, URL)   # boot, not reload: it survives the load wedge
+        until(pg2, '!!window.__probe.road', timeout=10000)
+        pg2.evaluate("() => { const R = window.__probe.road; R.setBody('HATCH'); }")
+        out = pg2.evaluate("() => window.__probe.road.livery()")
+        pg2.close()
+        return out
+
+    liv = booted_on({})
+    check(liv['stripes'] is False, 'a save with the old switch ON and nothing won wears no stripes',
+          repr(liv['stripes']))
+    liv = booted_on({'stripeset': True})
+    check(liv['pattern'] == 'STRIPES' and liv['stripes'] is True,
+          'and with stripes won it loads as the STRIPES pattern', '%r %r' % (liv['pattern'], liv['stripes']))
     b.close()
 print()
 print('  %s' % ('all checks passed' if not fails else '%d check(s) FAILED' % len(fails)))

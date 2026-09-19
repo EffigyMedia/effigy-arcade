@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.88';
+window.ROAD_BUILD = '0.14.89';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -778,27 +778,34 @@ function timeAward(secs){
 function timeFlash(label, secs){ return label + '  ' + timeAward(secs); }
 /* TEST DRIVE is practice: the clock is optional there. A race always has one. */
 let timedRun = true;
-/* ---- THE LIVERY, AS TWO CHOICES (RLG-071) --------------------------------
-   `optPattern` is a key of `PATTERNS` - what is painted along the car - and
-   `optRoundel` puts the number over it. They replace `optStripes`, which was
-   the first pattern on its own; a save that holds `stripes: true` loads as
-   STRIPES. */
-let optPattern = 'NONE', optRoundel = false;
-/* what the car in the garage is actually wearing: a pattern or roundel that is
-   not won, or a car that takes no livery, paints as nothing */
+/* ---- THE LIVERY, AS THREE CHOICES (RLG-071) ------------------------------
+   `optPattern` is a key of `PATTERNS` - a stripe pattern, or TWO-TONE - and
+   `optTone` is the paint the lower half of a two-tone takes. `optGlow` is the
+   underglow's colour, a key of `GLOW`, or 'OFF'. Each is a choice the player
+   makes once the bronze that pays it is won. They replace `optStripes`, which
+   was the first pattern on its own; a save that holds `stripes: true` loads as
+   STRIPES, and still paints nothing until stripes are won. */
+let optPattern = 'NONE', optTone = null, optGlow = 'OFF';
+/* the colour the road last drew under the player, for a check to read */
+let glowDrawn = null;
+/* what the car in the garage is actually wearing: anything not won, or a car
+   that takes no livery, paints as nothing */
 function livery(){
-  const none = { stripes:false, twotone:false, roundel:false };
+  const none = { stripes:false, twotone:false, tone:null, glow:null };
   if(!stripesAllowed()) return none;
   const P = PATTERNS.find(p => p.key === optPattern);
-  const ok = !!P && (!P.needs || unlocked(P.needs));
+  const ok = !!P && (!P.needs || won(P.needs));
+  const tone = (optTone && PAINT[optTone] && paintChoices().indexOf(optTone) >= 0) ? optTone : null;
   return { stripes: ok ? (P.stripes || false) : false,
            twotone: ok && !!P.twotone,
-           roundel: (optRoundel && unlocked('roundel')) ? ROUNDEL_NUMBER : false };
+           tone: tone ? PAINT[tone] : null,
+           glow: (unlocked('underglow') && GLOW[optGlow]) ? GLOW[optGlow] : null };
 }
 /* the patterns this save has won, by key, in the order the button walks them */
 function patternsOffered(){
-  return PATTERNS.filter(p => !p.needs || unlocked(p.needs)).map(p => p.key);
+  return PATTERNS.filter(p => !p.needs || won(p.needs)).map(p => p.key);
 }
+function won(flag){ return flag === 'stripeset' ? stripesWon() : unlocked(flag); }
 /* what the PATTERN button reads: the chosen one if it is won, NONE if not */
 function patternKey(){
   return patternsOffered().indexOf(optPattern) >= 0 ? optPattern : 'NONE';
@@ -2875,6 +2882,24 @@ function stripeBands(pattern, w, gap){
     return [ { x:0.5 - W/2 - gap*0.6 - pin, w:pin },
              { x:0.5 - W/2,                 w:W   },
              { x:0.5 + W/2 + gap*0.6,       w:pin } ];
+  }
+  /* ---- AND THREE MORE, FOR FIVE (owner, 2026-09-19) ----------------------
+     All symmetric about the centre line. An offset stripe was not used: the
+     face is the tail seen from the other end, so a stripe on the car's left is
+     on the RIGHT of the face's picture, and these bands do not know which end
+     they are painting. BAND is one broad stripe; TRIPLE is three narrow ones;
+     PINSTRIPE is two fine lines set wide apart. */
+  if(pattern === 'band'){
+    const W = w * 2 + gap;
+    return [ { x:0.5 - W/2, w:W } ];
+  }
+  if(pattern === 'triple'){
+    const n = w * 0.55, g2 = gap * 0.8;
+    return [ { x:0.5 - n*1.5 - g2, w:n }, { x:0.5 - n/2, w:n }, { x:0.5 + n/2 + g2, w:n } ];
+  }
+  if(pattern === 'pin'){
+    const pin = w * 0.22, off = w * 1.9;
+    return [ { x:0.5 - off - pin/2, w:pin }, { x:0.5 + off - pin/2, w:pin } ];
   }
   return [ { x:0.5 - w - gap/2, w:w }, { x:0.5 + gap/2, w:w } ];
 }
@@ -5721,6 +5746,9 @@ function paintRig(kind, o){
                    : isCoupe ? 0.22 : isHatch ? 0.13 : 0.16);
     const deckY = h*(isCoupe ? 0.52 : isHatch ? 0.50 : 0.48);
     const bot   = cy - h*0.075;
+    /* where a hatch's tailgate glass ends, below `deckY`. The pane is drawn
+       to it and the stripes start from it, so the two cannot overlap. */
+    const hatchGlassEnd = deckY + (bot - deckY)*0.30;
     const cabW  = isOpen ? 0.38 : isMuscle ? 0.48 : isCoupe ? 0.44
                 : isHatch ? 0.48 : 0.52;
 
@@ -5830,7 +5858,7 @@ function paintRig(kind, o){
          0.03`, the same expression that draws that edge - and carries the same
          gradient on down. */
       const gW = cabW/2 + 0.03;
-      const ty0 = deckY - h*0.012, ty1 = deckY + (bot - deckY)*0.30;
+      const ty0 = deckY - h*0.012, ty1 = hatchGlassEnd;
       const tapr = 0.055;
       const tg = g.createLinearGradient(0, roofY, 0, ty1);
       tg.addColorStop(0,'#46586c'); tg.addColorStop(0.4,'#131a24');
@@ -5963,11 +5991,16 @@ function paintRig(kind, o){
        they drew for every car EXCEPT the muscle one. Outside it now. */
     /* the muscle car is not forced into stripes any more - see the front
        painter for the ruling and for what took their place */
+    /* ---- AND NOT ON THE HATCH'S TAILGATE GLASS (owner, 2026-09-19) -------
+       "The stripes go up past the rear window." A hatch's window runs on down
+       below `deckY` into the door, so the deck run starts where that glass
+       ends - the one value the pane itself is drawn to. */
     if(P.stripes){
       g.fillStyle = shade(P.body, 0.42);
+      const sY = isHatch ? hatchGlassEnd : deckY;
       for(const b of stripeBands(P.stripes, 0.055, 0.060)){
         g.fillRect(w*b.x, roofY, w*b.w, h*0.030);
-        g.fillRect(w*b.x, deckY, w*b.w, bot - deckY);
+        g.fillRect(w*b.x, sY, w*b.w, bot - sY);
       }
     }
 
@@ -7611,40 +7644,63 @@ const SILVER_SAY = {
   iridescent: 'IRIDESCENT PAINT UNLOCKED'
 };
 /* ---- WHAT BRONZE PAYS: A LIVERY PER TOURNAMENT (owner, 2026-09-19, RLG-071)
-   From the same signed-off table: production bronze pays a second stripe
-   pattern (RALLY), sports bronze a number roundel, and super bronze a two-tone
-   livery. All nine racing cars wear all of them, and the roundel stacks on a
-   pattern - both rulings the owner made before this was built.
+   Reproposed by the owner the same day, after seeing the first build:
+   production bronze pays STRIPES - locked until then, five patterns at once -
+   sports bronze pays TWO-TONE, and super bronze pays UNDERGLOW. The player
+   chooses the second tone and the glow's colour; the choice comes with the
+   unlock. A number roundel was built first and the owner did not want it.
 
-   THE GARAGE HAS TWO CONTROLS. PATTERN cycles what is painted along the car -
-   none, the free STRIPES, then RALLY and TWO-TONE once won - and ROUNDEL puts
-   the number on or takes it off, over whatever the pattern is. A pattern with
-   `needs` is offered only once its flag is in the save. */
-const BRONZE_PAYS = { production:'rally', sports:'roundel', super:'twotone' };
+   All nine racing cars wear all of them (owner, before the build). The garage
+   has PATTERN, which walks NONE and the five stripes and TWO-TONE as each is
+   won, a row of swatches for the second tone while TWO-TONE is chosen, and
+   UNDERGLOW, which walks OFF and the colours.
+
+   THE STRIPE FLAG IS `stripeset` AND NOT `stripes`, because `stripes` is
+   already in the same save as the old on/off switch - a save that had it ON
+   would have read as a stripe prize won. `rally` is read as well: 0.14.88 paid
+   that flag for the production bronze, and a device holds it. */
+const BRONZE_PAYS = { production:'stripeset', sports:'twotone', super:'underglow' };
 const BRONZE_SAY = {
-  rally:   'RALLY STRIPES UNLOCKED',
-  roundel: 'NUMBER ROUNDEL UNLOCKED',
-  twotone: 'TWO-TONE LIVERY UNLOCKED'
+  stripeset: 'STRIPES UNLOCKED \u00B7 FIVE PATTERNS',
+  twotone:   'TWO-TONE UNLOCKED \u00B7 CHOOSE BOTH COLOURS',
+  underglow: 'UNDERGLOW UNLOCKED \u00B7 CHOOSE ITS COLOUR'
 };
+function stripesWon(){ return unlocked('stripeset') || unlocked('rally'); }
+/* the five stripe patterns are drawn by `stripeBands` */
 const PATTERNS = [
   { key:'NONE' },
-  { key:'STRIPES',  stripes:true },
-  { key:'RALLY',    stripes:'rally', needs:'rally' },
-  { key:'TWO-TONE', twotone:true,    needs:'twotone' }
+  { key:'STRIPES',   stripes:true,       needs:'stripeset' },
+  { key:'RALLY',     stripes:'rally',    needs:'stripeset' },
+  { key:'BAND',      stripes:'band',     needs:'stripeset' },
+  { key:'TRIPLE',    stripes:'triple',   needs:'stripeset' },
+  { key:'PINSTRIPE', stripes:'pin',      needs:'stripeset' },
+  { key:'TWO-TONE',  twotone:true,       needs:'twotone' }
 ];
-/* the number the roundel carries, and how big it is against the car's width.
-   Tunables with committed defaults, not constants inside the painter. */
-let ROUNDEL_NUMBER = 7;
-const ROUNDEL_R = 0.075;
+/* ---- THE UNDERGLOW'S COLOURS ----------------------------------------------
+   Static: the owner dropped the flash and pulse patterns, because nothing is
+   left to pay them. Neon, not paint - these are light, so they are saturated
+   where the paint table is not. */
+const GLOW = {
+  CYAN:    '#27e8ff',
+  MAGENTA: '#ff3fd2',
+  LIME:    '#8cff3a',
+  AMBER:   '#ffb020',
+  RED:     '#ff3040',
+  BLUE:    '#3d6bff',
+  WHITE:   '#e8f0ff'
+};
+const GLOW_KEYS = Object.keys(GLOW);
+/* how strong the glow is on the road, at its centre, 0 to 1 */
+const GLOW_ALPHA = 0.55;
 /* where the two tones meet, as a fraction down the body's painted band: the
    lower part of the body takes the second tone */
 const TWOTONE_SPLIT = 0.55;
 
-/* ---- THE SECOND TONE IS THE CAR'S OWN COLOUR, TURNED OVER ----------------
+/* ---- THE CONTRAST PAINT --------------------------------------------------
    The same rule the stripe band follows (`liveryBand`): a dark car takes a light
-   second tone and a light car a dark one of its own hue, so every paint has a
-   two-tone and none of them is a second colour to choose. Hex, because the
-   painters shade and grade their paint by parsing it. */
+   contrast and a light car a dark one of its own hue. It is what finds the
+   paint (below), and it is the second tone until the player chooses one. Hex,
+   because the painters shade and grade their paint by parsing it. */
 function hexShade(hex, k){
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
   if(!m) return '#202228';
@@ -7660,32 +7716,40 @@ function contrastPaint(p){
     : { body:hexShade(p.body, 0.24), hi:hexShade(p.body, 0.5), lo:hexShade(p.body, 0.1) };
 }
 
-/* ---- TWO-TONE AND THE ROUNDEL ARE PAINTED AFTER THE CAR, FROM THE CAR ----
-   Neither is drawn inside the four painters, which between them hold dozens of
-   bodies and would each need their own idea of where the body is.
+/* ---- TWO-TONE IS PAINTED AFTER THE CAR, FROM THE CAR ----------------------
+   Not inside the four painters, which between them hold dozens of bodies and
+   would each need their own idea of where the body is.
 
    The car is painted a second time in its contrast paint. EVERY PIXEL THAT
    DIFFERS BETWEEN THE TWO IS PAINT, and every pixel that does not is glass, a
    lamp, a badge, a tyre or trim. That mask is exact for any body, including one
-   added later, and it is what keeps both liveries on the metal: a badge goes on
-   paint, not on glass (RLG-216), and so does a number.
+   added later.
+
+   The MASK always comes from the contrast paint, and the second tone from a
+   third painting in the tone the player chose. The chosen tone cannot be the
+   mask: a tone close to the body colour would differ in too few pixels to find
+   the body at all.
 
    The body's band is the rows where the paint is at least three fifths of its
-   widest row - the roof and pillars are narrower and fall outside it. TWO-TONE
-   gives the paint below `TWOTONE_SPLIT` of that band the second tone. The
-   ROUNDEL goes where a disc lies most wholly on paint, preferring the middle
-   of the car, so it steps round a badge rather than covering it. */
+   widest row - the roof and pillars are narrower and fall outside it. The paint
+   below `TWOTONE_SPLIT` of that band takes the second tone. */
 function liveryPass(make, o, L){
   const A = make(o);
-  if(!L || (!L.twotone && !L.roundel)) return A;
+  if(!L || !L.twotone) return A;
+  const paintOn = (p) => {
+    const c = document.createElement('canvas');
+    return (w, h) => {
+      c.width = w; c.height = h;
+      make(Object.assign({}, o, p))(c.getContext('2d'), w, h, {}, {});
+      return c.getContext('2d').getImageData(0, 0, w, h).data;
+    };
+  };
   return (g, w, h, lamps, parts) => {
     A(g, w, h, lamps, parts);
-    const c2 = document.createElement('canvas');
-    c2.width = w; c2.height = h;
-    const g2 = c2.getContext('2d');
-    make(Object.assign({}, o, contrastPaint(o)))(g2, w, h, {}, {});
-    const a = g.getImageData(0, 0, w, h), b = g2.getImageData(0, 0, w, h);
-    const A8 = a.data, B8 = b.data, paint = new Uint8Array(w*h), rowN = new Int32Array(h);
+    const a = g.getImageData(0, 0, w, h), A8 = a.data;
+    const B8 = paintOn(contrastPaint(o))(w, h);
+    const T8 = L.tone ? paintOn({ body:L.tone.body, hi:L.tone.hi, lo:L.tone.lo })(w, h) : B8;
+    const paint = new Uint8Array(w*h), rowN = new Int32Array(h);
     for(let i = 0; i < w*h; i++){
       const j = i*4;
       if(A8[j+3] > 200 && Math.abs(A8[j]-B8[j]) + Math.abs(A8[j+1]-B8[j+1]) +
@@ -7696,55 +7760,15 @@ function liveryPass(make, o, L){
     let top = -1, bot = -1;
     for(let y = 0; y < h; y++) if(mx && rowN[y] >= mx*0.6){ if(top < 0) top = y; bot = y; }
     if(top < 0) return;
-    if(L.twotone){
-      const split = Math.round(top + (bot - top)*TWOTONE_SPLIT);
-      for(let i = split*w; i < w*h; i++){
-        if(!paint[i]) continue;
-        const j = i*4;
-        A8[j] = B8[j]; A8[j+1] = B8[j+1]; A8[j+2] = B8[j+2];
-      }
-      g.putImageData(a, 0, 0);
+    const split = Math.round(top + (bot - top)*TWOTONE_SPLIT);
+    for(let i = split*w; i < w*h; i++){
+      if(!paint[i]) continue;
+      const j = i*4;
+      A8[j] = T8[j]; A8[j+1] = T8[j+1]; A8[j+2] = T8[j+2];
     }
-    if(L.roundel) drawRoundel(g, w, h, paint, top, bot, L.roundel);
-    if(parts) parts.livery = { top:top, bot:bot };
+    g.putImageData(a, 0, 0);
+    if(parts) parts.livery = { top:top, bot:bot, split:split };
   };
-}
-function drawRoundel(g, w, h, paint, top, bot, num){
-  /* ON THE CENTRE LINE, AND SMALLER BEFORE IT IS ANYWHERE ELSE. A first
-     version also tried a third of the way in from each side, and on the
-     MUSCLE's face it put the number against the blower: a roundel off the
-     centre line is a decal somebody placed, and nothing here can place it
-     well. So the disc shrinks, to three fifths at most, until it fits on the
-     paint down the middle - which is where the stripes it stacks on run. */
-  const cx = Math.round(w*0.5);
-  let best = null, r = 0;
-  for(const k of [1, 0.85, 0.72, 0.6]){
-    r = Math.max(4, Math.round(w*ROUNDEL_R*k));
-    for(let cy = top + r; cy <= bot - r; cy++){
-      let hit = 0, n = 0;
-      for(let dy = -r; dy <= r; dy += 2) for(let dx = -r; dx <= r; dx += 2){
-        if(dx*dx + dy*dy > r*r) continue;
-        n++;
-        const y = cy + dy, x = cx + dx;
-        if(y >= 0 && y < h && x >= 0 && x < w && paint[y*w + x]) hit++;
-      }
-      if(!best || hit / n > best.sc) best = { sc:hit / n, cx:cx, cy:cy };
-    }
-    if(best && best.sc >= 0.85) break;
-  }
-  /* no clean place on this view: leave the number off rather than put it on
-     glass */
-  if(!best || best.sc < 0.85) return;
-  g.save();
-  g.beginPath(); g.arc(best.cx, best.cy, r, 0, 6.2832);
-  g.fillStyle = '#f4f6f8'; g.fill();
-  g.lineWidth = Math.max(1, r*0.14); g.strokeStyle = 'rgba(18,20,26,.92)'; g.stroke();
-  const t = String(num);
-  g.fillStyle = '#14161c';
-  g.font = '900 ' + Math.round(r*(t.length > 1 ? 1.0 : 1.3)) + 'px system-ui, sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(t, best.cx, best.cy + r*0.06);
-  g.restore();
 }
 
 /* ---- what ordinary cars are painted --------------------------------------
@@ -26589,6 +26613,26 @@ function drawPlayer(){
     ctx.restore();
   }
 
+  /* ---- THE UNDERGLOW, ON THE ROAD UNDER THE CAR (RLG-071) ---------------
+     Light, so it is ADDED to the road rather than painted over it: at noon it
+     is a faint tint and at night it is the brightest thing on the tarmac. It
+     is drawn before the car, so the body stands in it rather than in front of
+     it, and it is not in the sprite, because it lies on the road and not on
+     the car. */
+  const glowC = livery().glow;
+  glowDrawn = glowC || null;
+  if(glowC){
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(p.x, p.y + bump);
+    ctx.scale(1, 0.16);
+    const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, w*0.62);
+    gr.addColorStop(0, glowC + Math.round(GLOW_ALPHA*255).toString(16).padStart(2, '0'));
+    gr.addColorStop(1, glowC + '00');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(0, 0, w*0.62, 0, 6.2832); ctx.fill();
+    ctx.restore();
+  }
   /* the car goes on top of its own smoke */
   ctx.save();
   ctx.translate(p.x, p.y + bump);
@@ -29546,13 +29590,21 @@ function openVeil(html, go){
       buildPlayer();
       showGarage();
     }));
+  /* and the second tone of a two-tone (RLG-071) */
+  veilBody.querySelectorAll('[data-act^="tone:"]').forEach(b =>
+    b.addEventListener('click', () => {
+      optTone = b.dataset.act.slice(5);
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { tone:optTone });
+      buildPlayer();
+      showGarage();
+    }));
   veilBody.querySelectorAll('[data-act]').forEach(b => {
     /* SWATCHES ARE NOT ACTIONS. This hid the veil for EVERY [data-act] button
        whether or not there was a handler for it — so tapping a colour, which
        has no entry in `go`, tore the menu down and left the game rendering a
        state it had never entered: a black screen with the HUD on top.
        Only a button with a real action closes the menu now. */
-    if(b.dataset.act.indexOf('paint:') === 0) return;
+    if(b.dataset.act.indexOf('paint:') === 0 || b.dataset.act.indexOf('tone:') === 0) return;
     b.addEventListener('click', () => {
       const fn = go && go[b.dataset.act];
       if(!fn) return;                 /* no action, no dismissal */
@@ -29722,6 +29774,17 @@ function syncPaintForBody(){
   if(allowed.length >= BASE_PAINT_KEYS.length) optPaint = freePaint;
   else if(allowed.indexOf(optPaint) < 0)   optPaint = allowed[0];
 }
+/* ---- THE SECOND TONE, FROM THE SAME PALETTE (owner, 2026-09-19) ----------
+   Shown only while TWO-TONE is worn. The swatches are the car's own won
+   palette, so a second tone can never be a colour the first could not be. */
+function toneSwatches(){
+  if(!livery().twotone) return '';
+  const cur = livery().tone;
+  return '<div class="gnote">SECOND TONE</div><div class="swatches">' + paintChoices().map(k =>
+    '<button class="sw' + (cur === PAINT[k] ? ' on' : '') + '" data-act="tone:' + k +
+    '" style="background:' + PAINT[k].body + '" aria-label="' + k + '"></button>'
+  ).join('') + '</div>';
+}
 function paintSwatches(){
   return '<div class="swatches">' + paintChoices().map(k =>
     '<button class="sw' + (k === optPaint ? ' on' : '') + '" data-act="paint:' + k +
@@ -29740,9 +29803,9 @@ function racingPaintHint(){
   if(!unlocked('iridescent')) lines.push('IRIDESCENT · SILVER IN A SUPERCAR TOURNAMENT');
   /* and the three liveries bronze pays, on a car that wears one (RLG-071) */
   if(stripesAllowed()){
-    if(!unlocked('rally'))   lines.push('RALLY STRIPES · BRONZE IN A PRODUCTION TOURNAMENT');
-    if(!unlocked('roundel')) lines.push('NUMBER ROUNDEL · BRONZE IN A SPORTS TOURNAMENT');
-    if(!unlocked('twotone')) lines.push('TWO-TONE · BRONZE IN A SUPERCAR TOURNAMENT');
+    if(!stripesWon())          lines.push('STRIPES · BRONZE IN A PRODUCTION TOURNAMENT');
+    if(!unlocked('twotone'))   lines.push('TWO-TONE · BRONZE IN A SPORTS TOURNAMENT');
+    if(!unlocked('underglow')) lines.push('UNDERGLOW · BRONZE IN A SUPERCAR TOURNAMENT');
   }
   return lines.map(s => '<div class="gnote">' + s + '</div>').join('');
 }
@@ -30109,6 +30172,12 @@ function drawGarageCar(){
      wrap is the positioning context the flip button already uses. */
   if(cv.parentNode && cv.parentNode.style)
     cv.parentNode.style.setProperty('--gfloor', FLOOR + 'px');
+  /* ---- THE UNDERGLOW IN THE GARAGE IS A CSS SHADOW (RLG-071) ----------
+     For the reason the floor is: this canvas is the car, and garage-card-test
+     measures the car by its pixels. A filter is drawn by the page, not into
+     the canvas, so the glow is seen and the measurement is untouched. */
+  const gl = livery().glow;
+  cv.style.filter = gl ? 'drop-shadow(0 ' + Math.round(8*dpr/2) + 'px 10px ' + gl + ')' : '';
   const put = (img, box, cx, sci) => {
     if(!img) return;
     const k = sci === undefined ? sc : sci;
@@ -30252,25 +30321,31 @@ function showGarage(){
   openVeil(
     '<div class="eyebrow">CHOOSE YOUR CAR</div>' +
     garageCard() +
-    '<style>.swatches{--sw:' + paintChoices().length + '}</style>' +
+    /* ---- AT MOST TWELVE TO A ROW (RLG-071) ------------------------------
+       Each track is a twelfth of the row wide, so `--sw` above twelve made
+       one row wider than the screen, centred, with the ends cut off. Silver
+       took a racing palette to 27 in 0.14.87 and the outer swatches could
+       not be reached. Capped at twelve, the grid wraps them onto new rows. */
+    '<style>.swatches{--sw:' + Math.min(12, paintChoices().length) + '}</style>' +
     paintSwatches() +
+    toneSwatches() +
     picker +
     /* the run's SHAPE belongs with the car, not on the title card: both are
        choices about the drive you are about to take */
     '<div class="gstack">' +
       /* a formula car has a livery, not stripes — and on that narrow engine
          cover they were lost between the tyres anyway */
-      /* ---- PATTERN, AND THE ROUNDEL ONCE IT IS WON (RLG-071) -----------
-         STRIPES was an on/off; it is the first stop of PATTERN now. ROUNDEL is
-         not offered until a sports bronze pays it - the caption under the
-         paint says how to win it, as it does for every other prize. */
-      (stripesAllowed()
+      /* ---- THE LIVERY CONTROLS, EACH ONCE ITS BRONZE IS WON (RLG-071) ------
+         Nothing is offered that cannot be worn: PATTERN appears once stripes
+         or two-tone are won, and UNDERGLOW once it is. The caption under the
+         paint says how to win each one, as it does for every other prize. */
+      (stripesAllowed() && patternsOffered().length > 1
         ? '<button class="go ghost" data-act="pattern">PATTERN \u00B7 <b>' +
-            patternKey() + '</b></button>' +
-          (unlocked('roundel')
-            ? '<button class="go ghost" data-act="roundel">ROUNDEL \u00B7 <b>' +
-                (optRoundel ? 'ON' : 'OFF') + '</b></button>'
-            : '')
+            patternKey() + '</b></button>'
+        : '') +
+      (stripesAllowed() && unlocked('underglow')
+        ? '<button class="go ghost" data-act="glow">UNDERGLOW \u00B7 <b>' +
+            (GLOW[optGlow] ? optGlow : 'OFF') + '</b></button>'
         : '') +
       /* ---- WHICH CLASS A FORMULA CAR IS ENTERING (RLG-213) ---------------
          The one part of the ladder that needed a control that did not exist.
@@ -30368,10 +30443,12 @@ function showGarage(){
                        buildPlayer();
                        if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { pattern:optPattern });
                        showGarage(); },
-      roundel: () => { if(stripesAllowed() && unlocked('roundel')) optRoundel = !optRoundel;
-                       buildPlayer();
-                       if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { roundel:optRoundel });
-                       showGarage(); },
+      glow: () => { if(stripesAllowed() && unlocked('underglow')){
+                      const on = ['OFF'].concat(GLOW_KEYS), i = on.indexOf(optGlow);
+                      optGlow = on[(i + 1) % on.length];
+                    }
+                    if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { glow:optGlow });
+                    showGarage(); },
       mode:  () => {
         /* the button is `disabled` as well, so this is the second lock rather
            than the only one - a hardware back-press or a stale veil must not be
@@ -32022,7 +32099,9 @@ if (AR && AR.options) AR.options.define([
     if(typeof g0.pattern === 'string' && PATTERNS.some(p => p.key === g0.pattern))
       optPattern = g0.pattern;
     else if(g0.stripes === true) optPattern = 'STRIPES';
-    if(typeof g0.roundel === 'boolean') optRoundel = g0.roundel;
+    /* the second tone and the glow, each validated where it is read */
+    if(typeof g0.tone === 'string' && PAINT[g0.tone]) optTone = g0.tone;
+    if(typeof g0.glow === 'string' && (g0.glow === 'OFF' || GLOW[g0.glow])) optGlow = g0.glow;
     /* range-checked rather than trusted: a save written by a future build with
        more times in it must not index past the end of this build's table */
     if(typeof g0.time === 'number' && g0.time >= 0 && g0.time < TIMES.length)
@@ -33360,18 +33439,24 @@ requestAnimationFrame(frameLoop);
      sheet a person can look at, and for prize-test to measure. */
   API.liverySheet = function(keys, ls, paintKey){
     const pt = PAINT[paintKey || 'WHITE'] || PAINT.WHITE;
-    ls = ls || [ {}, { stripes:true }, { stripes:'rally' }, { twotone:true },
-                 { stripes:true, roundel:ROUNDEL_NUMBER } ];
+    ls = ls || [ {}, { stripes:true }, { stripes:'rally' }, { stripes:'band' },
+                 { stripes:'triple' }, { stripes:'pin' }, { twotone:true } ];
     return keys.map(k => {
       const row = [];
       for(const l of ls){
-        const S = carSprites(k, pt, Object.assign({ stripes:false, twotone:false, roundel:false }, l));
+        const L = Object.assign({ stripes:false, twotone:false, tone:null }, l);
+        if(typeof L.tone === 'string') L.tone = PAINT[L.tone] || null;
+        const S = carSprites(k, pt, L);
         row.push(S.rear, S.front);
       }
       return row;
     });
   };
-  API.livery = function(){ return Object.assign({ pattern:patternKey(), roundelOn:optRoundel }, livery()); };
+  API.livery = function(){
+    return Object.assign({ pattern:patternKey(), toneKey:optTone, glowKey:optGlow }, livery());
+  };
+  /* the underglow as the road draws it: its colour, or null (RLG-071) */
+  API.glowDrawn = function(){ return glowDrawn; };
   API.emitLag = function(v){ if(v !== undefined) EMIT_LAG = v ? 1 : 0; return EMIT_LAG; };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
@@ -35496,8 +35581,8 @@ requestAnimationFrame(frameLoop);
     const TRL={body:"#8a8477",hi:"#a8a293",lo:"#4e4a41"};
     const sizeFor=r=>r==="muscle"?[210,158]:r==="cop"?[200,164]:r==="van"?[200,196]
                     :r==="pickup"?[206,176]:r==="truck"?[230,250]:[206,150];
-    const keep=optBody, keepP=optPaint, keepS=optPattern, keepR=optRoundel;
-    optPattern='NONE'; optRoundel=false;
+    const keep=optBody, keepP=optPaint, keepS=optPattern;
+    optPattern='NONE';
     let y=24;
     hd("REAR",y-6);
     CARS.forEach(function(bt,i){
@@ -35530,7 +35615,7 @@ requestAnimationFrame(frameLoop);
       const yy=y+rw*WH, sz=CW-46;
       g.drawImage(wheelCv,cl*CW+23,yy+4,sz,sz); lab(bt,cl*CW+CW/2,yy+sz+22);
     });
-    optBody=keep; optPaint=keepP; optPattern=keepS; optRoundel=keepR; buildSprites();
+    optBody=keep; optPaint=keepP; optPattern=keepS; buildSprites();
     return c.toDataURL("image/png");
   };
   /* ---- THE ENGINE, REACHABLE FROM OUTSIDE ------------------------------
