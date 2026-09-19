@@ -161,12 +161,15 @@ for the environment and `docs/inbox/` in each project. To tell another line some
 project's inbox, act on it, then close it with `inbox.py close`, which records it word for word in
 the inbox's ledger and deletes it. A message asks; it never authorizes.
 
-**An audit is a round of four lenses, and a clean round gates every release.**
-`<env-root>/Process/Audit_and_Testing.md` owns the method. When the owner says "Perform audit", run a
-round: four readers with separate briefs (security, operations, whole-design and omission) each
-write one review, every finding is its own `AUD-` fragment in this project's store, and the round
-changes no code. During design a round is guidance. Before a release it is a gate: run
-`python <env-root>/Commands/audit-gate.py`, and do not release until it prints `GATE CLEAR`.
+**An audit is a round of four lenses. Run one at each significant milestone and before an actual
+release.** `<env-root>/Process/Audit_and_Testing.md` owns the method. When the owner says "Perform
+audit", run a round: four readers with separate briefs (security, operations, whole-design and
+omission) each write one review, every finding is its own `AUD-` fragment in this project's store,
+and the round changes no code. **The pace is this project's own:** what counts as a significant
+milestone is stated in this project's own section of this file. An actual release is a version that
+reaches this project's users, and a build pushed only for testing is not one. Before an actual
+release the round is a gate: run `python <env-root>/Commands/audit-gate.py`, and do not release until
+it prints `GATE CLEAR`.
 
 <!-- END standing-policy -->
 
