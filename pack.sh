@@ -86,7 +86,9 @@ ROOT_FILES=(
 # CLAUDE.md is the instruction file for an agent working in this repository.
 # It describes how the product is BUILT, not the product, so it stays out of
 # the archive on purpose.
-NOT_SHIPPED=( CLAUDE.md )
+# AGENTS.md holds the instructions now and CLAUDE.md only loads it (MOD-003, 2026-09-18).
+# Neither ships; the packer refused every build until AGENTS.md was listed here.
+NOT_SHIPPED=( CLAUDE.md AGENTS.md )
 
 # =====================================================================
 # 1. THE CATALOGUE
