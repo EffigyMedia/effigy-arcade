@@ -131,7 +131,7 @@ def main():
         print()
         print('  AND WHAT THE ROAD LAYS')
 
-        def lay(body, timed, secs=40, fuel=False):
+        def lay(body, timed, secs=40, fuel=None):
             """drive long enough to see one of each, and count what was LAID
 
             The first of each kind is due at 16, 22 and 28 seconds, so a drive has to
@@ -139,9 +139,12 @@ def main():
             `crateLaid` counts at the moment of spawning rather than reporting what is
             on the road now - a pickup driven past is gone from that tally, so a long
             drive would report the last few rather than all of them.
+
+            `fuel` None leaves the game's own switch alone; True or False sets it.
             """
             page.evaluate("""([b, t, f]) => { const R = window.__probe.road;
-              R.setFuel(f); R.setBody(b); R.setTimed(t); R.clearCrates(); R.clearRacers();
+              if(f !== null) R.setFuel(f);
+              R.setBody(b); R.setTimed(t); R.clearCrates(); R.clearRacers();
               R.clearTraffic(); R.crateLaid(true); }""", [body, timed, fuel])
             page.wait_for_timeout(300)
             live = None
@@ -154,27 +157,26 @@ def main():
             seen['other'] = 0
             return seen, live
 
-        # RLG-286: Interstate lays no jerry can, so its default arms must show fuel DEAD
-        # with the clock on. The last arm turns the switch on to prove the can still works
-        # in code, which is what the owner asked to keep for Motorsport.
+        # RLG-286, owner 2026-09-19: the pickup that pays time is a CLOCK, laid whenever
+        # the clock runs. The first three arms read Interstate's own setting. The last
+        # switches fuel ON, which is a game with a tank: the same pickup is laid and
+        # wears the can instead.
         for body, timed, fuel, label in (
-                ('TUNER', True, False, 'a car with a bottle, clock ON'),
-                ('SALOON', True, False, 'a car with NO bottle, clock ON'),
-                ('TUNER', False, False, 'a car with a bottle, clock OFF'),
+                ('TUNER', True, None, 'a car with a bottle, clock ON'),
+                ('SALOON', True, None, 'a car with NO bottle, clock ON'),
+                ('TUNER', False, None, 'a car with a bottle, clock OFF'),
                 ('TUNER', True, True, 'FUEL SWITCHED ON, clock ON')):
             seen, live = lay(body, timed, fuel=fuel)
-            if not fuel and timed:
-                check(live['fuel'] is False,
-                      'Interstate lays no jerry can with the clock on (%s)' % label,
-                      'live %r' % live['fuel'])
-            if fuel:
-                check(live['fuel'] is True,
-                      'with the switch on, the can is live again', 'live %r' % live['fuel'])
-            print('      %-32s laid  repair %d  nos %d  fuel %d      live %s'
-                  % (label, seen['repair'], seen['nos'], seen['fuel'], live))
+            art = page.evaluate("() => window.__probe.road.pickupArtOf('time')")
+            if fuel is None:
+                check(art == 'clock', 'the time pickup is a clock in Interstate (%s)' % label, art)
+            else:
+                check(art == 'can', 'and a can in a game with fuel (%s)' % label, art)
+            print('      %-32s laid  repair %d  nos %d  time %d      live %s'
+                  % (label, seen['repair'], seen['nos'], seen['time'], live))
             check(seen['other'] == 0, 'no pickup of an unknown kind is laid (%s)' % label,
                   '%d' % seen['other'])
-            for k in ('repair', 'nos', 'fuel'):
+            for k in ('repair', 'nos', 'time'):
                 if live[k]:
                     # A KIND THAT IS LIVE MUST ACTUALLY APPEAR, or "omitted correctly" and
                     # "timer stuck" are the same observation.

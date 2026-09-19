@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.80';
+window.ROAD_BUILD = '0.14.81';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -8203,6 +8203,48 @@ function buildFleet(){
     g.lineTo(w*0.58, h*0.20); g.lineTo(w*0.58, h*0.26); g.stroke();
   });
 
+  /* ---- A STOPWATCH, BECAUSE THE PICKUP PAYS TIME (owner, 2026-09-19, RLG-286)
+     "Let's leave it checkpoints and use clocks as the pick up." The can above
+     is kept for a game that has fuel; in Interstate the pickup that buys time
+     wears a clock. "I don't wanna overcomplicate things for half diegetic
+     implementations."
+
+     IT DIFFERS BY SILHOUETTE FIRST, like the other two: the toolbox is a squat
+     box, the bottle a cylinder on its side, and this is ROUND with a crown on
+     top. Gold, so the three read apart by colour as well - red, blue, gold. */
+  SP.pickTime = sprite(150,120, (g,w,h)=>{
+    pickShadow(g,w,h,0.30);
+    const cx = w*0.50, cy = h*0.56, r = h*0.30;
+    /* the crown and its two side buttons, first, so the case is painted over their feet */
+    g.fillStyle='#b8861f'; g.fillRect(cx - w*0.035, cy - r - h*0.12, w*0.07, h*0.10);
+    g.fillStyle='#d9a93a'; rr(g, cx - w*0.06, cy - r - h*0.16, w*0.12, h*0.05, 2); g.fill();
+    g.save(); g.translate(cx, cy);
+    for(const s of [-1, 1]){
+      g.save(); g.rotate(s * 0.72);
+      g.fillStyle='#b8861f'; g.fillRect(-w*0.022, -r - h*0.07, w*0.044, h*0.07);
+      g.restore();
+    }
+    g.restore();
+    /* the gold case, then the white face inside it */
+    g.fillStyle='#c8962a'; g.beginPath(); g.arc(cx, cy, r, 0, 6.2832); g.fill();
+    g.fillStyle='#e6b94a'; g.beginPath(); g.arc(cx - r*0.12, cy - r*0.12, r*0.92, 0, 6.2832); g.fill();
+    g.fillStyle='#f4f1e8'; g.beginPath(); g.arc(cx, cy, r*0.76, 0, 6.2832); g.fill();
+    /* four ticks and two hands - enough to say CLOCK at a distance, no more */
+    g.strokeStyle='#2a2f38'; g.lineWidth=Math.max(1.5, w*0.014);
+    for(let i = 0; i < 4; i++){
+      const a = i * Math.PI / 2;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a)*r*0.60, cy + Math.sin(a)*r*0.60);
+      g.lineTo(cx + Math.cos(a)*r*0.72, cy + Math.sin(a)*r*0.72);
+      g.stroke();
+    }
+    g.lineWidth=Math.max(2, w*0.020); g.lineCap='round';
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - r*0.56); g.stroke();
+    g.strokeStyle='#c0342b';
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + r*0.42, cy + r*0.18); g.stroke();
+    g.fillStyle='#2a2f38'; g.beginPath(); g.arc(cx, cy, r*0.08, 0, 6.2832); g.fill();
+  });
+
   SP.barrier = sprite(200,120, (g,w,h)=>{
     g.fillStyle='rgba(0,0,0,.45)';
     g.beginPath(); g.ellipse(w/2,h-5,w*0.46,h*0.07,0,0,6.2832); g.fill();
@@ -8227,8 +8269,9 @@ function buildFleet(){
    pickup you cannot see is worse than one wearing the wrong box (RLG-266). */
 function pickupArt(c){
   const k = c && c.kind;
-  return (k === 'nos' && SP.pickNos) || (k === 'fuel' && SP.pickFuel)
-      || SP.pickRepair;
+  /* the time pickup wears a clock, or the can in a game that has fuel (RLG-286) */
+  if(k === 'time') return (fuelOn() ? SP.pickFuel : SP.pickTime) || SP.pickRepair;
+  return (k === 'nos' && SP.pickNos) || SP.pickRepair;
 }
 function buildSprites(){ buildPlayer(); buildFleet(); }
 
@@ -12176,7 +12219,7 @@ function reset(){
   nextCopT = 9; nextBlockT = 30; nextCrateT = 16;
   /* staggered, so the first of each does not arrive in the same second */
   nextPickT = { repair:16, nos:22, fuel:28 };
-  laidTally = { repair:0, nos:0, fuel:0 };
+  laidTally = { repair:0, nos:0, time:0 };
 }
 let nextWaveZ=0, nextCopT=0, nextBlockT=0, nextCrateT=0;
 /* ---- WHICH PICKUPS THE ROAD IS LAYING, AND WHY IT IS DERIVED (RLG-266) ----
@@ -12209,7 +12252,9 @@ let nextWaveZ=0, nextCopT=0, nextBlockT=0, nextCrateT=0;
 const PICKUPS = [
   { kind:'repair', live: () => true },
   { kind:'nos',    live: () => hasNos() },
-  { kind:'fuel',   live: () => fuelOn() && clockRuns() }
+  /* time, whenever the clock runs - a clock in Interstate, a can where there is
+     fuel (RLG-286). It was `fuel` and live only with the fuel switch on. */
+  { kind:'time',   live: () => clockRuns() }
 ];
 /* ---- FUEL IS A GAME'S CHOICE, AND INTERSTATE HAS DECLINED IT (RLG-286) ----
    Owner, 2026-09-16: "As much as I like the fuel gauge. Let's take it out of
@@ -12227,16 +12272,19 @@ const PICKUPS = [
    The pickup's clock payout, the dial painter and the pump lamp are all
    unchanged. They are only switched off.
 
-   WHAT INTERSTATE LOSES, STATED RATHER THAN DISCOVERED. The can was a source
-   of clock time. The checkpoints still pay time and the number countdown is
-   still on the HUD. But RLG-100 records that a ROADSTER at full throttle runs
-   out before its first checkpoint, and the can was one way that gap could have
-   closed. That margin is now smaller.
+   AND THE TIME PICKUP CAME BACK AS A CLOCK (owner, 2026-09-19). Taking the
+   can away drained the timed run: every sports car then lost about 0.7 s of
+   clock per second at full throttle (RLG-100). After weighing a fuel-stop
+   design and taking it back - "I don't wanna overcomplicate things for half
+   diegetic implementations" - the owner ruled: checkpoints pay time, and the
+   pickup that pays time is a CLOCK. So the pickup's kind is `time`, it is laid
+   whenever the clock runs, and this switch now decides only two things: whether
+   the dial is drawn, and whether the time pickup wears the can or the clock.
    ------------------------------------------------------------------------- */
 function fuelOn(){ return !!CFG.fuel; }
-let nextPickT = { repair:0, nos:0, fuel:0 };
+let nextPickT = { repair:0, nos:0, time:0 };
 /* every pickup laid this run, by kind - see `API.crateLaid` */
-let laidTally = { repair:0, nos:0, fuel:0 };
+let laidTally = { repair:0, nos:0, time:0 };
 
 /* Cruising speed on the title card. The road already moves before you press
    anything, so the game starts from a car that is going rather than a car
@@ -21252,7 +21300,7 @@ function step(dt){
         healed = Math.round(before - dmg);
       } else if(kind === 'nos'){
         gained = awardNos(25);
-      } else if(kind === 'fuel' && clockRuns()){
+      } else if(kind === 'time' && clockRuns()){
         clock += (secs = CRATE_SECS); lastBeep = -1;
       }
       /* ---- ONE LINE, ONE SHAPE (RLG-126) --------------------------------
@@ -33113,11 +33161,11 @@ requestAnimationFrame(frameLoop);
      few rather than all of them. */
   API.crateLaid = function(reset){
     const out = Object.assign({}, laidTally);
-    if(reset) laidTally = { repair:0, nos:0, fuel:0 };
+    if(reset) laidTally = { repair:0, nos:0, time:0 };
     return out;
   };
   API.crateKinds = function(){
-    const out = { repair:0, nos:0, fuel:0, other:0 };
+    const out = { repair:0, nos:0, time:0, other:0 };
     for(const c of crates){
       if(c.got) continue;
       const k = c.kind || 'repair';
@@ -33127,6 +33175,13 @@ requestAnimationFrame(frameLoop);
              /* read from PICKUPS, not restated, so the answer a check gets
                 cannot differ from the one the spawner uses (RLG-286) */
              live: PICKUPS.reduce((o, P) => (o[P.kind] = !!P.live(), o), {}) };
+  };
+  /* which drawing a pickup of this kind wears right now (RLG-286): the time
+     pickup is a clock in a game without fuel and a can in one with it */
+  API.pickupArtOf = function(kind){
+    const a = pickupArt({ kind: kind });
+    return a === SP.pickTime ? 'clock' : a === SP.pickFuel ? 'can'
+         : a === SP.pickNos ? 'bottle' : a === SP.pickRepair ? 'toolbox' : '?';
   };
   API.cratesLeft = function(){
     let n = 0; for(const c of crates) if(!c.got) n++; return n;

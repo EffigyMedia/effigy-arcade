@@ -241,7 +241,7 @@ def main():
         runs = page.evaluate("() => window.__probe.road.clockRuns()")
         res.check(runs is False, 'the clock can be turned off for the check',
                   'clockRuns() still says %r' % runs)
-        before, after = take_crate(page, WITH_BOTTLE, 60, timed=False, kind='fuel')
+        before, after = take_crate(page, WITH_BOTTLE, 60, timed=False, kind='time')
         print('      %-8s untimed:     %r   clock %.1f -> %.1f'
               % (WITH_BOTTLE, after['fx'], before['clock'], after['clock']))
         res.check(abs(after['clock'] - before['clock']) < 0.5,
@@ -289,7 +289,7 @@ def main():
         # turn. This asked for one crate and expected the clock AND the bottle to light,
         # which is the old box paying two currencies at once.
         page.evaluate("() => window.__probe.road.setNos(20)")
-        before, after = take_crate(page, WITH_BOTTLE, 60, timed=True, kind='fuel')
+        before, after = take_crate(page, WITH_BOTTLE, 60, timed=True, kind='time')
         print('      %-8s gauges after a can:    clock %r, bottle %r'
               % (WITH_BOTTLE, after['gauges']['clock'], after['gauges']['nos']))
         res.check('gain' in after['gauges']['clock'],
