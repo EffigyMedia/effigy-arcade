@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.95';
+window.ROAD_BUILD = '0.14.96';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -34964,6 +34964,12 @@ requestAnimationFrame(frameLoop);
   API.rivalState = function(){
     return racers.map(r => ({ dz: Math.round(r.z - (pos + PLAYER_Z)),
                               spd: Math.round(r.spd || 0),
+                              /* where it sits across the road against the player,
+                                 which is the other half of the stop rule: a car
+                                 shoved out of the line stops meeting it */
+                              x: +(r.x || 0).toFixed(3),
+                              off: +Math.abs((r.x || 0) - playerX).toFixed(3),
+                              lane: r.lane, wreck: +(r.wreck || 0).toFixed(2),
                               /* the shift's half of a rival's state (RLG-203):
                                  whether it is out, and how far through the
                                  hold it is - the second is what tells a check

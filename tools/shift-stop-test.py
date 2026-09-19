@@ -257,24 +257,38 @@ with sync_playwright() as p:
     pg3.on('pageerror', lambda e: errs3.append(str(e)))
     on_shift(pg3)
     hold = pg3.evaluate("() => window.__road.shift()")['hold']
-    # STAGED IN PASSES, NOT ALL AT ONCE. Eleven cars dropped into one lane at
-    # forty units apart shove each other sideways, and a car pushed out of the
-    # player's line stops satisfying the condition - one rival in eleven survived
-    # that way, on two runs in three. Re-staging whoever is still running is both
-    # more robust and more honest: what is being measured is that the field CAN
-    # be brought to zero and that the last one out ends the shift.
+    # STAGED IN PASSES, AND NEVER TWO CARS ON ONE SPOT (RLG-293). Eleven rivals were
+    # staged at once at three distances - 900, 1600 and 2300 - so FOUR of them landed on
+    # the same place in the same lane. Measured: a clump staged at 900 was at 374, 664
+    # and 1364 a second later, which is the cars shoving each other apart, and a rival
+    # shoved out of the player's line stops meeting the condition. That failed about two
+    # runs in three on 2026-09-18 (and about one in seven on the same commit today: it is
+    # load-sensitive, which is what a harness must not be).
+    #
+    # FOUR AT A TIME, EACH AT ITS OWN DISTANCE, all inside the rule's own reach - 900 to
+    # 3000 against STOP_NEAR's 3200 - and 700 apart, which is more than a car's length.
+    # The loop then re-stages whoever is still running, so the eleven are brought down in
+    # three passes. What is measured is unchanged: the field CAN be brought to zero, and
+    # the last one out ends the shift.
     for _ in range(5):
         left = pg3.evaluate("() => window.__road.shift()['running']")
         if left == 0:
             break
         pg3.evaluate("""() => { const R = window.__road;
+            let n = 0;
             R.rivalState().forEach((r, i) => {
-              if(!r.out) R.stageStop(i, 900 + (i % 3) * 700, R.MAX_SPD * 0.03); });
+              if(!r.out && n < 4) R.stageStop(i, 900 + (n++) * 700, R.MAX_SPD * 0.03); });
             R.holdSpd(R.MAX_SPD * 0.03); }""")
         pg3.wait_for_timeout(int((hold + 2.0) * 1000))
     sh = pg3.evaluate("() => window.__road.shift()")
     note(f"{sh['stopped']} stopped, {sh['running']} running, "
          f"finished={sh['finished']} outcome='{sh['outcome']}'")
+    # WHO SURVIVED, AND WHY. A rival that is still running has either been shoved out of
+    # the player's line or is still moving, and the two are different faults.
+    for r in pg3.evaluate("() => window.__road.rivalState()"):
+        if not r['out']:
+            note(f"still running: #{r['num']} dz {r['dz']} speed {r['spd']} "
+                 f"off {r.get('off')} lane {r.get('lane')} held {r['stopT']}s wreck {r.get('wreck')}")
     check(sh['running'] == 0, 'the whole field can be stopped',
           f"{sh['running']} still running")
     check(sh['stopped'] == sh['field'], 'and every one of them is counted',
