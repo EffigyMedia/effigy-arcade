@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.86';
+window.ROAD_BUILD = '0.14.87';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -924,6 +924,15 @@ let tourDone = false;
    `New` is a car won just now; `Had` is the same gold taken again in a car
    you already owned, which says nothing rather than announcing it twice. */
 let tourCopNew = false, tourCopHad = false;
+/* what a silver just paid, or '' - read by the trophy screen (RLG-071) */
+let tourSilver = '';
+/* pay a class's silver prize; returns the flag if it was NEW, '' otherwise */
+function paySilver(cls){
+  const pays = SILVER_PAYS[cls];
+  if(!pays || unlocked(pays)) return '';
+  if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
+  return pays;
+}
 
 /* ---- A TOURNAMENT GETS THREE ATTEMPTS (owner, 2026-09-16, RLG-268) --------
    Owner: "When you run out of time or get busted, the options should be retry
@@ -7515,6 +7524,38 @@ const FORCE_PAINT = {
 };
 Object.assign(PAINT, FORCE_PAINT);
 const FORCE_PAINT_KEYS = Object.keys(FORCE_PAINT).concat(['SILVER']);
+/* ---- WHAT SILVER PAYS: A PAINT SET PER TOURNAMENT (owner, 2026-09-19, RLG-071)
+   Signed off from the full table of rewards: silver pays a paint set and
+   bronze a livery. Production silver pays METALLIC, sports silver PEARL, and
+   super silver the racing IRIDESCENT set above - which had no source since the
+   formula ladder went.
+
+   A METALLIC paint has a hard, bright highlight and a deep shadow, so the flake
+   reads as a sharp sheen. A PEARL has a soft highlight that drifts toward white,
+   so it reads as a glow. Added to `PAINT` after the key lists above are taken,
+   like the force colours, so no palette offers them until they are won. */
+const METALLIC_PAINT = {
+  GUNMETAL:  { body:'#4a5058', hi:'#c9d2dc', lo:'#1a1d22' },
+  COBALT:    { body:'#1f48b0', hi:'#9fc0ff', lo:'#0a1c4f' },
+  CANDY:     { body:'#b3121e', hi:'#ff8a8f', lo:'#4d060c' },
+  EMERALD:   { body:'#0e7a4a', hi:'#8ff0c0', lo:'#043220' },
+  COPPER:    { body:'#a8561f', hi:'#ffc08a', lo:'#4a2208' }
+};
+const PEARL_PAINT = {
+  PEARL:     { body:'#e9e4da', hi:'#ffffff', lo:'#a9a092' },
+  BLUSH:     { body:'#e6b4c2', hi:'#fff0f4', lo:'#9a6a78' },
+  SEAFOAM:   { body:'#a8dccb', hi:'#f2fffa', lo:'#5d9383' },
+  LILAC:     { body:'#b8a6e0', hi:'#f6f0ff', lo:'#6f5f9c' },
+  CHAMPAGNE: { body:'#d8c49a', hi:'#fff8e6', lo:'#8f7a52' }
+};
+Object.assign(PAINT, METALLIC_PAINT, PEARL_PAINT);
+const METALLIC_KEYS = Object.keys(METALLIC_PAINT), PEARL_KEYS = Object.keys(PEARL_PAINT);
+const SILVER_PAYS = { production:'metallic', sports:'pearl', super:'iridescent' };
+const SILVER_SAY = {
+  metallic:   'METALLIC PAINT UNLOCKED',
+  pearl:      'PEARL PAINT UNLOCKED',
+  iridescent: 'IRIDESCENT PAINT UNLOCKED'
+};
 
 /* ---- what ordinary cars are painted --------------------------------------
    Deliberately DULL. The supercars own the saturated end of the spectrum, and
@@ -17514,6 +17555,9 @@ function stepRacers(dt){
             const pays = GOLD_PAYS[classOf(optBody)];
             if(pays) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
           }
+          /* silver pays its class's paint set, decided new-or-not before the
+             write, as the police car is (RLG-071, RLG-202) */
+          tourSilver = (st === 2) ? paySilver(classOf(optBody)) : '';
           /* ---- AND THE POLICE CAR OF YOUR OWN CLASS, IF YOU RAN IT HOT ----
              Owner's ruling: a gold with HOT PURSUIT on also hands you the
              force's version of what you were driving. The sports ladder pays
@@ -29447,8 +29491,12 @@ function copPaintChoices(){
 function paintChoices(){
   if(dutyLegal(optBody)) return copPaintChoices();
   if(optBody === 'CAB')     return ['GOLD'];        /* a cab is yellow */
-  /* the iridescent set only appears once the sports ladder has been won */
-  return unlocked('iridescent') ? PAINT_KEYS : BASE_PAINT_KEYS;
+  /* the base dozen, and each paint set a silver has won (RLG-071) */
+  let out = BASE_PAINT_KEYS.slice();
+  if(unlocked('metallic'))   out = out.concat(METALLIC_KEYS);
+  if(unlocked('pearl'))      out = out.concat(PEARL_KEYS);
+  if(unlocked('iridescent')) out = out.concat(IRIDESCENT_KEYS);
+  return out;
 }
 
 /* ---- A RESTRICTED CAR MUST NOT EAT YOUR COLOUR --------------------------
@@ -29481,11 +29529,23 @@ function paintSwatches(){
     '" style="background:' + PAINT[k].body + '" aria-label="' + k + '"></button>'
   ).join('') + '</div>' + copPaintHint();
 }
+/* ---- AND A RACING CAR SAYS WHAT SILVER PAYS (RLG-071) ---------------------
+   The same rule as the police prizes below: a prize nobody knows about is not
+   a reward. Only on a car that takes the full palette - a cab or a police car
+   has its own - and each line goes once its set is won. */
+function racingPaintHint(){
+  if(paintChoices().length < BASE_PAINT_KEYS.length) return '';
+  const lines = [];
+  if(!unlocked('metallic'))   lines.push('METALLIC · SILVER IN A PRODUCTION TOURNAMENT');
+  if(!unlocked('pearl'))      lines.push('PEARL · SILVER IN A SPORTS TOURNAMENT');
+  if(!unlocked('iridescent')) lines.push('IRIDESCENT · SILVER IN A SUPERCAR TOURNAMENT');
+  return lines.map(s => '<div class="gnote">' + s + '</div>').join('');
+}
 /* ---- A POLICE CAR SAYS WHAT ITS PAINT PRIZES ARE (RLG-212) ---------------
    The silhouette rule, applied to paint: a prize nobody knows about is not a
    reward. Each line disappears once its prize is won. */
 function copPaintHint(){
-  if(!dutyLegal(optBody)) return '';
+  if(!dutyLegal(optBody)) return racingPaintHint();
   const lines = [];
   if(!unlocked('copcolours'))    lines.push('MORE COLOURS · WIN A CRUISER INTERCEPT TOURNAMENT');
   if(!unlocked('copiridescent')) lines.push('IRIDESCENT · WIN A SUPERCRUISER INTERCEPT TOURNAMENT');
@@ -31480,12 +31540,20 @@ function showTrophy(st){
   const copCar  = tourCopNew ? (sports ? 'CRUISER' : 'SUPERCRUISER') : null;
   /* the headline prize of the ladder you ran, in the words the player will
      recognise from the garage */
-  const goldNote = sports ? 'SUPERCAR CLASS UNLOCKED \u00B7 ALL THREE'
-                 : cls === 'super' ? 'FORMULA CLASS UNLOCKED \u00B7 ALL THREE'
-                 : 'IRIDESCENT PAINT UNLOCKED \u00B7 THE LAST THING TO WIN';
+  /* ---- FROM THE LADDER ITSELF (RLG-071) -------------------------------
+     This was written when the ladder started at sports, so a PRODUCTION gold
+     announced the iridescent paint - which it has never paid. It reads
+     `GOLD_PAYS` now, the table the finish pays from. */
+  const goldPays = GOLD_PAYS[cls];
+  const goldNote = goldPays === 'sports' ? 'SPORTS CLASS UNLOCKED · ALL THREE'
+                 : goldPays === 'super' ? 'SUPERCAR CLASS UNLOCKED · ALL THREE'
+                 : goldPays === 'formula' ? 'FORMULA CLASS UNLOCKED · ALL THREE'
+                 : 'THE STANDING IS THE PRIZE';
   /* the button opens the most interesting NEW car. A police car beats paint,
      and beats a formula the player may already have from a previous gold. */
-  const showCar = copCar || goldCar || (st === 2 ? 'TUNER' : st === 3 ? 'MUSCLE' : null);
+  /* silver and bronze pay no car: TUNER and MUSCLE were their prizes until
+     2026-08-29, and this still offered them (RLG-071) */
+  const showCar = copCar || (goldPays === 'sports' && st === 1 ? 'ROADSTER' : goldCar);
   /* the four races, and where the points came from */
   const rows = tourField.slice().sort((a,b)=>b.pts-a.pts).slice(0,3);
   openVeil(
@@ -31508,7 +31576,9 @@ function showTrophy(st){
           : tourCopHad
           ? ''
           : '<div class="tip">A GOLD WITH HOT PURSUIT ON ALSO WINS THE POLICE CAR</div>')
-      : '<div class="tip">A GOLD UNLOCKS THE FOURTH CAR</div>') +
+      : (st === 2 && tourSilver && SILVER_SAY[tourSilver])
+      ? '<div class="gnote">' + SILVER_SAY[tourSilver] + '</div>'
+      : '') +
     '<div class="gstack">' +
       (showCar ? '<button class="go" data-act="unlock">SEE YOUR NEW CAR</button>' : '') +
       '<button class="go' + (showCar ? ' ghost' : '') + '" data-act="again">NEW TOURNAMENT</button>' +
@@ -33054,6 +33124,8 @@ requestAnimationFrame(frameLoop);
     }
     return { livery: copLivery, from: NPC_COP_PAINTS.slice(), print: print };
   };
+  /* pay the silver of a class as the finish does, for a check (RLG-071) */
+  API.paySilver = function(cls){ return paySilver(cls || classOf(optBody)); };
   API.emitLag = function(v){ if(v !== undefined) EMIT_LAG = v ? 1 : 0; return EMIT_LAG; };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
