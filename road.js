@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.84';
+window.ROAD_BUILD = '0.14.85';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -24649,7 +24649,7 @@ function tarmacTone(dark, fade, onDeck){
    draws nothing - and that is a real absence rather than a hidden object.
    ---------------------------------------------------------------------- */
 function skipSlice(n, idx, p1){
-  emitBucket(n);
+  if(EMIT_LAG){ if(!emitted[n+1]) emitBucket(n+1); } else emitBucket(n);
   if(p1 && p1.ok){
     if(drawWatch) walkTrace.scen.push(n);
     drawScenery(idx, p1, p1.y, idx*SEG, clamp(1 - n/DRAW, 0, 1));
@@ -25063,8 +25063,16 @@ function drawRoad(){
        between two adjacent slices, so emitting the next one out with this one
        removes that oscillation.
        -------------------------------------------------------------------- */
-    emitBucket(n);
-    if(!emitted[n+1]) emitBucket(n+1);
+    /* ---- AND ONE SLICE LATER (RLG-068) ---------------------------------
+       See `EMIT_LAG`. With the lag on, a segment's cars wait for the next
+       nearer slice, so that slice cannot paint across their bottom edge. */
+    if(EMIT_LAG){
+      if(!emitted[n+1]) emitBucket(n+1);
+      if(!emitted[n+2]) emitBucket(n+2);
+    } else {
+      emitBucket(n);
+      if(!emitted[n+1]) emitBucket(n+1);
+    }
 
     /* ---- WHAT STANDS BESIDE THE ROAD (RLG-059) ------------------------
        Drawn BEFORE the lamps, because the road pass walks far to near and a
@@ -25370,6 +25378,9 @@ function drawRoad(){
        read: it looks like a second street-lighting system, and it is the fourth
        thing found behind that one dead guard. */
   }
+  /* with the lag, the nearest buckets have no nearer slice to wait for, so
+     they are painted once the walk is done, far to near (RLG-068) */
+  if(EMIT_LAG) for(const m of [1, 0]) if(!emitted[m]) emitBucket(m);
 }
 function quad(ax,ay,bx,by,cx,cy,dx,dy){
   ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.lineTo(cx,cy); ctx.lineTo(dx,dy);
@@ -25829,6 +25840,20 @@ function sweepUnemitted(){
    its draw order at all.
    ------------------------------------------------------------------------ */
 let spriteDefer = null;
+/* ---- A CAR WAITS FOR THE SLICE IN FRONT OF IT (owner, 2026-08-29, RLG-068) --
+   "A vehicle close to the player has the very bottom of its sprite clipped by a
+   slice of road." The walk paints far to near and emitted a segment's cars
+   right after that segment's own slice - so the NEXT, nearer slice was painted
+   over whatever of the car reached into it. Near the player a slice is many
+   pixels tall and the strip it took was wide enough to see.
+
+   NOT BY LIFTING THE CAR, which the ruling forbids: its base is where its
+   tyres and shadow are, and a raised car floats. The cars are painted one
+   slice LATER instead, after the ground in front of them. That changes no
+   occlusion: `crestGate` alone hides a car behind terrain (RLG-041), and it
+   reads `hillClip`, not the paint order. 1 is the lag; 0 is the old order,
+   kept so a check can put the defect back. */
+let EMIT_LAG = 1;
 /* the segment the buckets were counted from, so a bucket's depth can be recovered */
 let spriteBase = 0;
 /* ---- AND ONLY WHAT IS STANDING ON THE ROAD (RLG-145) -------------------
@@ -32998,6 +33023,8 @@ requestAnimationFrame(frameLoop);
   /* the prize screen for a won car, without winning a tournament to reach it
      (RLG-251). The CONDITION is staged; its two buttons are what is measured. */
   API.showUnlock = function(k){ showUnlock(k); };
+  /* the paint order of cars against the road, 1 lagged or 0 the old order (RLG-068) */
+  API.emitLag = function(v){ if(v !== undefined) EMIT_LAG = v ? 1 : 0; return EMIT_LAG; };
   /* ---- THE GATE, AND A WAY TO MOVE THROUGH IT (RLG-069) ---------------
      `shift` calls the SAME `shiftStep` the thumb calls, rather than a second
      copy of the rules - a harness that reimplements the gate proves that the
