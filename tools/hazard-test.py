@@ -318,6 +318,16 @@ def main():
                   '%d objects' % solid)
             check(drop == 0, 'and the cliff side carries nothing at all',
                   '%d objects on the drop' % drop)
+            # AND IN THE MIRROR (owner, 2026-09-19): "if you look in the rearview of a
+            # mountain biome ... it's still rocks on both sides." The glass has its own
+            # scenery loop, and it had never learned to skip the drop.
+            mdrop, msolid = ((sc['mLeft'], sc['mRight']) if side < 0
+                             else (sc['mRight'], sc['mLeft']))
+            print('      in the mirror:  the drop side drew %4d,  the solid side drew %4d'
+                  % (mdrop, msolid))
+            check(msolid > 0 and mdrop == 0,
+                  'and the mirror carries rock on the solid side and nothing on the drop',
+                  '%d on the drop, %d on the solid side' % (mdrop, msolid))
 
         # ---- AND THE GROUND STOPS AT THE RIM (RLG-278) -----------------------------
         # Owner, 2026-09-16: "that sheer cliff face on the mountain biome does not read
@@ -359,6 +369,22 @@ def main():
                 # mean position must move when the coin turns.
                 check(xR - xL > 60, '%s puts the drop on the side the hazard is' % k,
                       'x=%.1f with the hazard left, x=%.1f with it right' % (xL, xR))
+                # AND IT IS A FLOOR FAR BELOW, NOT DARK GROUND BESIDE THE ROAD (owner,
+                # 2026-09-19): "Couldn't we actually just not do a plane equal to the road and
+                # have an actual drop off?" The dark face of 2026-09-16 was a colour on a
+                # surface at the road's own level, and every check above passed on it. What
+                # separates a fall is SCALE: at the row where a rim is drawn, the floor seen
+                # past it must be a slice much further away. A plane at road level answers
+                # the rim's own slice; a missing floor answers nothing.
+                settle(k, -1)
+                page.evaluate("() => { const R = window.__probe.road; R.holdSpd(0); R.dropOff(false); }")
+                page.wait_for_timeout(90)
+                at = page.evaluate("() => window.__probe.road.dropFloorAt(40)")
+                print('      %-9s at the rim of slice 40 (row %s) the floor seen is slice %s, of %s drawn'
+                      % (k, at and at['rimY'], at and at['floorN'], at and at['floors']))
+                check(bool(at) and at['floorN'] is not None and at['floorN'] >= 2 * at['rimN'],
+                      '%s: past the rim lies a floor far below, not ground at the road level' % k,
+                      repr(at))
 
         # ---- AND ALL OF IT IS BEHIND YOU TOO (RLG-280) -----------------------------
         # Owner, 2026-09-16: "all the new boundaries items you just added, are invisible

@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.93';
+window.ROAD_BUILD = '0.14.94';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14870,6 +14870,12 @@ function mixRGB(a, t, to){
 const SNOW_DAY = [238,238,238], SNOW_GOLD = [236,214,190], SNOW_NIGHT = [150,162,186];
 /* what a cliff face is made of, and what catches the light on its rim (RLG-278) */
 const DROP_DARK = [16,18,24], RIM_LIT = [236,240,248];
+/* ---- THE VALLEY FLOOR BEYOND A DROP (owner, 2026-09-19, RLG-278) ---------
+   How far below the road it lies, in camera heights - the bridge's water is
+   thirteen - how much it is shaded toward `DROP_DARK` as a valley floor under
+   the rim, and how much sky it takes at its farthest. Tunables with committed
+   defaults. */
+let DROP_DEPTH = 12, DROP_SHADE = 0.30, DROP_HAZE = 0.42;
 /* what rain does to a surface, as a colour to mix toward rather than as a black
    sheet over the frame */
 const WET_DARK = [12,18,30];
@@ -25036,7 +25042,11 @@ function skipSlice(n, idx, p1){
   } else if(drawWatch) walkTrace.noScen.push(n);
 }
 
+/* what the drop drew this frame: each floor slice's rows, and each slice's rim
+   row, so a check can ask whether the floor is a plane below the road (RLG-278) */
+let dropTrace = { floor: [], rim: {} };
 function drawRoad(){
+  dropTrace = { floor: [], rim: {} };
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
@@ -25299,43 +25309,53 @@ function drawRoad(){
                this block painted bare ground with no road, no rail and no
                car on it. `mixRGB` takes a string and an ARRAY, in that
                order, and handles both string forms. */
-        const faceN = mixRGB(groundTone(idx, true), 0.84, DROP_DARK);
-        /* AND IT HAZES WITH DISTANCE - the far end of a drop is a valley miles
-           away, not more of the wall at your elbow. This is the sea's own
-           lesson: water that does not recede reads as a painted floor. */
-        const faceF = mixRGB(faceN, 0.30 * (1 - fade), hexRGB(dB.sky || '#2a3550'));
-        const g3 = ctx.createLinearGradient(0, y2, 0, H);
-        g3.addColorStop(0, faceF);
-        g3.addColorStop(1, faceN);
-        ctx.fillStyle = g3;
-        /* the rim runs from the slice's far end to its near end, and the fill
-           carries on down to the bottom of the screen - the shoreline's shape,
-           for the same reason it has it: the pass walks far to near, so the
-           NEAREST slice is the one nothing paints over and it has to end on the
-           rim's own angle rather than dropping vertically. */
-        /* ---- THE VOID IS FILLED, AND THE CHECK IS WHY --------------------
-           A NARROW LIP WITH THE FAR FIELD SHOWING BEYOND IT WAS TRIED AND
-           MEASURED, and it did not work: `hazard-test` samples the ground just
-           outside the rail and read 69.0 over the drop against 68.7 over the
-           solid side. What shows past the rim when nothing paints there is the
-           FAR FIELD's own ground band, which is the same landscape in the same
-           light - so the eye gets no signal at all. The bridge's trick works
-           over WATER, which is a different colour from land; a cliff has the
-           same rock on both sides of it and needs its own darkness.
+        /* ---- A FLOOR FAR BELOW, NOT A DARK FACE (owner, 2026-09-19) ---------
+           "Couldn't we actually just not do a plane equal to the road and have
+           an actual drop off?" The dark face painted here from 2026-09-16 was
+           a colour on a surface AT THE ROAD'S LEVEL - it met the rim and ran
+           down the screen exactly as ground beside the road would, so it read
+           as dark ground rather than as a fall.
 
-           So the drop is painted, out to the edge of the screen and down to the
-           bottom, and it is dark. `fade` still lightens the far end, because a
-           valley miles off IS hazier - but it can no longer wash the whole
-           thing out to the colour of the field beside it.
-           ------------------------------------------------------------ */
-        ctx.beginPath();
-        ctx.moveTo(dx2, y2);
-        ctx.lineTo(dx1, y1);
-        ctx.lineTo(dx1, H);
-        ctx.lineTo(edge, H);
-        ctx.lineTo(edge, y2);
-        ctx.closePath();
-        ctx.fill();
+           THE GROUND BEYOND THE RIM IS NOW A PLANE `DROP_DEPTH` CAMERA HEIGHTS
+           DOWN, projected by the same rule as the road with that much more
+           height under the eye. A lower plane lands further down the screen at
+           every distance, so past the rim each row shows floor much further
+           away than the rim beside it: its bands are packed tighter and it
+           takes more haze. That difference of scale between the two sides of
+           one edge is what says fall. The bridge's water is the same plane
+           thirteen camera heights down, and bridge-test proves it reads.
+
+           Painted per slice, far to near, from the rim's own x out to the edge
+           of the screen: the floor under the rim has the rim's x, because the
+           x of a point does not depend on its height. A nearer slice's ground
+           paints over any floor that strays inside ITS rim. The farthest slice
+           reaches up to the horizon, which is where a plane of any depth
+           meets the sky. */
+        const kD = CAM_H * H / 2 * DROP_DEPTH;
+        const fy1 = p1.y + p1.scale * kD;
+        const fy2 = n === DRAW ? horizon : p2.y + p2.scale * kD;
+        if(fy2 < H){
+          /* the place's own ground in its own bands, hazed for the distance it
+             really is: much further than the slice above it */
+          const far = clamp(1 - fade * 0.55, 0, 1);
+          ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), DROP_SHADE, DROP_DARK),
+                                 DROP_HAZE * far, hexRGB(dB.sky || '#2a3550'));
+          /* FILLED TO THE BOTTOM OF THE SCREEN, as the ground is. A slice the
+             road pass skips - hidden behind a crest - draws no floor, and a
+             floor that only covered its own rows left a hole there. Painted
+             far to near, each nearer slice covers the rows below its own top,
+             so every row shows the nearest floor that reaches it. */
+          ctx.beginPath();
+          ctx.moveTo(dx2, fy2);
+          ctx.lineTo(edge, fy2);
+          ctx.lineTo(edge, H);
+          ctx.lineTo(dx1, H);
+          ctx.lineTo(dx1, Math.min(H, fy1));
+          ctx.closePath();
+          ctx.fill();
+          dropTrace.floor.push([n, fy2, H]);
+        }
+        dropTrace.rim[n] = y1;
         /* THE LIP, which is the part that makes it read. A dark band alone is a
            shadow; a dark band with a BRIGHT TOP EDGE is a lip you are looking
            over. */
@@ -28420,9 +28440,24 @@ function drawMirrorFull(mx, my, mw, mh){
       const mDrop = mB.hazard === 'roll' ? hazardSide(mB) : 0;
       if(mDrop){
         const mdx = rimX(a, widx, mDrop);
-        ctx.fillStyle = mixRGB(groundTone(widx, true), 0.84, DROP_DARK);
-        if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, a.y, mdx - mx, my + mh - a.y); }
-        else { if(mdx < mx + mw) ctx.fillRect(mdx, a.y, mx + mw - mdx, my + mh - a.y); }
+        /* ---- THE SAME FLOOR FAR BELOW, IN THE GLASS (owner, 2026-09-19) ----
+           "if you look in the rearview of a mountain biome it doesn't show the
+           drop off." It showed the 2026-09-16 dark face, which the windscreen
+           has since replaced with a plane `DROP_DEPTH` camera heights down. The
+           glass projects `vpy + scale*CAM_H_M*H_M/2`, so the floor under this
+           slice is that much more height under the eye, and the farthest slice
+           reaches up to the glass's own horizon. `a` is the far end here. */
+        const mkD = CAM_H_M * H_M / 2 * DROP_DEPTH;
+        const mfy1 = wz === mFar ? vpy : a.y + a.scale * mkD;
+        /* to the bottom of the pane, for the reason the windscreen's is */
+        const mfy2 = my + mh;
+        if(mfy1 < my + mh){
+          const mfar = clamp((pos - wz) / MIRROR_BACK, 0, 1);
+          ctx.fillStyle = mixRGB(mixRGB(groundTone(widx, dark), DROP_SHADE, DROP_DARK),
+                                 DROP_HAZE * mfar, hexRGB(mB.sky || '#2a3550'));
+          if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, mfy1, mdx - mx, Math.max(0.5, mfy2 - mfy1)); }
+          else { if(mdx < mx + mw) ctx.fillRect(mdx, mfy1, mx + mw - mdx, Math.max(0.5, mfy2 - mfy1)); }
+        }
         /* the lit lip, which is what makes it an edge rather than a shadow */
         const mlip = Math.max(0.8, a.w * 0.042);
         ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52, RIM_LIT);
@@ -28545,6 +28580,12 @@ function drawMirrorFull(mx, my, mw, mh){
              the same spec the windscreen picked for this segment (RLG-059) */
           const mSea = mB.sea && mside === sideRoll;
           if(mSea && !mB.boats) continue;
+          /* ---- AND NOTHING STANDS ON THE DROP, AS OUT OF THE FRONT (RLG-278)
+             Owner, 2026-09-19: in the mirror "it's still rocks on both sides".
+             The windscreen's scenery pass has skipped the hazard side since
+             RLG-265 - a mountain's rolled side is air - and this loop never
+             learned it. The same coin, read the same way as the sea's above. */
+          if(mB.hazard === 'roll' && mside === hazardSide(mB)) continue;
           const mBoatKey = mSea
             ? (sceneRand(widx, 577) < 0.34 ? mB.ships : mB.boats) : null;
           /* the glass reads the same sided answer the windscreen does, so a
@@ -35271,6 +35312,19 @@ requestAnimationFrame(frameLoop);
      the sea did or did not reach the horizon */
   API.farSea = function(){ return farSea; };
   API.farRoad = function(){ return farRoad; };
+  /* ---- IS THE GROUND PAST A DROP A PLANE BELOW THE ROAD? (RLG-278) ------
+     At the row where slice `n`'s rim is drawn, which floor slice was painted
+     there - the nearest one covering that row, since the pass paints far to
+     near. A plane at the road's own level answers `n` itself; a plane far
+     below answers a slice much further off. Null if no floor was drawn. */
+  API.dropFloorAt = function(n){
+    const y = dropTrace.rim[n];
+    if(y === undefined) return null;
+    let hit = null;
+    for(const [m, top, bot] of dropTrace.floor)
+      if(top <= y && y <= bot && (hit === null || m < hit)) hit = m;
+    return { rimN: n, rimY: +y.toFixed(1), floorN: hit, floors: dropTrace.floor.length };
+  };
   /* which side the water is on (RLG-093): `seaSide` and `sideRoll` are defined
      once, beside the road-table readers, and were defined here a second time */
   API.seaStraight = function(on){ seaStraight = !!on; return seaStraight; };
