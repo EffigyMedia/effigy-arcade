@@ -1091,30 +1091,30 @@ def main():
         # half-widths, so the ORDER and the GROWTH can be asserted instead of looked at.
         print()
         print('  THREE PLACES ACROSS THE HORIZON')
+        # THROUGH THE REAL COUNTDOWN (owner, 2026-09-19): the place ahead grows over the LAST
+        # MILE, which is further than the generator reaches, so it is chosen early and the
+        # growth begins long before any crossing exists. A crossing placed on the horizon by
+        # hand now arrives three quarters grown, which is correct and proves nothing - so the
+        # countdown is brought within reach and the car DRIVES the mile.
         page.evaluate("""() => { const R = window.__probe.road;
-          R.setTimed(false); R.setBiomePair('FARMLAND','FARMLAND'); }""")
+          R.setTimed(false); R.setBiomePair('CITY','CITY'); R.biomeCountdown(40000); }""")
         page.wait_for_timeout(200)
-        page.evaluate("() => window.__probe.road.startBiomeChange('CITY')")
-        for _ in range(400):
+        grew, AHEAD = [], None
+        for _ in range(3000):
             page.evaluate("() => { const R = window.__probe.road;"
-                          " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.5); }")
-            page.wait_for_timeout(45)
-            sw = page.evaluate("() => window.__probe.road.biomeSweep()")
-            if sw['from'] == 'CITY' and sw['to'] == 'CITY':
-                break
-        page.evaluate("() => window.__probe.road.startBiomeChange('DESERT')")
-        grew = []
-        for _ in range(500):
-            page.evaluate("() => { const R = window.__probe.road;"
-                          " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.22); }")
-            page.wait_for_timeout(45)
+                          " R.clearTraffic(); R.setSpd(R.MAX_SPD); }")
+            page.wait_for_timeout(30)
             d = page.evaluate("() => window.__probe.road.skySpans()")
-            grew.append(d)
-            if d['near'] >= 0.98:
+            if d['here'] != 'CITY':
                 break
-        seen = [d for d in grew if d['ahead'] == 'DESERT' and d['here'] == 'CITY']
-        print('      %d frames with DESERT ahead of CITY; near ran %.2f to %.2f'
-              % (len(seen), seen[0]['near'] if seen else -1,
+            if d['ahead'] and d['ahead'] != 'CITY':
+                AHEAD = AHEAD or d['ahead']
+                grew.append(d)
+                if d['near'] >= 0.98:
+                    break
+        seen = [d for d in grew if d['ahead'] == AHEAD and d['here'] == 'CITY']
+        print('      %d frames with %s ahead of CITY; near ran %.2f to %.2f'
+              % (len(seen), AHEAD, seen[0]['near'] if seen else -1,
                  seen[-1]['near'] if seen else -1))
         res.check(len(seen) > 5, 'the place ahead is on the horizon while you are still in '
                   'the last one', '%d frames' % len(seen))
@@ -1122,6 +1122,13 @@ def main():
             res.check(seen[0]['near'] < 0.25,
                       'and it starts as a sliver rather than arriving part-grown',
                       'it first appeared at %.2f of the horizon' % seen[0]['near'])
+            # A MILE OUT, which is the owner's ruling of 2026-09-19 and what the device lacked:
+            # it grew over one draw distance, a few seconds, and read as a pop. A mile is 643
+            # segments; the first frame on the horizon must be at least 600 from the boundary.
+            shown = [d for d in seen if d['near'] > 0]
+            res.check(bool(shown) and shown[0]['edgeIn'] is not None and shown[0]['edgeIn'] >= 600,
+                      'and it first shows about a mile before its boundary',
+                      'first shown %s segments out' % (shown[0]['edgeIn'] if shown else None))
             res.check(seen[-1]['near'] > 0.9,
                       'and grows until it fills the horizon',
                       'it reached %.2f' % seen[-1]['near'])
@@ -1156,20 +1163,20 @@ def main():
             # ring it is in, and that share may never fall.
             def share(d):
                 r = d['reach'] or 1
-                return (d['aHalf'] / r if d['ahead'] == 'DESERT'
-                        else d['bHalf'] / r if d['here'] == 'DESERT' else 0.0)
+                return (d['aHalf'] / r if d['ahead'] == AHEAD
+                        else d['bHalf'] / r if d['here'] == AHEAD else 0.0)
             shares = [share(d) for d in seen]
             for _ in range(300):
                 page.evaluate("() => { const R = window.__probe.road;"
-                              " R.clearTraffic(); R.setSpd(R.MAX_SPD * 0.22); }")
+                              " R.clearTraffic(); R.setSpd(R.MAX_SPD); }")
                 page.wait_for_timeout(45)
                 d = page.evaluate("() => window.__probe.road.skySpans()")
                 shares.append(share(d))
-                if d['here'] == 'DESERT' and len(shares) > len(seen) + 40:
+                if d['here'] == AHEAD and len(shares) > len(seen) + 40:
                     break
             falls = [(a, b) for a, b in zip(shares, shares[1:]) if b < a - 0.05]
-            print('      through the handover DESERT held %.2f, then %.2f at the last frame'
-                  % (max(shares), shares[-1]))
+            print('      through the handover %s held %.2f, then %.2f at the last frame'
+                  % (AHEAD, max(shares), shares[-1]))
             res.check(not falls and shares[-1] > 0.95,
                       'and the new place arrives ONCE: its share of the horizon never falls back',
                       'fell %s' % ', '.join('%.2f -> %.2f' % f for f in falls[:3]))

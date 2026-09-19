@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.91';
+window.ROAD_BUILD = '0.14.92';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9941,24 +9941,17 @@ let SKY_SWAP = 'span';
    distance and a half, so a place is gone from the horizon at roughly the point it
    is gone from the road. */
 const SKY_RECEDE = 220;
-/* over how many SEGMENTS the place ahead grows from nothing to the whole horizon.
-   The ruling leaves it open - "the distance over which the span grows" - so this is
-   the tunable with a committed default, and `API.skyNear` moves it live.
+/* ---- THE SPAN GROWS OVER THE LAST MILE (owner, 2026-09-19, RLG-252) ------
+   The place ahead grows from nothing to the whole horizon over this many
+   segments before its boundary. It was one draw distance, and on the device
+   that read as a pop: "it seems like it just pops in." The owner chose the last
+   mile, about 24 seconds at 150 mph.
 
-   IT IS THE DRAW DISTANCE, AND IT CANNOT USEFULLY BE MORE THAN THAT YET. A crossing
-   is placed AT the horizon, `DRAW` segments out, so a larger figure makes the place
-   ahead appear already part-grown the instant it is placed - at 400 it arrived
-   owning 62 per cent of the horizon, which is not a sliver. Growing over exactly the
-   draw distance means it enters at nothing, at the moment its ground does, and fills
-   the frame as the car reaches the boundary.
-
-   THE RULING WANTS IT SOONER THAN THAT and the engine cannot answer yet: the next
-   place is not CHOSEN until the countdown expires, which is upwards of a million
-   units of driving, so for most of a run there is nothing decided to put on the
-   horizon. Choosing it earlier is a change to the generator and [[RLG-150]]
-   deliberately separated WHERE a place begins from WHEN it is picked, so it is the
-   owner's call rather than one to make while tuning a number. */
-let SKY_NEAR = DRAW;
+   A MILE IS FURTHER THAN THE GENERATOR REACHES, so the place ahead must be
+   known before the plan for it is made - see `soonKey`. Written from the
+   literal rather than from `MILE`, which is declared further down the file and
+   would not exist yet when this line runs. `API.skyNear` moves it live. */
+let SKY_NEAR = Math.round(1 / 0.00000777 / SEG);
 /* ---- THE HORIZON SHOWS WHAT THE FAR SEGMENTS SHOW (RLG-022) --------------
    Owner, 2026-08-29: "The current biome is where the player car is, BUT the
    horizon and skyline inherit the next biome per the segments approaching the
@@ -14602,6 +14595,25 @@ let biomePrev = 'FOREST', leftAt = -1e9;
    what the new place held at that moment, not from nothing. This is that
    width, 0 to 1, set where `leftAt` is. */
 let leftFrom = 1;
+/* ---- WHAT IS AHEAD ON THE HORIZON, AND HOW MUCH OF IT (RLG-252) ----------
+   The crossing being drawn, else the plan at the frontier, else the place
+   chosen early. The three are the same place at three stages, so the growth
+   runs through them as one. It NEVER STEPS BACK while the place is the same:
+   `soonEdge` is an estimate, and the plan's real edge can land a little
+   further out - a span that shrank for a frame would read as the very pop this
+   exists to remove. Read by the renderer and by `API.skySpans`, once each per
+   frame. */
+let skyAheadKey = null, skyAheadNear = 0;
+function skyAhead(hereSeg){
+  const pending = biomeFrom !== biomeTo;
+  const key  = pending ? biomeTo : (planKey || soonKey || null);
+  const edge = pending ? biomeEdge : planKey ? planEdge : soonKey ? soonEdge() : -1e9;
+  let near = (!key || key === biomeFrom || edge <= -1e8) ? 0
+           : clamp(1 - (edge - hereSeg) / SKY_NEAR, 0, 1);
+  if(key && key === skyAheadKey && near > 0) near = Math.max(near, skyAheadNear);
+  skyAheadKey = key; skyAheadNear = near;
+  return { key: key, edge: edge, near: near };
+}
 /* how far the place just left has gone from the horizon, 0 to 1 */
 function skyGone(hereSeg){
   if(leftAt <= -1e8) return 1;
@@ -14623,6 +14635,26 @@ function skyGone(hereSeg){
    `planEdge` is in SEGMENTS, like `biomeEdge`, so the two are comparable.
    ------------------------------------------------------------------------ */
 let planKey = null, planEdge = -1e9, planClim = null;
+/* ---- AND THE PLACE AFTER THAT, CHOSEN EARLY (owner, 2026-09-19, RLG-252) --
+   The skyline of the place ahead grows over a mile, and a plan is made only
+   `GEN_AHEAD` - under a mile - before its edge. So the NEXT place is chosen as
+   soon as the current one is planned, from the same two things `pickNext` is
+   asked when the countdown runs out - the place it follows and that place's
+   temperature - and the countdown takes this choice rather than rolling again.
+   The road is not told: `planKey` is still made at the frontier, and the shape
+   of the road still changes where it always did. Only the horizon reads this.
+
+   Its edge is not known exactly until the plan is made, because the frontier
+   overshoots by part of a segment. `soonEdge` estimates it from the countdown:
+   where the car will be when it runs out, plus the generator's lead. */
+let soonKey = null, soonClim = null;
+function soonEdge(){ return Math.ceil((pos + Math.max(0, biomeNext) + GEN_AHEAD) / SEG); }
+/* choose the place that follows `k`, whose temperature is `t` */
+function chooseSoon(k, t){
+  const aft = pickNext(k, t);
+  soonKey = aft ? aft.key : null;
+  soonClim = aft ? aft.clim : null;
+}
 /* ---- THE INSTANCE LIVES BESIDE THE PAIR IT BELONGS TO (RLG-109) ---------
    One per end of the blend, because both ends are asked questions: the place
    being left holds the snow already on its ground, and the place being entered
@@ -15360,6 +15392,7 @@ function openBiome(){
      the distance is armed here with the same range every other change uses.
      ---------------------------------------------------------------- */
   biomeNext = placeSpan(biome);
+  chooseSoon(biome, climTo.temp);
   /* a run can OPEN in a forest or a tundra, so both rolls belong here as well */
   planDeer();
   rollAurora();
@@ -15542,6 +15575,7 @@ function stepBiome(dt){
     if(!biomeStarted){
       openBiome();
       biomeNext = placeSpan(biomeTo);
+      chooseSoon(biomeTo, climTo.temp);
     } else {
       /* ---- THE PLACE IS CHOSEN AT THE GENERATOR'S FRONTIER (RLG-150) ---
          The timer decides WHICH place comes next and WHERE it begins, and it
@@ -15560,7 +15594,7 @@ function stepBiome(dt){
          the pick knew nothing about it. It is the instance that says whether a
          place may follow this one, so the two are one decision now and the
          answer rides with the plan. */
-      const nxt = pickNext(biome, climTo.temp);
+      const nxt = soonKey ? { key: soonKey, clim: soonClim } : pickNext(biome, climTo.temp);
       const k = nxt ? nxt.key : biome;
       planClim = nxt ? nxt.clim : null;
       const made = Math.max(bendZ0 + totalLen(curveSegs),
@@ -15572,6 +15606,8 @@ function stepBiome(dt){
          from the placing, which is the same period - both move by the same
          distance - so place lengths are what they always were. */
       biomeNext = placeSpan(k);
+      /* and the place after it, now, so its skyline can grow for a mile */
+      chooseSoon(k, planClim ? planClim.temp : climTo.temp);
     }
   }
   /* ---- AND THE PLAN BECOMES THE PICTURE AT THE HORIZON (RLG-150) --------
@@ -23522,11 +23558,8 @@ function drawSky(){
   const vx = clamp(W/2 + viewShift + bendPx(farIdx*SEG), 0, W);
   const reach = W * 0.5 + Math.max(vx, W - vx);   /* to the furthest screen edge */
   const hereSeg = Math.floor(pos/SEG);
-  const pending = biomeFrom !== biomeTo;
-  const appKey  = pending ? biomeTo : (planKey || null);
-  const appEdge = pending ? biomeEdge : planEdge;
-  const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
-             : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
+  const AH = skyAhead(hereSeg);
+  const appKey = AH.key, near = AH.near;
   const gone = skyGone(hereSeg);
   /* ---- THREE CONCENTRIC REGIONS, MEASURED OUT FROM THE VANISHING POINT.
      0 to `aHalf` is the place ahead, `aHalf` to `bHalf` the place you are in,
@@ -32453,6 +32486,8 @@ requestAnimationFrame(frameLoop);
                                      a hook that takes a different path from the
                                      thing it stands in for proves less than it
                                      looks like it proves (RLG-059) */
+    /* and the place after it, as the real plan chooses one (RLG-252) */
+    chooseSoon(want, climTo.temp);
     /* AND THE SAME EVENT, for that same reason. Without this the hook placed a
        tunnel with no profile and no mouth armed, so a harness driving into one
        measured a bore that began at the camera - which is exactly the state the
@@ -32482,11 +32517,12 @@ requestAnimationFrame(frameLoop);
     const vx = clamp(W/2 + viewShift + bendPx(farI*SEG), 0, W);
     const reach = W * 0.5 + Math.max(vx, W - vx);
     const hereSeg = Math.floor(pos/SEG);
-    const pending = biomeFrom !== biomeTo;
-    const appKey = pending ? biomeTo : (planKey || null);
-    const appEdge = pending ? biomeEdge : planEdge;
-    const near = (!appKey || appKey === biomeFrom || appEdge <= -1e8) ? 0
-               : clamp(1 - (appEdge - hereSeg) / SKY_NEAR, 0, 1);
+    /* the renderer's own answer for this frame, not a second computation:
+       `skyAhead` keeps the growth from stepping back, so asking it twice a
+       frame would be two different readings */
+    const appKey = skyAheadKey, near = skyAheadNear;
+    const appEdge = biomeFrom !== biomeTo ? biomeEdge : planKey ? planEdge
+                  : soonKey ? soonEdge() : -1e9;
     const gone = skyGone(hereSeg);
     return { ahead: appKey, here: biomeFrom, left: biomePrev,
              near: +near.toFixed(3), gone: +gone.toFixed(3),
@@ -32515,6 +32551,11 @@ requestAnimationFrame(frameLoop);
        pair this just pinned, seconds later. Pinning a pair means pinning it
        (RLG-150) - and see `startBiomeChange` on what that costs a check. */
     planKey = null; planEdge = -1e9; planClim = null;
+    /* and the place after a pinned place is chosen as the game chooses it, so
+       a check that pins a place and drives on sees the mile of growth the
+       player sees (RLG-252) */
+    soonKey = null; soonClim = null;
+    if(biomeFrom === biomeTo) chooseSoon(biomeFrom, climFrom.temp);
     /* ---- AND THE EVENT IS ARMED WITH IT (RLG-112) --------------------
        A debug setter that pinned the pair to a BRIDGE and left the road rolled
        would show a place the game never produces - the deck is the authored
