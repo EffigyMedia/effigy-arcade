@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-103"></a>
+## [0.14.103] - 2026-09-20
+- Changed: **the horn asks a few car lengths, not two seconds of road.** It was sharing the siren's
+  reach, which at speed is tens of car lengths up the road, so pressing it moved traffic you had not
+  reached yet. The two have parted: a siren says clear the road I am about to be on, which is a
+  time; a horn says move, you are in my way, which is a distance. Four car lengths, stated in car
+  lengths and read from the car's own size. The siren is untouched.
+  [RLG-296](../fragments/RLG-296.md)
+
 <a id="v0-14-102"></a>
 ## [0.14.102] - 2026-09-20
 - Changed: **a canyon wall, and a mountain's uphill side, are a plane far above the road.** The same

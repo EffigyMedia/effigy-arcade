@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.102';
+window.ROAD_BUILD = '0.14.103';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -18431,7 +18431,7 @@ function setHorn(on){
   horning = on;
   hornBtn.classList.toggle('on', on);
   snd.honk(on);
-  if(on) scatter();
+  if(on) scatter(undefined, undefined, undefined, undefined, true);
 }
 /* Anything ahead of you in your lane gets a chance to move over. Not a
    certainty — a horn is a request, not a command — and a car with nowhere to
@@ -18505,8 +18505,43 @@ const SIREN_LOOK_MAX = DRAW * SEG;   /* ...and never past the drawn road */
 function sirenReach(v){
   return clamp((v || 0) * SIREN_LOOK, SIREN_LOOK_MIN, SIREN_LOOK_MAX);
 }
+/* ---- A HORN IS NOT A SIREN, AND THIS IS WHERE THEY PART (RLG-296) --------
+   Owner, 2026-09-20, from the device: "The horn affects much too far forward!
+   It should only really be a few car lengths."
 
-function scatter(chance, fromZ, fromLane, fromSpd){
+   RLG-205 gave the siren two seconds of road and said in as many words that it
+   widened the HORN too, "which is intended rather than incidental - they are
+   one function". The owner has now driven that and ruled against it for the
+   horn alone, so the one function keeps one body and grows a second reach.
+
+   THE DIFFERENCE IS WHAT THE TWO THINGS MEAN. A siren says clear the road I am
+   about to be on, which is a TIME - the same request whoever is driving and
+   however fast. A horn says move, you are in my way, which is a DISTANCE: the
+   car you are about to be behind, and nobody further up the road. So this is
+   stated in CAR LENGTHS, which is the unit the owner used. An ordinary car is
+   `typeLen('sedan')` long, read rather than typed, so the reach cannot drift
+   away from the thing it is counting.
+
+   IT IS NOT SCALED BY SPEED, deliberately. At 200mph four car lengths is about
+   a sixth of a second of road, which sounds too short until you remember that a
+   car further off than that is one you will have passed or hit before it could
+   move. If it turns out to be too short at speed, the fix is a floor in time
+   rather than a bigger number - but nobody has driven it yet, so it is not
+   built on a guess.
+
+   Tunable with a committed default: this is a FEEL change and the owner rules
+   on it from the device. `API.hornReach` reads and writes it. */
+let HORN_CARS = 4;
+function hornReach(){ return HORN_CARS * typeLen('sedan'); }
+
+/* `isHorn` is passed by ONE caller - the player leaning on the horn - and it is
+   explicit rather than inferred (RLG-296). The tempting test is `fromSpd ===
+   undefined`, and it is WRONG: the player's own siren in a police car passes no
+   speed either, so a horn's short reach would have been given to that siren as
+   well. `horning` is a second wrong answer for the same reason in reverse - it
+   is false while a cruiser's bar is on, so it happens to work today and would
+   stop working the moment anything else sounded a horn. */
+function scatter(chance, fromZ, fromLane, fromSpd, isHorn){
   scatterStat.calls++;
   if(hornCool > 0){ scatterStat.cooled++; return; }
   hornCool = 0.55;
@@ -18533,7 +18568,8 @@ function scatter(chance, fromZ, fromLane, fromSpd){
   const ol = (fromLane === undefined) ? playerX : fromLane;
   /* the sounding vehicle's OWN speed decides its reach - the player's when the
      player is sounding it, the cruiser's when a cruiser is */
-  const reach = sirenReach(fromSpd === undefined ? spd : fromSpd);
+  const reach = isHorn ? hornReach()
+                      : sirenReach(fromSpd === undefined ? spd : fromSpd);
   const odds = (chance === undefined) ? 0.40 : chance;
   for(const c of traffic){
     scatterStat.seen++;
@@ -36091,6 +36127,14 @@ requestAnimationFrame(frameLoop);
   /* how far the player's own siren reaches right now, in world units - a check
      that recomputed it would agree with a copy of the formula (RLG-205) */
   API.sirenReach = function(){ return Math.round(sirenReach(spd)); };
+  /* the horn's own reach, in units and in the car lengths it is stated in, and
+     writable so the owner's figure can be tried on the device without a
+     rebuild (RLG-296) */
+  API.hornReach = function(cars){
+    if(cars > 0) HORN_CARS = cars;
+    return { cars: HORN_CARS, units: Math.round(hornReach()),
+             carLen: typeLen('sedan'), siren: Math.round(sirenReach(spd)) };
+  };
   /* ---- WHAT IS ACTUALLY WAILING, AND WHETHER THEY AGREE (RLG-270) -------
      A sound test cannot listen, but it can read the graph - this project's own
      rule. The owner's report is that two sirens never disagree, so what has to
