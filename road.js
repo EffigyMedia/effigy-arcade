@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.96';
+window.ROAD_BUILD = '0.14.97';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4319,6 +4319,25 @@ function bodyHp(){
 
 /* `brake` defaults to 1 so any body without the stat behaves exactly as before */
 function bodyStat(k){ return (BODY[optBody] || BODY['MATADOR'])[k]; }
+/* ---- A MANUAL GEARBOX IS WORTH A LITTLE (owner, 2026-09-20, RLG-294) ------
+   "I think we should slightly bump the acceleration and top speed of every car
+   when manual transmission is being used." EVERY car, because the bonus belongs
+   to the CHOICE and not to any body: it is what working the gate is worth, so
+   it is one pair of numbers over whatever car the player is in, never a row in
+   `BODY`. The automatic already gives up time at each change - `autoGear` holds
+   for 0.22 s - and this says so in the stats as well.
+
+   TUNABLES WITH COMMITTED DEFAULTS, and "slightly" is the owner's to set: four
+   per cent of pull and two of top end. The two helpers below are the player's
+   own pull and ceiling, and everything the player's car is driven by reads
+   them. A RIVAL IS NOT GIVEN IT. Every rival holds a gear and changes it, so
+   one reading of "manual" would hand it to the whole field, which is a change
+   to how every race runs rather than to what the player's choice is worth; the
+   owner has the question on [[RLG-294]]. */
+let MANUAL_ACCEL = 1.04, MANUAL_TOP = 1.02;
+function manualBonus(){ return optManual ? MANUAL_ACCEL : 1; }
+function playerPull(){ return accelOf(optBody) * manualBonus(); }
+function playerTop(){ return MAX_SPD * bodyStat('vmax') * (optManual ? MANUAL_TOP : 1); }
 /* ---- THE FIRST CAR OF THE FIRST CLASS ------------------------------------
    It was a MATADOR, from when the supercars were what a fresh install held,
    then a ROADSTER when the ladder started at sports. [[RLG-213]] puts
@@ -13120,7 +13139,7 @@ function gearRpm(g, v){
   const G = gearTable()[g-1];
   /* against THIS car's top speed, so every car still redlines at the top of
      each gear rather than the tall one never reaching its limiter */
-  const ceiling = MAX_SPD * bodyStat('vmax') * G.to;
+  const ceiling = playerTop() * G.to;
   /* ---- THE LIMITER IS THE CEILING, AND IT WAS NOT --------------------
      This clamped to `redline() + 300`, so the needle was permitted to sit 300
      rpm past the limiter whenever speed ran over the gear's ceiling - which is
@@ -13255,7 +13274,7 @@ function engineRpm(){
     const kick = over * hp * low;
     if(kick > 0.10){
       launchKick = kick;
-      spd = Math.min(MAX_SPD * bodyStat('vmax'), spd + kick * 2600);
+      spd = Math.min(playerTop(), spd + kick * 2600);
       snd.launch(kick);
       if(kick > 0.45){
         /* `stepRubber` ages a mark by `t` and paints it by `heat`, and this
@@ -13362,9 +13381,9 @@ function doLaunch(){
     snd.launch(0.22);
     return;
   }
-  const kick = L.q * accelOf(optBody);
+  const kick = L.q * playerPull();
   launchKick = kick;
-  spd = Math.min(MAX_SPD * bodyStat('vmax'), spd + L.q * LAUNCH.shove * accelOf(optBody));
+  spd = Math.min(playerTop(), spd + L.q * LAUNCH.shove * playerPull());
   snd.launch(Math.max(0.20, kick));
   launchNote = L.q > 0.75 ? 'PERFECT LAUNCH' : 'GOOD LAUNCH';
   if(L.q > 0.60){
@@ -19612,7 +19631,10 @@ function step(dt){
      throttle was FASTER than using it. Above the natural top speed the car
      now sheds back to it quickly whatever the pedals are doing; only below
      that does neutral coast gently. */
-  const overRun = spd > MAX_SPD * bodyStat('vmax') && !nosOn;
+  /* the ceiling INCLUDING the manual bonus, or a manual car would read as
+     over-revving the moment the bonus took it past the body's own figure and
+     be pulled straight back to it (RLG-294) */
+  const overRun = spd > playerTop() && !nosOn;
   /* ---- THE GEAR IS A SPEED LIMIT ----------------------------------------
      This was the whole problem: `top` was MAX_SPD in every gear, so first
      would happily pull you to 180mph and the box was just an acceleration
@@ -19624,7 +19646,7 @@ function step(dt){
   /* the car's own top end - and a tenth more of it while the bottle is open,
      because the limiter is lifted by that much and a gear's speed ceiling IS
      its limiter expressed as a speed (RLG-127) */
-  const carTop = MAX_SPD * bodyStat('vmax') * nosStretch();
+  const carTop = playerTop() * nosStretch();
   const gearCap = (optManual && gear >= 1 && gear <= gearTable().length)
                 ? carTop * gearTable()[gear-1].to
                 : carTop;
@@ -19683,7 +19705,7 @@ function step(dt){
   const slip = 1 + Math.min(0.045, tow * 0.045);
 
   const top = braking ? BRAKE_SPD
-            : overRun ? MAX_SPD * bodyStat('vmax')
+            : overRun ? playerTop()
             : !onGas  ? 0
             : (offRoad ? OFF_SPD
                /* ---- AND NITROUS DOES RAISE THE CEILING, BY A TENTH -------
@@ -19754,7 +19776,7 @@ function step(dt){
              /* `launchDrag` is 1 unless the start went wrong: a bogged car
                 has no drive for the best part of a second, and a spinning one
                 has almost none until the tyres hook up (RLG-110). */
-             : spd < top ? (nosOn ? 2600 : 1000) * gearFactor() * accelOf(optBody) * launchDrag()
+             : spd < top ? (nosOn ? 2600 : 1000) * gearFactor() * playerPull() * launchDrag()
              : (offRoad ? 11000 : 2400);
   /* Approach the target without crossing it. It used to add or subtract a
      fixed step, so on the brakes the car overshot the floor and juddered
@@ -34260,7 +34282,7 @@ requestAnimationFrame(frameLoop);
   API.nosState = function(){
     return { nosOn:nosOn, nos:Math.round(nos), spd:Math.round(spd),
              stretch:nosStretch(),
-             carTop:Math.round(MAX_SPD*bodyStat('vmax')*nosStretch()) };
+             carTop:Math.round(playerTop()*nosStretch()) };
   };
   API.nos = function(){ return Math.round(nos); };
   API.hasNos = function(){ return hasNos(); };
@@ -35579,6 +35601,13 @@ requestAnimationFrame(frameLoop);
     return gear === g;
   };
   API.dragDriver = function(name){ dragForce = name || null; return dragForce; };
+  /* the manual gearbox's bonus, live, so a check can measure the same run with
+     it and without it rather than read the constants back (RLG-294) */
+  API.manualBonus = function(a, t){
+    if(typeof a === 'number') MANUAL_ACCEL = a;
+    if(typeof t === 'number') MANUAL_TOP = t;
+    return { accel: MANUAL_ACCEL, top: MANUAL_TOP };
+  };
   API.dragBends = function(){
     let k = 0, g = 0;
     for(let z = pos; z < finishZ + PLAYER_Z; z += SEG){
