@@ -19,6 +19,26 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-106"></a>
+## [0.14.106] - 2026-09-20
+- Fixed: **the road had almost no traffic.** Doubling the draw put the spawn horizon at 65,000 while
+  the forward cull was a literal 64,000, so every wave of cars was born a thousand units past the
+  point where cars stop existing and died on the same frame. What was left was the handful laid down
+  at the start of the run: measured at eleven cars, constant, for a whole run. The owner reported it
+  from the device. [RLG-295](../fragments/RLG-295.md)
+- Changed: **everything tied to the draw distance now moves with it.** The spawn point, the cull, how
+  far ahead the spawner stocks the road, how much of the road a driver reads, where a roadblock is
+  laid, how far a tunnel is bored, where the skyline reads its bend, how far the road's own geometry
+  is built, and how far out a deer is planned. Each was a literal chosen against a 30,000 unit road.
+  [RLG-295](../fragments/RLG-295.md)
+- Fixed: **the mountain face was see-through.** Its bands tiled edge to edge and the canvas
+  antialiased each side of the shared edge on its own, so the sky showed between them - a hairline
+  per band, three hundred of them. They overlap now. [RLG-297](../fragments/RLG-297.md)
+- Changed: **a mountain face reads as a face.** A broken crest rather than one flat height, facets
+  across the rock, a cap that leans away toward the sky and a shadow at its foot - and the heights
+  those change at wander along the face rather than holding one line. A canyon takes a quarter of it,
+  because a slot canyon really is near-uniform. [RLG-297](../fragments/RLG-297.md)
+
 <a id="v0-14-104"></a>
 ## [0.14.104] - 2026-09-20
 - Changed: **the road is drawn twice as far.** 300 segments instead of 150 - 60,000 units instead of

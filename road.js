@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.104';
+window.ROAD_BUILD = '0.14.106';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -339,7 +339,59 @@ const EDGE_X = 1.18;
    is still over the horizon on the frame it appears, even at full speed. Every
    spawner measures from this rather than from a number chosen by eye.
    ------------------------------------------------------------------------- */
-const OUT_OF_SIGHT = DRAW * SEG + 5000;      /* 35,000 */
+const OUT_OF_SIGHT = DRAW * SEG + 5000;
+/* ---- THE HORIZONS THE SPAWNER AND THE CULLER WORK TO (RLG-295) ----------
+   THESE WERE THREE LITERALS AND DOUBLING THE DRAW EMPTIED THE ROAD. The
+   forward cull was `pos + 64000`, the wave loop reached `pos + 62000` and the
+   reset seeded to 52,000 - all of them "just past the draw" when the draw was
+   30,000, and all of them INSIDE `OUT_OF_SIGHT` once it became 65,000. Every
+   wave was then placed at the spawn horizon and culled on the frame it was
+   born: measured at 11 cars, constant, for a whole run - which is the initial
+   seed and nothing after it - against 12 to 20 at the old draw. The owner
+   reported it as no traffic, from the device, and they were right.
+
+   SO THEY DERIVE. `SPAWN_Z` is where a wave is put, `WAVE_Z` is how far ahead
+   the spawner keeps the road stocked, and `CULL_AHEAD` is where a car stops
+   existing - and the only rule that matters is that the culler is FURTHER OUT
+   than the spawner. A literal cannot hold that rule; these can. */
+const SPAWN_AHEAD = OUT_OF_SIGHT;
+const WAVE_AHEAD  = OUT_OF_SIGHT + 2000;
+const CULL_AHEAD  = OUT_OF_SIGHT + 9000;
+/* ---- AND EVERY OTHER HORIZON WITH THEM (owner, 2026-09-20, RLG-295) ------
+   "It looks like we might need to find every instance of things tied to the
+   draw distance and tie them together in a way that modifying one modifies the
+   rest of them."
+
+   THEY ARE ALL HERE NOW. Each of these was a LITERAL chosen against a 30,000
+   unit road, and each of them is a fraction or an offset of that road rather
+   than a number in its own right - which is exactly the kind of number that
+   looks fine in a diff and empties the road when the draw moves. Doubling the
+   draw broke three of them silently and nobody would have found the rest by
+   reading.
+
+     ROAD_FAR    the drawn road itself
+     OUT_OF_SIGHT nothing may appear nearer than this, or it pops in
+     SPAWN_AHEAD  where a wave of traffic is put
+     WAVE_AHEAD   how far ahead the spawner keeps the road stocked
+     CULL_AHEAD   where a car stops existing. FURTHER OUT THAN SPAWN_AHEAD,
+                  and when it was not, every wave died on the frame it was born
+     GEN_AHEAD    how far the road's own geometry is built. Beyond everything
+     LOOK_AHEAD   how much of the road ahead a driver reads, and how far up the
+                  road a roadblock is laid. 0.87 of the drawn road, which is the
+                  26,000 of 30,000 it was
+     BORE_FAR     how far down a tunnel is built, just past the drawn road
+     SKY_BEND_AT  where the skyline reads the bend it swings against
+
+   WHAT IS DELIBERATELY NOT HERE: distances that happen to be near the old draw
+   but mean something else. `RAGE_LOST` is how far you have to outrun an angry
+   driver, the cloud layers' near and far are a sky, the coast's `shore` is how
+   far out the sea starts, and `MIRROR_BACK` is behind you. None of them is a
+   statement about how far the road is drawn, and tying them to it would be the
+   same mistake in the other direction. */
+const ROAD_FAR    = DRAW * SEG;
+const LOOK_AHEAD  = Math.round(ROAD_FAR * 0.87);
+const BORE_FAR    = ROAD_FAR + 3000;
+const SKY_BEND_AT = ROAD_FAR;
 /* the closest anything has been placed this run, relative to the player. A
    harness reads it: if this ever drops under the draw distance, something is
    arriving in view again. */
@@ -2686,7 +2738,8 @@ function totalLen(list){ let t=0; for(const s2 of list) t += s2.len; return t; }
    that the road is never generated into a place that has not been chosen yet.
    Two copies of it would put the fault straight back.
    ------------------------------------------------------------------------ */
-const GEN_AHEAD = 100000;
+/* the road's own geometry, built beyond everything that lives on it (RLG-295) */
+const GEN_AHEAD = CULL_AHEAD + 26000;
 let bendBuilds = 0;
 function rebuildBend(){
   bendBuilds++;
@@ -11119,11 +11172,11 @@ function keepLaneOpen(dt, pz){
      ---------------------------------------------------------------------- */
   const WARN = 0.62;
   const ahead = traffic.filter(c => !isCrossing(c)
-                                && c.z > pz - 2000 && c.z < pz + 26000);
+                                && c.z > pz - 2000 && c.z < pz + LOOK_AHEAD);
   blockedAhead = 0;
   tightestAhead = 9;
   tightestAt = 0; blockedNearest = -1;
-  for(let z = pz; z < pz + 26000; z += STEP){
+  for(let z = pz; z < pz + LOOK_AHEAD; z += STEP){
     const group = ahead.filter(c => c.z >= z && c.z < z + WIN);
     if(group.length < 2) continue;
     const gap = widestGap(group);
@@ -11946,7 +11999,9 @@ let deerZ = -1, deerSide = 1;
 function planDeer(){
   if(biome !== 'FOREST' || sideRoll) { deerZ = -1; return; }
   if(Math.random() >= DEER_ODDS) { deerZ = -1; return; }
-  deerZ = pos + PLAYER_Z + rnd(60000, 260000);
+  /* never nearer than the spawn horizon, or a deer is planned inside the
+     drawn road and walks into view out of nothing (RLG-295) */
+  deerZ = pos + PLAYER_Z + rnd(SPAWN_AHEAD, SPAWN_AHEAD + 200000);
   deerSide = Math.random() < 0.5 ? -1 : 1;
 }
 function stepDeer(){
@@ -12153,7 +12208,10 @@ function spawnTrap(){
   cops.push({
     /* far enough ahead to be a surprise, near enough that the watch sees it
        before it is culled */
-    z: (function(){ const zz = pos + rnd(OUT_OF_SIGHT, 52000); noteSpawn(zz);
+    /* `rnd(a,b)` is `a + random()*(b-a)`, so a literal 52,000 upper bound went
+       BELOW the lower one the moment the draw was doubled - the range inverted
+       and every trap landed short of where it was meant to (RLG-295). */
+    z: (function(){ const zz = pos + rnd(SPAWN_AHEAD, SPAWN_AHEAD + 17000); noteSpawn(zz);
                     lastCopDz = Math.round(zz - (pos + PLAYER_Z)); return zz; })(),
     x: side * 1.16,                    /* on the grass, clear of the road */
     spd: 0, wreck:0, ang:0, grace:0, cool:0, side,
@@ -12844,14 +12902,14 @@ function reset(){
   shake=0; hitFlash=0; sirenPhase=0; lastKmh=0; iframe=0;
   acc=0;
   if(!CFG.circuitOnly && !dragOn)
-    for(let z=9000; z<52000; z+=rnd(5200,8600)) spawnWave(z);
+    for(let z=9000; z<SPAWN_AHEAD; z+=rnd(5200,8600)) spawnWave(z);
     /* THE SEED IS NOT A SPAWN. This lays traffic down the road at reset so the
        first mile is not empty, and it is placed while `pos` is 0 - so some of
        it is inside the drawn road by definition. Nothing pops, because it is
        there on the first frame rather than arriving on a later one. The
        measurement is about what appears DURING a drive, so it starts here. */
     nearestSpawn = 1e9;
-  nextWaveZ = 52000;
+  nextWaveZ = SPAWN_AHEAD;
   nextCopT = 9; nextBlockT = 30; nextCrateT = 16;
   /* staggered, so the first of each does not arrive in the same second */
   nextPickT = { repair:16, nos:22, fuel:28 };
@@ -14470,8 +14528,10 @@ const BIOMES = {
                  reads `hazardRoll` and the rock face stands opposite (RLG-265) */
               hazard:'roll',
               /* and the hill it is cut into stands on the other side, as a plane
-                 far above the road rather than as loose rock (RLG-297) */
-              wall:1,
+                 far above the road rather than as loose rock (RLG-297). It takes
+                 the FULL ridge: a mountainside is broken, and the owner turned
+                 down the version that was one flat height in one colour */
+              wall:2.2, ridge:1,
               sky:'#33405e', city:0.10, trees:0.55, skyForm:'peak' },
   /* ---- A CITY HAS NO CLIMATE OF ITS OWN, SO IT ROLLS ONE (RLG-109) ----
      `vary` at 0.45 is the widest on the board and it is doing the work a
@@ -14566,8 +14626,14 @@ const BIOMES = {
               grassLo:SANDSTONE.dark, grassHi:SANDSTONE.mid,
               /* WALLED ON BOTH SIDES, which is what a canyon is (RLG-297). The
                  skyline band above stays: it is what shows in the strip of sky
-                 the two walls leave between them. */
-              wall:1,
+                 the two walls leave between them.
+
+                 A QUARTER OF THE RIDGE, not none and not all. A slot canyon is
+                 cut by water and its walls really are near-vertical and near-
+                 uniform - that is the landform - so it takes enough to stop the
+                 stone reading as painted and not enough to turn it into a
+                 mountainside. */
+              wall:1, ridge:0.25,
               skyBase:SANDSTONE.mid, skyWall:1,
               sky:'#5e3524', city:0.00, trees:0.04, skyForm:'ridge' },
   /* ---- THE FIRST PLACE THAT IS AN EVENT (RLG-112) ---------------------
@@ -15244,6 +15310,107 @@ let DROP_DEPTH = 12, DROP_SHADE = 0.30, DROP_HAZE = 0.42;
    the ground it stands in, and darkening it as hard as the floor turned a
    canyon into a tunnel. Tunables with committed defaults. */
 let WALL_RISE = 6, WALL_SHADE = 0.16, WALL_HAZE = 0.40;
+/* ---- AND A MOUNTAIN FACE IS NOT A WALL (owner, 2026-09-20, RLG-297) ------
+   "The mountain needs to read as a mountain face going up and off screen not a
+   flat wall." The first build was one plane at one height in one colour, which
+   is a slab however far up the screen it goes. A face has two things a slab
+   does not, and both are cheap because the pass already paints a band a slice.
+
+   A RIDGE, which is the silhouette. The height is modulated per segment by two
+   scales of noise FIXED TO THE ROAD rather than to the frame - a long one that
+   makes shoulders and saddles over a few thousand units, and a short one that
+   roughens them. The top edge is the only part of the face you see against the
+   sky, so this is the half that does most of the work.
+
+   AND FACETS, which is the surface. Rock is planes at different angles taking
+   different light, so the shade varies band to band on its own slower noise.
+   Nothing is added to the frame for it: the bands are already filled one at a
+   time and this changes the colour each one is filled with.
+
+   `ridge` IS THE PLACE'S OWN, because these are not the same landform. A slot
+   canyon is cut by water and its walls really are near-vertical and near-
+   uniform; a mountainside is not. MOUNTAIN takes the full amount and CANYON a
+   quarter of it. */
+let WALL_RIDGE = 0.62,   /* how much the long shoulders move the height       */
+    WALL_BREAK = 0.15,   /* and the short roughness on top of them            */
+    WALL_FACET = 0.13;   /* how far a facet's shade moves from the face's own */
+/* ---- THE RUNS ARE LANDFORMS, NOT TEXTURE, AND THAT IS MEASURED ---------
+   At 22 and 6 segments the ridge came out as a COMB of thin vertical spikes
+   near the vanishing point. Two things cause it and they compound. A band is
+   fractions of a pixel wide out there, so a height that changes every six
+   segments changes faster than the screen can resolve; and a slice hidden
+   behind a crest draws nothing, so the band that follows it spans the whole
+   skipped run in one quad - which used to be a shallow wedge and became a
+   near-vertical one the moment the two ends could differ by the noise.
+   Lengthening the runs fixes both at once: a shoulder over 11,000 units is a
+   landform that survives being drawn from a mile away.
+   -------------------------------------------------------------------- */
+const RIDGE_RUN = 34, BREAK_RUN = 12, FACET_RUN = 7;   /* in segments         */
+/* ---- AND THE LIGHT ON IT, WHICH IS WHAT SAYS SURFACE --------------------
+   A ridge fixes the SILHOUETTE and facets fix the SURFACE, and with both the
+   face was still reading as a flat field: one value from the road line to the
+   crest, which nothing lit ever is. The foot of a hillside sits in its own
+   shadow and the top takes the sky.
+
+   ONE GRADIENT A FRAME, NOT ONE A BAND. It is built in canvas space from the
+   horizon to the bottom of the screen and every band is filled through it, so
+   the shading is continuous across bands by construction rather than by
+   tuning - and the far bands, which are a strip near the horizon, take only the
+   light end of it while the near wall takes the whole fall. That is the right
+   answer as well as the cheap one: distance is where the haze already does the
+   work, and the shadow at the foot is a near-field cue.
+   -------------------------------------------------------------------- */
+let WALL_FOOT = 0.34,      /* how dark the foot of the face goes              */
+    WALL_FOOT_H = 0.42,    /* and how much of the face's height it covers     */
+    WALL_FOOT_VARY = 0.30, /* how much that height wanders along the face     */
+    WALL_CAP = 0.30,       /* how far the leaning cap goes toward the sky     */
+    WALL_CAP_H = 0.34,     /* how much of the face leans back                 */
+    WALL_CAP_VARY = 0.34,  /* and how much THAT wanders                       */
+    WALL_LAP = 0.7;        /* how far a band starts behind the seam, in pixels */
+const CAP_RUN = 9;         /* in segments, for both boundaries                */
+/* ---- SMOOTH, NOT SPECKLED --------------------------------------------
+   `sceneRand` answers a fresh number per index, and a height taken straight
+   from it is a comb rather than a ridge. This picks a value per BUCKET of
+   `run` segments and eases between buckets, so the line has shoulders with
+   slopes rather than a tooth per segment - and it is fixed to the road, so a
+   ridge belongs to a place rather than sliding past the camera. */
+function ridgeNoise(seg, run, salt){
+  const t = seg / run, i = Math.floor(t), f = t - i;
+  const a = sceneRand(i, salt), b = sceneRand(i + 1, salt);
+  return a + (b - a) * (f * f * (3 - 2 * f));
+}
+/* how high the wall's plane stands at this segment, in camera heights */
+/* ---- AND HOW HIGH IT STANDS IS THE PLACE'S (RLG-297) ------------------
+   `wall` is a MULTIPLE of `WALL_RISE`, not a boolean, because the two places
+   that have one are not the same size. A canyon's walls are what is left when
+   water cut down through rock, and you can see the sky between them - that is
+   the picture the owner accepted. A MOUNTAIN is the land itself going up, and
+   at the canyon's height its crest sat low enough on screen to see over, which
+   is an embankment. It stands at twice the height, so the face leaves the top
+   of the frame well before it reaches the car - "going up and off screen". */
+/* ---- AND IT FLATTENS WHERE IT CANNOT BE DRAWN (RLG-297) ---------------
+   `near` is the road pass's own arrival ramp, 1 at the car and 0 at the far end
+   of the draw. The ridge is multiplied by it, steeply, and the reason is
+   measured rather than aesthetic: out past about two thirds of the draw a band
+   is a fraction of a pixel wide, so a height that changes every few thousand
+   units changes faster than the screen can resolve it - and what came out was
+   a COMB of thin vertical spikes along the crest, one per band, worse the
+   taller the face was made.
+
+   FLATTENING IS THE HONEST FIX rather than a longer run, because no run is long
+   enough at the far end of a 60,000-unit draw. It is the same thing the haze
+   does to colour and the arrival ramp does to opacity: detail that cannot be
+   resolved is not drawn. It grows in smoothly as the car approaches, over
+   seconds, which is what those two already do. */
+function wallRiseAt(seg, B, near){
+  const tall = WALL_RISE * ((B && B.wall > 0) ? B.wall : 1);
+  const k = (B && B.ridge !== undefined) ? B.ridge : 1;
+  const res = near === undefined ? 1 : clamp(near * 8, 0, 1);
+  if(k <= 0 || res <= 0) return tall;
+  const shoulder = ridgeNoise(seg, RIDGE_RUN, 907) - 0.5;
+  const rough    = ridgeNoise(seg, BREAK_RUN, 911) - 0.5;
+  return tall * (1 + k * res * (shoulder * WALL_RIDGE + rough * WALL_BREAK));
+}
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
@@ -20366,7 +20533,7 @@ function step(dt){
     if(clock < 0) clock = 0;
   }
   /* a gantry every CP_MILES, placed a little way ahead as you approach */
-  while(nextCP * CP_MILES * MILE < pos + 90000){
+  while(nextCP * CP_MILES * MILE < pos + CULL_AHEAD + 16000){
     const cz = nextCP * CP_MILES * MILE;
     /* ---- the last board is the FINISH, not a checkpoint --------------------
        A race ending at 12 miles had a CHECKPOINT gantry sitting on the line,
@@ -21021,8 +21188,8 @@ function step(dt){
   /* A roadblock across a bend is a wall you cannot see until you are in it,
      so they only go up on a stretch that is straight where it stands AND
      still straight a little further on. */
-  if(!optEasy && !dragOn && nextBlockT<=0 && heat>=2 && isStraight(pos + 26000) &&
-     isStraight(pos + 26000 + roadblockReach())){
+  if(!optEasy && !dragOn && nextBlockT<=0 && heat>=2 && isStraight(pos + LOOK_AHEAD) &&
+     isStraight(pos + LOOK_AHEAD + roadblockReach())){
     spawnRoadblock();
     nextBlockT = Math.max(8, rnd(30,44) - heat*2);
   }
@@ -21038,9 +21205,9 @@ function step(dt){
      Two belts: the step can never be smaller than 900, and the loop cannot run
      more than 40 times in a frame whatever happens. */
   let waveGuard = 0;
-  while(nextWaveZ < pos + 62000 && waveGuard++ < 40){
+  while(nextWaveZ < pos + WAVE_AHEAD && waveGuard++ < 40){
     /* a floor, in case a reset ever leaves nextWaveZ behind the player */
-    if(roadFurniture) spawnWave(Math.max(nextWaveZ, pos + OUT_OF_SIGHT));
+    if(roadFurniture) spawnWave(Math.max(nextWaveZ, pos + SPAWN_AHEAD));
     /* 900 was less than three car lengths. Even at full heat the road has to
        stay driveable — the floor is 3200, about eight lengths. */
     nextWaveZ += Math.max(3200, rnd(4600,8200) - heat*140);
@@ -21420,11 +21587,14 @@ function step(dt){
        is gated on `traffic.length < 26`, so it could never fire: the owner
        reported exactly that, that nothing comes up behind you when you stop.
 
-       The wave spawner reaches to `pos + 62000`, so anything past that is
-       beyond the furthest road this run has built and is not coming back
-       without being re-spawned in front of you anyway.
+       The wave spawner reaches to `WAVE_AHEAD`, so anything past `CULL_AHEAD`
+       is beyond the furthest road this run has built and is not coming back
+       without being re-spawned in front of you anyway. BOTH DERIVE FROM THE
+       DRAW and the culler is the further of the two on purpose - as literals,
+       the culler sat INSIDE the spawner the moment the draw was doubled and
+       every wave died on the frame it was born (RLG-295).
        -------------------------------------------------------------------- */
-    if(c.z > pos + 64000){ traffic.splice(i,1); continue; }
+    if(c.z > pos + CULL_AHEAD){ traffic.splice(i,1); continue; }
     if((c.iframe || 0) > 0) c.iframe -= dt;
     if((c.calm || 0) > 0) c.calm -= dt;
     const dz = c.z - pz, dx = Math.abs(c.x - playerX);
@@ -24005,7 +24175,7 @@ function drawSky(){
      road did, which reads as the whole world sliding rather than as distance.
      A skyline that far off barely moves: 0.55, and chased slower so it drifts
      rather than snaps. */
-  const skyWant = -bendPx(pos + 30000) * 0.55;
+  const skyWant = -bendPx(pos + SKY_BEND_AT) * 0.55;
   /* published for `skyTrace`, because a check that displaces the chase has to know
      what it is converging ON. The trace used to report the raw `bendPx` and a
      harness reading THAT measured a residual against a number the chase never
@@ -24476,7 +24646,7 @@ let BORE = {
      ---------------------------------------------------------------- */
   h:    1400,   /* the roof, in world units above the road - a plane, not an
                    offset from the road's own projected height                */
-  far:  33000,  /* how far down the bore is built                               */
+  far:  BORE_FAR, /* how far down the bore is built - past the drawn road       */
   segs: 16,
   /* ---- HOW FAR APART THE RINGS ARE, IN WORLD UNITS (RLG-153) ---------
      A bore is cast in rings, and the joint between two of them is what the eye
@@ -26028,15 +26198,38 @@ function drawRoad(){
          ---------------------------------------------------------------- */
       const wSides = wallSides(dB);
       if(wSides && !dB.overWater){
-        const kU = CAM_H * H / 2 * WALL_RISE;
-        const wy1 = p1.y - p1.scale * kU;
-        const wy2 = n === DRAW ? horizon : p2.y - p2.scale * kU;
+        /* THE HEIGHT IS THIS SEGMENT'S, NOT THE PLACE'S, so the top edge has
+           shoulders. The two ends take their OWN segment's height, which is
+           what keeps a band continuous with the one beside it: a slice's near
+           end is the next slice's far end and both read the same index. */
+        /* `fade` is this slice's own arrival value; the far end is one slice
+           further out and takes the next one, so the two bands agree at the
+           seam they share. */
+        const fadeFar = clamp(1 - (n + 1) / DRAW, 0, 1);
+        const kNear = CAM_H * H / 2 * wallRiseAt(idx, dB, fade);
+        const kFar  = CAM_H * H / 2 * wallRiseAt(idx + 1, dB, fadeFar);
+        const wy1 = p1.y - p1.scale * kNear;
+        const wy2 = n === DRAW ? horizon : p2.y - p2.scale * kFar;
         /* the place's own rock, lightly shaded and hazed for its distance. The
            haze is what separates the far wall from the near one, and it reads
            the same `fade` the drop's does so the two sides of a mountain recede
-           at one rate. */
+           at one rate. THE FACET rides on the shade: rock is planes at
+           different angles taking different light, and a face of one flat
+           colour is the slab the owner turned down. */
         const wFar = clamp(1 - fade * 0.55, 0, 1);
-        ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), WALL_SHADE, DROP_DARK),
+        /* ---- THE PLACE'S OWN SHARE OF THE FORM -------------------------
+           `ridge` is how broken this landform is, and the facets and the foot
+           shadow are the same statement about the same rock, so they read it
+           too. A slot canyon at a quarter keeps the near-uniform stone that the
+           owner accepted, and its foot shadow all but disappears - which is
+           also what buys it back the frame rate, because a canyon is walled on
+           BOTH sides and pays for every quad twice. */
+        const ridgeK = (dB.ridge === undefined) ? 1 : dB.ridge;
+        const facet = ridgeK <= 0 ? 0
+                    : (ridgeNoise(idx, FACET_RUN, 919) - 0.5) * WALL_FACET * ridgeK;
+        const footK = WALL_FOOT * ridgeK;
+        ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark),
+                                      clamp(WALL_SHADE + facet, 0, 1), DROP_DARK),
                                WALL_HAZE * wFar, hexRGB(dB.sky || '#2a3550'));
         for(const ws of wSides){
           if(ws === dropSide) continue;      /* a drop and a wall never share a side */
@@ -26095,13 +26288,65 @@ function drawRoad(){
           const wb1 = Math.min(H, y1 + p1.w * 0.5);
           const wb0 = seam ? seam[2] : Math.min(H, y2 + p2.w * 0.5);
           wallSeam[wk] = [wx1, wy1, wb1];
-          ctx.beginPath();
-          ctx.moveTo(wx0, wy0);
-          ctx.lineTo(wx1, wy1);
-          ctx.lineTo(wx1, wb1);
-          ctx.lineTo(wx0, wb0);
-          ctx.closePath();
-          ctx.fill();
+          /* ---- THE SEAM IS OVERLAPPED, OR THE FACE IS SEE-THROUGH --------
+             Owner, 2026-09-20, from the device: "The mountain face can't be see
+             through." IT WAS, and this is why: the bands TILE, so two of them
+             share an edge, and the canvas antialiases each one against that
+             edge independently. Neither covers the shared column completely and
+             the sky shows between them - a hairline per band, which at three
+             hundred bands is a curtain of vertical streaks that reads exactly
+             like a transparent wall. Every band now starts a little BEHIND the
+             seam, so the pair overlaps instead of abutting. */
+          const lap = ws * WALL_LAP;
+          const xa = wx0 - lap;
+          /* ---- UP, THEN ANGLING BACK, AND NOT UNIFORMLY -----------------
+             Owner, same report: "it should go up then angle back but not
+             uniformly." A face that leans away from you takes more sky and less
+             of its own colour the higher it goes, and the height it starts
+             leaning at is not the same all along a mountainside.
+
+             SO THE BAND IS PARTITIONED RATHER THAN OVERPAINTED, and that is
+             what makes it affordable: three strips that between them cover the
+             band exactly once, so the area rasterised is the same as the single
+             flat fill it replaces. The first attempt at a falloff re-filled the
+             whole band through a gradient and took a canyon from 50.1-57.3 fps
+             to 31.3-47.4, because every pixel of the face was painted twice.
+
+             `capAt` and `footAt` are the two boundaries, each moved by its own
+             slow noise fixed to the road - so the shoulder leans back sooner in
+             one place than another, which is the "not uniformly" half. */
+          const capAt  = clamp(WALL_CAP_H  + (ridgeNoise(idx, CAP_RUN, 929) - 0.5)
+                                             * WALL_CAP_VARY * ridgeK, 0.10, 0.75);
+          const footAt = clamp(WALL_FOOT_H + (ridgeNoise(idx, CAP_RUN, 931) - 0.5)
+                                             * WALL_FOOT_VARY * ridgeK, 0.08, 0.70);
+          const at = (t, ya, yb) => ya + (yb - ya) * t;
+          const strip = (t0, t1, style) => {
+            ctx.fillStyle = style;
+            ctx.beginPath();
+            ctx.moveTo(xa,  at(t0, wy0, wb0));
+            ctx.lineTo(wx1, at(t0, wy1, wb1));
+            ctx.lineTo(wx1, at(t1, wy1, wb1));
+            ctx.lineTo(xa,  at(t1, wy0, wb0));
+            ctx.closePath();
+            ctx.fill();
+          };
+          const base = ctx.fillStyle;
+          if(ridgeK <= 0){
+            /* a place that asked for no form gets the one flat fill it had */
+            ctx.beginPath();
+            ctx.moveTo(xa, wy0); ctx.lineTo(wx1, wy1);
+            ctx.lineTo(wx1, wb1); ctx.lineTo(xa, wb0);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            /* the cap, leaning away: more of the place's sky in it, which is
+               what distance does to everything else here */
+            strip(0, capAt, mixRGB(base, WALL_CAP * ridgeK, hexRGB(dB.sky || '#2a3550')));
+            strip(capAt, 1 - footAt, base);
+            if(footK > 0.02) strip(1 - footAt, 1, mixRGB(base, footK, DROP_DARK));
+            else strip(1 - footAt, 1, base);
+            ctx.fillStyle = base;
+          }
           wallTrace.push([n, ws, +Math.max(0, wy2).toFixed(1)]);
         }
       }
@@ -33855,8 +34100,18 @@ requestAnimationFrame(frameLoop);
       if(o.rise  > 0) WALL_RISE  = o.rise;
       if(o.shade >= 0) WALL_SHADE = o.shade;
       if(o.haze  >= 0) WALL_HAZE  = o.haze;
+      if(o.ridge >= 0) WALL_RIDGE = o.ridge;
+      if(o.brk   >= 0) WALL_BREAK = o.brk;
+      if(o.facet >= 0) WALL_FACET = o.facet;
+      if(o.foot  >= 0) WALL_FOOT  = o.foot;
+      if(o.footH >  0) WALL_FOOT_H = o.footH;
+      if(o.cap   >= 0) WALL_CAP   = o.cap;
+      if(o.capH  >  0) WALL_CAP_H = o.capH;
+      if(o.lap   >= 0) WALL_LAP   = o.lap;
     }
-    return { rise:WALL_RISE, shade:WALL_SHADE, haze:WALL_HAZE };
+    return { rise:WALL_RISE, shade:WALL_SHADE, haze:WALL_HAZE,
+             ridge:WALL_RIDGE, brk:WALL_BREAK, facet:WALL_FACET, foot:WALL_FOOT, footH:WALL_FOOT_H,
+             cap:WALL_CAP, capH:WALL_CAP_H, lap:WALL_LAP };
   };
   /* which sides this place is walled on, and what the wall pass actually painted */
   API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
@@ -34951,7 +35206,7 @@ requestAnimationFrame(frameLoop);
      is driven by the bend a long way ahead and chased frame to frame, so a
      twitch can be in either the input or the chase (RLG-062). */
   /* displace the skyline's chase, so a check can watch it come back. The chase
-     converges on `bendPx(pos + 30000)`, which is CONSTANT while the car is
+     converges on `bendPx(pos + SKY_BEND_AT)`, which is CONSTANT while the car is
      parked - so pushing the value away from it and timing the return measures
      the chase rate and nothing else (RLG-096). */
   API.setSkySmooth = function(v){ skySmooth = v; return skySmooth; };
@@ -34963,7 +35218,7 @@ requestAnimationFrame(frameLoop);
   API.skyStepMax = function(){ return SKY_STEP_MAX; };
   API.skyChaseFrames = function(on){ skyChaseFrames = !!on; return skyChaseFrames; };
   API.skyTrace = function(){
-    return { pos:+pos.toFixed(2), want:+bendPx(pos + 30000).toFixed(4),
+    return { pos:+pos.toFixed(2), want:+bendPx(pos + SKY_BEND_AT).toFixed(4),
              target:+skyTarget.toFixed(4),
              smooth:+skySmooth.toFixed(4), z0:bendZ0, segs:curveSegs.length };
   };
