@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-109"></a>
+## [0.14.109] - 2026-09-20
+- Removed: **the loose rock in front of a canyon or mountain's sheer face.** Both places drew
+  `ROCKFACE` beside the road, at the two densest settings on the board, and since the walls became
+  solid planes it has been rasterised in front of a surface that already covers everything it stood
+  against. It is FASTER without it: a canyon measured 53.3-60.9fps against the rock's 45.9-49.4, two
+  ranges that do not overlap. The scenery spec stays, because the skyline's height cap is derived
+  from it. [RLG-300](../fragments/RLG-300.md)
+
 <a id="v0-14-108"></a>
 ## [0.14.108] - 2026-09-20
 - Fixed: **the range across the valley stands in the valley, and drifts as you pass it.** It was

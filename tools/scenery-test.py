@@ -320,7 +320,19 @@ def main():
         res.check(m_now > m_one * 2.0,
                   'the glass carries far more roadside than it did at one rank',
                   '%d objects against %d' % (m_now, m_one))
-        res.check(share_now > 0.15,
+        # ---- THE SHARE IS AGAINST A WINDSCREEN THAT REACHES FURTHER THAN THE GLASS ----
+        # This was 0.15 and it measured 27% for as long as the road was drawn 30,000 units
+        # and the mirror looked 34,000 back - two views of about the same reach. RLG-295
+        # doubled the DRAW to 60,000 and left MIRROR_BACK where it was, deliberately: how
+        # far you see BEHIND is not the same question as how far you see ahead, and the
+        # glass is a 44-pixel pane. So the windscreen now draws roughly twice the objects
+        # for the same roadside and the share halved to 12% with the mirror unchanged - the
+        # ratio had quietly become a measure of the two DRAW distances rather than of the
+        # glass. Scaled by the reaches it is comparing, it asks what it always asked.
+        reach_f = page.evaluate("() => window.__probe.road.drawDistance()")
+        reach_m = 34000   # MIRROR_BACK, which is its own number and not tied to the draw
+        floor = 0.15 * (reach_m / reach_f) / (34000 / 30000)
+        res.check(share_now > floor,
                   'and it is a comparable roadside rather than a token one',
                   'the mirror draws %.0f%% of what the windscreen draws' % (share_now * 100))
         # AND THE RANK COUNT IS WHAT DID IT. If the ratio were the same at one rank, something

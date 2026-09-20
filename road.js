@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.108';
+window.ROAD_BUILD = '0.14.109';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10118,10 +10118,27 @@ function drawScenery(idx, p1, y1, z1, fade){
      gets an empty hazard side, so the rule arrives with the table rather than
      with a list of biomes to keep in step. */
   const drop = B.hazard === 'roll' ? hazardSide(B) : 0;
+  /* ---- AND A SHEER FACE NEEDS NO LOOSE ROCK IN FRONT OF IT (RLG-300) ----
+     Owner, 2026-09-20: "The original rock pieces and rock faces and cliff faces
+     whatever from the canyon in the mountain don't need to be rendered anymore
+     since we're using sheer faces."
+
+     Both places draw `ROCKFACE` - literally the rock faces the owner names -
+     and RLG-297 put a solid plane behind them. They are being rasterised in
+     front of a surface that already covers everything they stand against, at
+     the two densest settings on the board: a canyon is 0.98 over five ranks.
+
+     THE SPEC ITSELF STAYS, and that is not tidiness either. `skyRiseOf` derives
+     the skyline's height cap from this place's own scenery height (RLG-104), so
+     deleting the row would drop a canyon's horizon to the default and put the
+     band back behind the wall it was capped to. What changes is which SIDES it
+     is drawn on, which is the same shape as the rolled hazard above. */
+  const faced = wallSides(B);
   for(const side of [-1, 1]){
     const seaSideNow = water && side === water;
     if(seaSideNow && !B.boats) continue;
     if(drop && side === drop) continue;
+    if(faced && faced.indexOf(side) >= 0) continue;
     /* ---- THE ROLLED SIDE MAY DRAW SOMETHING ELSE ENTIRELY (RLG-102) ---
        The coast's rolled side draws NOTHING, because it is water. Farmland's
        draws a different spec, because it is a crop. Both are the same question -
@@ -29723,6 +29740,10 @@ function drawMirrorFull(mx, my, mw, mh){
              RLG-265 - a mountain's rolled side is air - and this loop never
              learned it. The same coin, read the same way as the sea's above. */
           if(mB.hazard === 'roll' && mside === hazardSide(mB)) continue;
+          /* and the glass leaves a walled side bare for the reason the
+             windscreen does - there is a sheer face behind it (RLG-300) */
+          const mFaced = wallSides(mB);
+          if(mFaced && mFaced.indexOf(mside) >= 0) continue;
           const mBoatKey = mSea
             ? (sceneRand(widx, 577) < 0.34 ? mB.ships : mB.boats) : null;
           /* the glass reads the same sided answer the windscreen does, so a
