@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.111';
+window.ROAD_BUILD = '0.14.112';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14653,7 +14653,7 @@ const BIOMES = {
                  uniform - that is the landform - so it takes enough to stop the
                  stone reading as painted and not enough to turn it into a
                  mountainside. */
-              wall:1, ridge:0.25,
+              wall:1, ridge:0.25, face:1,
               skyBase:SANDSTONE.mid, skyWall:1,
               sky:'#5e3524', city:0.00, trees:0.04, skyForm:'ridge' },
   /* ---- THE FIRST PLACE THAT IS AN EVENT (RLG-112) ---------------------
@@ -15873,7 +15873,18 @@ function drawValleyRange(g, B, side, feetY, farSeg){
    through the slot is painted after it. Nothing here computes occlusion.
    ------------------------------------------------------------------------ */
 function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
-  if(!B || !B.wall || wallOff || endWallOff) return 0;
+  /* ---- `face`, NOT `wall` (owner, 2026-09-20, RLG-303) ------------------
+     This was gated on any place with a wall, which gave a MOUNTAIN one - and
+     the owner turned it down on sight: "that is ugly... Notice how it's
+     disconnected. It doesn't read as a mountain."
+
+     THEY ARE NOT THE SAME ARRIVAL. A slot canyon IS a rock face you drive into
+     and a notch is what you go through, so a curtain standing at the boundary
+     is the right object. A mountain is the LAND GOING UP: it has no front, and
+     stamping one on the desert is exactly what the picture showed. So a place
+     says whether it has a face, and only the canyon does. How a mountain should
+     arrive is RLG-303 and it is not this. */
+  if(!B || !B.face || wallOff || endWallOff) return 0;
   /* `pane` is the glass: its own left edge, width and bottom. Absent, the
      windscreen, which is the whole frame. The face is the same drawing either
      way - a massif seen from in front and a massif seen from behind are the

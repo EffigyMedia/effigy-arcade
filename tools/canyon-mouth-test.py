@@ -25,7 +25,8 @@ road goes through the slot.
      massif at the back of the pane and left it there: measured still painting with the boundary
      52,000 units behind a glass that looks 34,000 back. THIS IS THE CHECK THAT CAUGHT IT.
 
-  4. AND A PLACE WITH NO WALL SHOWS NONE, either way round. Without this every question above
+  4. AND A PLACE WITH NO FACE SHOWS NONE, either way round - which since RLG-303
+     includes the MOUNTAIN, whose arrival is the land going up rather than a curtain. Without this every question above
      passes on a build that paints a face at every boundary there is.
 
 WHAT IS COUNTED IS FRAMES PAINTED, not pixels. How much of the face shows is the road's slope
@@ -177,7 +178,11 @@ def main():
             # a canyon. That is the same number that makes the face BESIDE the road broken
             # on one and near-vertical on the other, so the two can never disagree about
             # what kind of rock the place is made of. This asks both.
-            for place in ('CANYON', 'MOUNTAIN'):
+            # MOUNTAIN IS NOT IN THIS LIST ANY MORE, and that is the ruling rather than a
+            # gap: the owner turned the mountain's face down on sight (RLG-303) because a
+            # curtain standing at a boundary is a canyon's arrival and not a mountain's. It
+            # is asserted as ABSENT in the control below, beside the forest.
+            for place in ('CANYON',):
                 arrive(place)
                 seen = {}
                 for gap in AHEAD + BEHIND + (GONE,):
@@ -216,14 +221,15 @@ def main():
             # ---- 4. the control ---------------------------------------------------------------
             print()
             print('  AND A PLACE WITH NO WALL HAS NO FACE')
-            arrive('FOREST')
             bare = {}
-            for gap in (120, -30):
-                bare[gap] = at(gap)
-                print('      %5d segments from a forest boundary   painted on %2d frame(s)'
-                      % (gap, bare[gap]))
+            for place in ('FOREST', 'MOUNTAIN'):
+                arrive(place)
+                for gap in (120, -30):
+                    bare['%s%d' % (place, gap)] = at(gap)
+                    print('      %-9s %5d segments from its boundary   painted on %2d frame(s)'
+                          % (place, gap, bare['%s%d' % (place, gap)]))
             ok(all(v == 0 for v in bare.values()),
-               'a place with no wall paints no face, ahead or behind',
+               'a place with no FACE paints none, ahead or behind - and a mountain has none',
                'painted on %s frame(s)' % list(bare.values()))
 
             if errs:

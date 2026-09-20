@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-112"></a>
+## [0.14.112] - 2026-09-20
+- Removed: **the boundary face on the mountain.** A slot canyon IS a rock face you drive into and a
+  notch is what you go through, so a curtain standing at the boundary is the right object for one.
+  A mountain is the land going up: it has no front, and what the picture showed was a wall stamped
+  onto the desert with a hard line where the two met. How a mountain should arrive is its own piece
+  of work. [RLG-303](../fragments/RLG-303.md)
+
 <a id="v0-14-111"></a>
 ## [0.14.111] - 2026-09-20
 - Fixed: **the gantry, the finish line and a bridge tower fade in rather than popping.** One arrival
