@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.101';
+window.ROAD_BUILD = '0.14.102';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14442,6 +14442,9 @@ const BIOMES = {
               /* the cliff is the hazard and it has no water to agree with, so it
                  reads `hazardRoll` and the rock face stands opposite (RLG-265) */
               hazard:'roll',
+              /* and the hill it is cut into stands on the other side, as a plane
+                 far above the road rather than as loose rock (RLG-297) */
+              wall:1,
               sky:'#33405e', city:0.10, trees:0.55, skyForm:'peak' },
   /* ---- A CITY HAS NO CLIMATE OF ITS OWN, SO IT ROLLS ONE (RLG-109) ----
      `vary` at 0.45 is the widest on the board and it is doing the work a
@@ -14534,6 +14537,10 @@ const BIOMES = {
                  `skyWall` REPLACES A TYPED HEIGHT. The skyline is capped to the
                  tallest wall the road pass can draw; see `skyRiseOf`. */
               grassLo:SANDSTONE.dark, grassHi:SANDSTONE.mid,
+              /* WALLED ON BOTH SIDES, which is what a canyon is (RLG-297). The
+                 skyline band above stays: it is what shows in the strip of sky
+                 the two walls leave between them. */
+              wall:1,
               skyBase:SANDSTONE.mid, skyWall:1,
               sky:'#5e3524', city:0.00, trees:0.04, skyForm:'ridge' },
   /* ---- THE FIRST PLACE THAT IS AN EVENT (RLG-112) ---------------------
@@ -15194,6 +15201,25 @@ const DROP_DARK = [16,18,24], RIM_LIT = [236,240,248];
    the rim, and how much sky it takes at its farthest. Tunables with committed
    defaults. */
 let DROP_DEPTH = 12, DROP_SHADE = 0.30, DROP_HAZE = 0.42;
+/* ---- AND THE WALL IS THAT PLANE TURNED OVER (owner, 2026-09-20, RLG-297) ---
+   "The canyon walls might look better if they are built like the cliff face of
+   the mountain biome, but going up off screen instead."
+
+   Same construction, same three numbers, opposite sign: a plane `WALL_RISE`
+   camera heights ABOVE the road, projected by the road's own rule, painted per
+   slice far to near from the rim out to the edge of the screen. A higher plane
+   lands further UP the screen at every distance, so near the car its top edge
+   leaves the frame and far away it comes down to the horizon - which is a wall
+   you are driving beside rather than a band standing on it.
+
+   `WALL_SHADE` is LIGHTER than the drop's. A valley floor under a rim is rock
+   with the light taken off it; a wall beside you is rock in the same light as
+   the ground it stands in, and darkening it as hard as the floor turned a
+   canyon into a tunnel. Tunables with committed defaults. */
+let WALL_RISE = 6, WALL_SHADE = 0.16, WALL_HAZE = 0.40;
+/* debug: no wall, so a check can diff the two frames - this is how the drop was
+   measured, because sampling a strip at a fixed row measures the SCENERY */
+let wallOff = false;
 /* what rain does to a surface, as a colour to mix toward rather than as a black
    sheet over the frame */
 const WET_DARK = [12,18,30];
@@ -15517,6 +15543,18 @@ function hazardSide(B){
   /* where the hazard IS the water, the rail goes on the water's own side */
   if(!B || !B.hazard) return 0;
   return B.hazard === 'water' ? sideRoll : hazardRoll;
+}
+/* ---- WHICH SIDES A PLACE IS WALLED ON (RLG-297) -------------------------
+   A canyon is walled on BOTH sides - that is what a canyon is. A mountain has a
+   cliff on one side and the hill it is cut into on the other, so its wall is
+   the side the drop is not on, and the two can never land together because both
+   read the same coin. Everything else is open, and a place asks for this the
+   way it asks for a hazard: one flag in its own recipe.
+   ------------------------------------------------------------------------- */
+function wallSides(B){
+  if(!B || !B.wall || wallOff) return null;
+  if(B.hazard) return [-hazardSide(B)];
+  return [-1, 1];
 }
 function edgeAt(B, side){
   if(!B) return null;
@@ -16801,6 +16839,16 @@ function rimJag(seg){
 }
 /* where the rim is, in screen x, for a projected point at segment `seg` */
 function rimX(p, seg, side){ return p.x + side * p.w * (railX() + rimJag(seg)); }
+/* ---- AND A WALL'S FOOT IS NOT JAGGED (RLG-297) -------------------------
+   The jag above belongs to a cliff EDGE - rock that has broken away and fallen.
+   The foot of a wall is where rock meets the ground it stands in, and nothing
+   has fallen off it. Giving the wall `rimX` also broke the one check that
+   proves the jag is drawn where the drop is: `cliff-test` renders the same
+   place twice with the jag changed and asks which side of the frame moved, and
+   a wall carrying the same jag on the OPPOSITE side moved the answer to the
+   middle of the screen - 246 of 480, where the drop's own is 85.
+   ------------------------------------------------------------------------ */
+function wallFootX(p, side){ return p.x + side * p.w * railX(); }
 function drawRail(p1, p2, y1, y2, za, zb, side, kind, vh){
   const wall = kind === 'barrier';
   const pal  = wall ? RAIL.stone : RAIL.steel;
@@ -25554,8 +25602,17 @@ function skipSlice(n, idx, p1){
 /* what the drop drew this frame: each floor slice's rows, and each slice's rim
    row, so a check can ask whether the floor is a plane below the road (RLG-278) */
 let dropTrace = { floor: [], rim: {} };
+/* and what the wall drew: one row per slice per side, with the top edge it was
+   painted from, so a check can ask whether it is a plane ABOVE the road (RLG-297) */
+let wallTrace = [];
+/* where each side's wall was last painted to, so the next band starts on that
+   seam rather than on its own far corner - which is what closes the stripe a
+   slice hidden behind a crest would otherwise leave (RLG-297) */
+let wallSeam = [null, null];
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
+  wallTrace = [];
+  wallSeam = [null, null];
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
@@ -25872,6 +25929,112 @@ function drawRoad(){
         ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52, RIM_LIT);
         quad(dx1, y1, dx1 + dropSide * lipW, y1,
              dx2 + dropSide * lipW, y2, dx2, y2);
+      }
+
+      /* ---- AND THE WALL IS THE SAME PLANE TURNED OVER (RLG-297) ----------
+         Owner, 2026-09-20, from the device: "The canyon walls might look better
+         if they are built like the cliff face of the mountain biome, but going
+         up off screen instead. Maybe the same for the upwards wall of mountain."
+
+         So this is the block above with the sign changed. A plane `WALL_RISE`
+         camera heights ABOVE the road, `y - scale*k` instead of `y + scale*k`,
+         painted per slice far to near from the rim out to the edge of the
+         screen - which is what builds the wall's foot over crests and round
+         bends with none of it computed, exactly as it builds the drop's rim.
+
+         WHAT THE OWNER ASKED FOR IS THE TOP EDGE LEAVING THE FRAME, and that
+         falls out of the projection rather than being drawn: a plane that high
+         lands above the top of the screen for every slice near the car and
+         comes down to meet the horizon at the far end of the draw. The wall you
+         are beside has no top; the wall a quarter of a mile up the canyon does.
+
+         IT FILLS TO THE BOTTOM, NOT TO ITS OWN FOOT, and that is the same
+         lesson the drop learned the hard way: a slice the road pass skips -
+         hidden behind a crest - draws nothing, and a fill that covered only its
+         own rows left a hole there. What paints the floor back in front of the
+         wall is the NEARER slices' own ground, which is drawn full width at the
+         top of this loop and lands over it. So the foot of the wall is where
+         the nearest ground reaches, per column, with nothing computing it.
+
+         THE GRADIENT RUNS TOWARD THE VANISHING POINT rather than up the screen.
+         Each nearer slice's quad is a sub-range of the last one's - the rim
+         moves outboard as it comes near - so the far, hazier rock survives in
+         the wedge beside the road's own vanishing point and the near rock holds
+         the edge of the screen. That is the whole depth cue, and it is the same
+         one the drop uses, read across instead of down.
+         ---------------------------------------------------------------- */
+      const wSides = wallSides(dB);
+      if(wSides && !dB.overWater){
+        const kU = CAM_H * H / 2 * WALL_RISE;
+        const wy1 = p1.y - p1.scale * kU;
+        const wy2 = n === DRAW ? horizon : p2.y - p2.scale * kU;
+        /* the place's own rock, lightly shaded and hazed for its distance. The
+           haze is what separates the far wall from the near one, and it reads
+           the same `fade` the drop's does so the two sides of a mountain recede
+           at one rate. */
+        const wFar = clamp(1 - fade * 0.55, 0, 1);
+        ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), WALL_SHADE, DROP_DARK),
+                               WALL_HAZE * wFar, hexRGB(dB.sky || '#2a3550'));
+        for(const ws of wSides){
+          if(ws === dropSide) continue;      /* a drop and a wall never share a side */
+          const wx1 = wallFootX(p1, ws);
+          const wk = ws < 0 ? 0 : 1;
+          /* ---- THE TOP OF A WALL IS A LINE, NOT A STEP ------------------
+             The first build filled from a HORIZONTAL top edge at this slice's
+             own height, and the strip of sky a canyon leaves between its two
+             walls came out as a hard staircase, one step per segment, beside a
+             road drawn as a smooth quad. That is the coast's own fault, word
+             for word, and it has the coast's answer.
+
+             The wall's top is not horizontal on screen. It is the plane's line
+             at the RIM, and the rim converges: the top runs from this slice's
+             far corner to its near corner and meets the next slice's exactly,
+             because a slice's near end IS the next slice's far end.
+
+             SO THE WALL IS TILED, NOT STACKED, AND THAT IS A FRAME RATE. The
+             first two builds painted every slice's quad from its own rim OUT TO
+             THE EDGE OF THE SCREEN, the way the drop's floor is painted to the
+             bottom of it - a hundred and fifty overlapping quads, each a large
+             fraction of a 480x900 frame, of which all but a sliver is painted
+             over by the slice in front. MEASURED against itself in one page
+             with `API.wallOff`, so nothing but the wall differs: a CANYON, which
+             is walled on both sides, ran at 43.6-51.8 fps with the wall and
+             60.6-60.7 without it.
+
+             Each slice now paints only the band it actually contributes, from
+             the last seam to its own rim. The bands tile exactly, because a
+             slice's near end IS the next slice's far end - and `wallSeam` is
+             what makes that true THROUGH A SKIP: a slice hidden behind a crest
+             paints nothing, and without the remembered seam the next one to
+             draw would start at its own far corner and leave a vertical stripe
+             of missing wall. It starts at the seam instead.
+
+             THE SLICES NEAR THE CAR ALREADY REACH PAST THE SCREEN, so nothing
+             is lost at the edge: the rim at the bumper is about 700 pixels out
+             on a 480-wide frame and the canvas clips it.
+             ------------------------------------------------------------ */
+          const seam = wallSeam[wk];
+          const wx0 = seam ? seam[0] : wallFootX(p2, ws);
+          const wy0 = seam ? seam[1] : wy2;
+          wallSeam[wk] = [wx1, wy1];
+          /* ---- AND IT STOPS AT ITS OWN FOOT -----------------------------
+             A wall is the surface NEAREST the camera in its direction, so it
+             does not have to reach the bottom of the screen the way the floor
+             beyond a drop does: the ground of the slices in front of it is
+             painted full width, far to near, and lands over its foot. The
+             bottom follows the road's own two ends, so it meets the next
+             slice's exactly as the top does. */
+          const wb0 = Math.min(H, y2 + p2.w * 0.5);
+          const wb1 = Math.min(H, y1 + p1.w * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(wx0, wy0);
+          ctx.lineTo(wx1, wy1);
+          ctx.lineTo(wx1, wb1);
+          ctx.lineTo(wx0, wb0);
+          ctx.closePath();
+          ctx.fill();
+          wallTrace.push([n, ws, +Math.max(0, wy2).toFixed(1)]);
+        }
       }
 
       const sB = bioAt(idx);
@@ -28971,6 +29134,35 @@ function drawMirrorFull(mx, my, mw, mh){
         const mlip = Math.max(0.8, a.w * 0.042);
         ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52, RIM_LIT);
         ctx.fillRect(mDrop < 0 ? mdx - mlip : mdx, a.y, mlip, Math.max(1, b2.y - a.y));
+      }
+    }
+    /* ---- AND THE WALL IS BEHIND YOU TOO (RLG-297) -------------------
+       The drop had to be put in the glass twice - once for the rail standing on
+       open ground, and again when the owner reported that a mountain's mirror
+       still showed "rocks on both sides". The wall is the same omission waiting
+       to happen, so it goes in with the windscreen's rather than after a report.
+
+       The glass projects `vpy + scale*CAM_H_M*H_M/2`, so a plane `WALL_RISE`
+       camera heights ABOVE the road is that much height taken off, and the
+       farthest slice reaches down to the glass's own horizon. Filled to the
+       BOTTOM of the pane for the reason the floor is: a slice the walk skips
+       must not leave a hole, and the nearer slices' own ground lands over it.
+       ---------------------------------------------------------------- */
+    if(!mB.truss && !mB.overWater){
+      const mWalls = wallSides(mB);
+      if(mWalls){
+        const mDropS = mB.hazard === 'roll' ? hazardSide(mB) : 0;
+        const mkU = CAM_H_M * H_M / 2 * WALL_RISE;
+        const mwy = wz === mFar ? vpy : Math.max(my, a.y - a.scale * mkU);
+        const mfarW = clamp((pos - wz) / MIRROR_BACK, 0, 1);
+        ctx.fillStyle = mixRGB(mixRGB(groundTone(widx, dark), WALL_SHADE, DROP_DARK),
+                               WALL_HAZE * mfarW, hexRGB(mB.sky || '#2a3550'));
+        for(const ws of mWalls){
+          if(ws === mDropS) continue;
+          const mwx = wallFootX(a, ws);
+          if(ws < 0){ if(mwx > mx) ctx.fillRect(mx, mwy, mwx - mx, Math.max(0.5, my + mh - mwy)); }
+          else { if(mwx < mx + mw) ctx.fillRect(mwx, mwy, mx + mw - mwx, Math.max(0.5, my + mh - mwy)); }
+        }
       }
     }
     if(mB.sea && !mB.overWater){
@@ -33583,6 +33775,23 @@ requestAnimationFrame(frameLoop);
      strip of the verge was tried and it measured the scenery: the FARMLAND
      control, which has no drop at all, swung 19 levels between its two sides. */
   API.dropOff = function(on){ dropOff = !!on; return dropOff; };
+  /* the wall's three numbers, live, and a switch that takes it away so a check
+     can diff the two frames and call whatever changed the wall (RLG-297). That
+     is how the drop was measured, because sampling a strip of verge at a fixed
+     row measures the SCENERY - the farmland control swung nineteen levels
+     between its own two sides with no drop on either. */
+  API.wallOff = function(on){ wallOff = !!on; return wallOff; };
+  API.wallModel = function(o){
+    if(o){
+      if(o.rise  > 0) WALL_RISE  = o.rise;
+      if(o.shade >= 0) WALL_SHADE = o.shade;
+      if(o.haze  >= 0) WALL_HAZE  = o.haze;
+    }
+    return { rise:WALL_RISE, shade:WALL_SHADE, haze:WALL_HAZE };
+  };
+  /* which sides this place is walled on, and what the wall pass actually painted */
+  API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
+  API.wallTrace = function(){ return wallTrace.slice(); };
   /* debug: put the hazard on a NAMED side, so a check can render the same place
      twice and watch the rail move. Absolute positions cannot settle this on their
      own - a rail converging on the vanishing point crosses the middle of the

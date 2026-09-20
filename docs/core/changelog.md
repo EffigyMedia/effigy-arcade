@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-102"></a>
+## [0.14.102] - 2026-09-20
+- Changed: **a canyon wall, and a mountain's uphill side, are a plane far above the road.** The same
+  construction as the cliff face beside a mountain road, with the sign turned over: a surface six
+  camera heights up, painted per slice from the rim out to the edge of the screen, so its top edge
+  leaves the frame beside the car and comes down to the horizon a quarter of a mile up the road. A
+  canyon is walled on both sides and a mountain on the side its drop is not. The glass carries it
+  too, rather than waiting for a report that it does not.
+  [RLG-297](../fragments/RLG-297.md)
+
 <a id="v0-14-101"></a>
 ## [0.14.101] - 2026-09-20
 - Changed: **the steering wheel follows the input to the front wheels.** It was reading the car's
