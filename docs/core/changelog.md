@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-104"></a>
+## [0.14.104] - 2026-09-20
+- Changed: **the road is drawn twice as far.** 300 segments instead of 150 - 60,000 units instead of
+  30,000. The owner ruled it after being shown the cost: the mountain runs at 33-56fps against a
+  flat 60, the city at 39-42, the coast at 28-60, and optimisation is the work that follows.
+  [RLG-295](../fragments/RLG-295.md)
+- Changed: **the radar detector keeps the warning distance it had.** It was written as the spawn
+  horizon, which is the draw distance plus five thousand, so doubling the draw would have doubled
+  how far ahead it beeps. How much warning it gives is a number the owner tunes, not one that moves
+  because something else moved. [RLG-295](../fragments/RLG-295.md)
+- Fixed: **the foot of a canyon or mountain wall no longer steps at a crest.** A slice hidden behind
+  a brow left the next band starting at a remembered x with a bottom computed for a different
+  distance. It joins on the seam now, the way the top already did.
+  [RLG-297](../fragments/RLG-297.md)
+
 <a id="v0-14-103"></a>
 ## [0.14.103] - 2026-09-20
 - Changed: **the horn asks a few car lengths, not two seconds of road.** It was sharing the siren's

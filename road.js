@@ -227,8 +227,23 @@ function roadsideAt(p, out, wid){
   return p.w + p.scale * SCENE_UNIT * (wid || W)/2 * out;
 }
 const LANES = 4;
-const DRAW = 150;   /* was 95 — the road stopped short of the horizon and
-                       the ground base showed as a band under the skyline */             // segments drawn
+/* ---- HOW FAR THE ROAD IS DRAWN (RLG-295) -------------------------------
+   Owner, 2026-09-20, from the device: "I think we may need to double the draw
+   distance forward", and then, shown the cost: "Let's do 300 and I'm gonna have
+   to optimize like we were planning on two anyways."
+
+   WAS 150, AND BEFORE THAT 95 - the road stopped short of the horizon and the
+   ground base showed as a band under the skyline.
+
+   THE COST IS KNOWN AND IT WAS PAID DELIBERATELY. tools/draw-cost.py alternates
+   the two builds in one page: at 55 per cent of top speed, midday, no weather,
+   MOUNTAIN went from 60.7 to 38.4-53.7 fps and CANYON from 60.6 to 46.8-58.6,
+   while FOREST barely moved. THE PLACES THAT PAY ARE THE ONES WITH A SURFACE
+   PAINTED PER SLICE - the mountain's drop and the canyon's walls - so the next
+   surface beside the road will cost more than the last, and the optimisation
+   the owner named is the work that follows this.
+   ------------------------------------------------------------------------ */
+const DRAW = 300;                                                                        // segments drawn
 /* ---- HOW MUCH OF THE DRAW IS THE ARRIVAL (RLG-218) ----------------------
    Owner, 2026-09-12: "the vehicles need the same Alpha ramp or else that just
    looks funky." They did not have it. The cars faded over the last SIXTH of the
@@ -276,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.103';
+window.ROAD_BUILD = '0.14.104';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -584,7 +599,19 @@ const FIELD_SWING = 20;
    which were asked for, and the detector is an AID TO READING THE ROAD rather
    than a performance part. Recorded as decided-for-now, not as settled.
    -------------------------------------------------------------------- */
-const RADAR_RANGE = OUT_OF_SIGHT;
+/* ---- AND IT IS PINNED, NOT TIED TO THE DRAW ANY MORE (RLG-295) -------
+   Owner, 2026-09-20: pin the radar where it is. It WAS `OUT_OF_SIGHT`, which is
+   the draw distance plus 5,000, and the note above says why that was right -
+   a detector that reaches exactly as far as police can first exist can never
+   have one appear inside its cone with no approach.
+
+   DOUBLING THE DRAW WOULD HAVE DOUBLED THE WARNING, and how much warning a
+   detector gives is a FEEL number the owner has already been asked about once.
+   It is not a number that should move because something unrelated moved. So it
+   keeps the 35,000 it had at DRAW 150, and the argument above still holds in
+   the direction that matters: it is no LARGER than the spawn horizon, which is
+   what stopped a contact appearing inside the cone. */
+const RADAR_RANGE = 35000;
 /* the beep interval at the far edge and at the moment of arrival */
 const RADAR_SLOW = 0.90, RADAR_FAST = 0.16;
 /* how long after losing them before the total starts falling */
@@ -26052,7 +26079,6 @@ function drawRoad(){
           const seam = wallSeam[wk];
           const wx0 = seam ? seam[0] : wallFootX(p2, ws);
           const wy0 = seam ? seam[1] : wy2;
-          wallSeam[wk] = [wx1, wy1];
           /* ---- AND IT STOPS AT ITS OWN FOOT -----------------------------
              A wall is the surface NEAREST the camera in its direction, so it
              does not have to reach the bottom of the screen the way the floor
@@ -26060,8 +26086,15 @@ function drawRoad(){
              painted full width, far to near, and lands over its foot. The
              bottom follows the road's own two ends, so it meets the next
              slice's exactly as the top does. */
-          const wb0 = Math.min(H, y2 + p2.w * 0.5);
+          /* THE FOOT JOINS ON THE SEAM AS WELL. Taking this slice's own far end
+             for the near corner of the band is right until a slice is SKIPPED,
+             and then the band starts at a remembered x with a bottom computed
+             for a different distance - a square step in the foot of the wall,
+             one per crest. It showed up the moment the draw was doubled and
+             there were twice as many skips to see it in. */
           const wb1 = Math.min(H, y1 + p1.w * 0.5);
+          const wb0 = seam ? seam[2] : Math.min(H, y2 + p2.w * 0.5);
+          wallSeam[wk] = [wx1, wy1, wb1];
           ctx.beginPath();
           ctx.moveTo(wx0, wy0);
           ctx.lineTo(wx1, wy1);
@@ -36161,6 +36194,12 @@ requestAnimationFrame(frameLoop);
   };
   API.nearestSpawn = function(){ return Math.round(nearestSpawn); };
   API.drawDistance = function(){ return DRAW * SEG; };
+  /* the draw in SEGMENTS, which is the unit the place planner and the road pass
+     count in. It is published because a harness holding its own copy of 150 is
+     a second source of truth, and biome-test held exactly that: its "placed at
+     the horizon" line was written against a literal and failed the moment the
+     draw was doubled, with the planner behaving perfectly (RLG-295). */
+  API.drawSegments = function(){ return DRAW; };
   API.setTow = function(v){ towOverride = (v === undefined || v < 0) ? -1 : v; };
   API.tightestAhead = function(){ return +tightestAhead.toFixed(3); };
   /* how far ahead the narrowest window sat, and how far ahead the nearest

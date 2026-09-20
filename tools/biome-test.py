@@ -1282,7 +1282,12 @@ def main():
                   'and driving up to that edge is what puts the new place in the picture',
                   'still %s to %s after driving to the planned edge'
                   % (arrived['from'], arrived['to']))
-        res.check(arrived['here'] + 150 >= arrived['edge'] > arrived['here'],
+        # THE DRAW IS READ FROM THE ENGINE, NOT TYPED. This was a literal 150 and it
+        # failed the moment RLG-295 doubled the draw, with the planner placing the edge
+        # exactly where it should - 298 segments ahead of a car at 2165. A harness that
+        # keeps its own copy of an engine constant checks its copy, not the engine.
+        draw_segs = page.evaluate("() => window.__probe.road.drawSegments()")
+        res.check(arrived['here'] + draw_segs + 2 >= arrived['edge'] > arrived['here'],
                   'and it is placed AT THE HORIZON, a draw distance ahead, not underfoot',
                   'edge at segment %s with the car at %s' % (arrived['edge'], arrived['here']))
 

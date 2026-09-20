@@ -147,11 +147,18 @@ SAMPLE = """() => {
   const beside = darkest(midY, midX + 55, midX + 95);
   const dist = (a, b) => a && b
     ? Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2) : null;
+  /* ---- A MISSING READING IS A MISSING READING, NOT A CRASH ---------------
+     `dist` already answers null when either sample came back empty, and the two
+     lines below then called `.toFixed` on it and threw - so the whole harness
+     died with a TypeError instead of reporting which frame it could not read.
+     It surfaced when RLG-295 doubled the draw and moved the rows these samples
+     are taken at. A probe reports what it could not see. */
+  const round2 = (v) => v === null ? null : +v.toFixed(2);
   return { drew: true, walked: fr.walked, capped: !!fr.capped, missed: fr.missed || 0,
            ahead0: fr.ahead0,
            reaches: Math.abs(fr.topY - fr.horizon) < 0.51 && Math.abs(fr.topW) < 0.01,
-           step: +dist(below, above).toFixed(2),
-           roadVsGround: +dist(atRoad, beside).toFixed(2) };
+           step: round2(dist(below, above)),
+           roadVsGround: round2(dist(atRoad, beside)) };
 }"""
 
 
