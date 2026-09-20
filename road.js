@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.98';
+window.ROAD_BUILD = '0.14.99';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1210,6 +1210,26 @@ function paySilver(cls){
   if(!pays || unlocked(pays)) return '';
   if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
   return pays;
+}
+/* ---- WHAT A PLACE PAYS, INCLUDING EVERY PLACE BELOW IT (owner, 2026-09-20)
+   "The tournament unlocks should be implied. Winning gold also earns you the
+   silver and bronze ones." One function, because the finish line pays from it
+   and a check reads it: a rule written twice is a rule that drifts. Each prize
+   is decided new-or-not before it is written (RLG-202), so what comes back is
+   only what the player did not already hold. */
+function payPlace(st, cls){
+  const out = { gold:'', silver:'', bronze:'' };
+  if(!(st >= 1 && st <= 3)) return out;
+  if(st === 1){
+    const pays = GOLD_PAYS[cls];
+    if(pays){
+      if(!unlocked(pays)) out.gold = pays;
+      if(AR && AR.save) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
+    }
+  }
+  if(st <= 2) out.silver = paySilver(cls);
+  out.bronze = payBronze(cls);
+  return out;
 }
 /* and what a bronze just paid - the same shape, from `BRONZE_PAYS` (RLG-071) */
 let tourBronze = '';
@@ -18219,15 +18239,17 @@ function stepRacers(dt){
              same question, and each of them was about to get its own copy.
 
              `GOLD_PAYS` above is the ladder. This looks a class up in it. */
-          if(st === 1){
-            const pays = GOLD_PAYS[classOf(optBody)];
-            if(pays) AR.save.merge((GAME_ID + '-opts'), { [pays]:true });
-          }
-          /* silver pays its class's paint set, decided new-or-not before the
-             write, as the police car is (RLG-071, RLG-202) */
-          tourSilver = (st === 2) ? paySilver(classOf(optBody)) : '';
-          /* and bronze its class's livery, the same way */
-          tourBronze = (st === 3) ? payBronze(classOf(optBody)) : '';
+          const paid = payPlace(st, classOf(optBody));
+          /* ---- AND A PLACE PAYS EVERY PLACE BELOW IT (owner, 2026-09-20) ----
+             "The tournament unlocks should be implied. Winning gold also earns
+             you the silver and bronze ones." So a gold pays the class's paint
+             set and its livery as well, and a silver pays the livery: a player
+             who won a class outright would otherwise have to go back and
+             finish it WORSE to collect them. Each is still decided new-or-not
+             before the write (RLG-202), so what is announced below is only
+             what the player did not already have. */
+          tourSilver = paid.silver;
+          tourBronze = paid.bronze;
           /* ---- AND THE POLICE CAR OF YOUR OWN CLASS, IF YOU RAN IT HOT ----
              Owner's ruling: a gold with HOT PURSUIT on also hands you the
              force's version of what you were driving. The sports ladder pays
@@ -32486,11 +32508,16 @@ function showTrophy(st){
           : tourCopHad
           ? ''
           : '<div class="tip">A GOLD WITH HOT PURSUIT ON ALSO WINS THE POLICE CAR</div>')
-      : (st === 2 && tourSilver && SILVER_SAY[tourSilver])
-      ? '<div class="gnote">' + SILVER_SAY[tourSilver] + '</div>'
-      : (st === 3 && tourBronze && BRONZE_SAY[tourBronze])
-      ? '<div class="gnote">' + BRONZE_SAY[tourBronze] + '</div>'
       : '') +
+    /* ---- AND EVERYTHING ELSE THE PLACE PAID, IF IT WAS NEW ---------------
+       A gold now pays the silver's paint and the bronze's livery too, so the
+       card lists each prize that was actually new rather than one line for the
+       place. `paySilver` and `payBronze` return '' for a prize already held,
+       which is what keeps a second gold from announcing three things again. */
+    (tourSilver && SILVER_SAY[tourSilver]
+      ? '<div class="gnote">' + SILVER_SAY[tourSilver] + '</div>' : '') +
+    (tourBronze && BRONZE_SAY[tourBronze]
+      ? '<div class="gnote">' + BRONZE_SAY[tourBronze] + '</div>' : '') +
     '<div class="gstack">' +
       (showCar ? '<button class="go" data-act="unlock">SEE YOUR NEW CAR</button>' : '') +
       '<button class="go' + (showCar ? ' ghost' : '') + '" data-act="again">NEW TOURNAMENT</button>' +
@@ -34124,6 +34151,8 @@ requestAnimationFrame(frameLoop);
   /* pay the silver of a class as the finish does, for a check (RLG-071) */
   API.paySilver = function(cls){ return paySilver(cls || classOf(optBody)); };
   API.payBronze = function(cls){ return payBronze(cls || classOf(optBody)); };
+  /* the whole of what a place pays, as the finish line pays it (RLG-071) */
+  API.payPlace = function(st, cls){ return payPlace(st, cls || classOf(optBody)); };
   /* ---- EVERY RACING CAR IN EVERY LIVERY, AS SPRITES (RLG-071) -----------
      Rows of [rear, front] pairs, one pair per livery in `ls`, drawn through
      `carSprites` - the path the garage takes - in the paint `paintKey`. For a

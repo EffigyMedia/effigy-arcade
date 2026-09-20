@@ -255,6 +255,36 @@ with sync_playwright() as p:
     liv = booted_on({'stripeset': True})
     check(liv['pattern'] == 'STRIPES' and liv['stripes'] is True,
           'and with stripes won it loads as the STRIPES pattern', '%r %r' % (liv['pattern'], liv['stripes']))
+    # ---- A PLACE PAYS EVERY PLACE BELOW IT (owner, 2026-09-20) -----------------------
+    # "Winning gold also earns you the silver and bronze ones." On a FRESH save, so the
+    # prizes above have not already been taken: a new context, which is a new store.
+    print('  a gold pays the silver and the bronze too')
+    ctx = b.new_context(viewport={'width': 480, 'height': 900})
+    pg3 = ctx.new_page()
+    pg3.add_init_script(INIT)
+    boot(pg3, f'http://127.0.0.1:{port}/games/sw/interstate.html')
+    until(pg3, '!!window.__probe.road', timeout=10000)
+    got = pg3.evaluate("() => window.__probe.road.payPlace(1, 'production')")
+    again = pg3.evaluate("() => window.__probe.road.payPlace(1, 'production')")
+    flags = pg3.evaluate("() => window.Arcade.save.get('interstate-opts') || {}")
+    print('      a production gold paid %s' % got)
+    check(got['gold'] == 'sports' and got['silver'] == 'metallic' and got['bronze'] == 'stripeset',
+          'a gold pays its own class, the paint set and the livery', repr(got))
+    check(flags.get('sports') and flags.get('metallic') and flags.get('stripeset'),
+          'and all three are written to the save',
+          repr({k: flags.get(k) for k in ('sports', 'metallic', 'stripeset')}))
+    check(again['gold'] == '' and again['silver'] == '' and again['bronze'] == '',
+          'and a second gold announces nothing new (RLG-202)', repr(again))
+    silver = pg3.evaluate("() => window.__probe.road.payPlace(2, 'sports')")
+    check(silver['gold'] == '' and silver['silver'] == 'pearl' and silver['bronze'] == 'twotone',
+          'a silver pays the paint set and the livery, and no class', repr(silver))
+    bronze = pg3.evaluate("() => window.__probe.road.payPlace(3, 'super')")
+    check(bronze['gold'] == '' and bronze['silver'] == '' and bronze['bronze'] == 'underglow',
+          'and a bronze pays the livery alone', repr(bronze))
+    none = pg3.evaluate("() => window.__probe.road.payPlace(4, 'production')")
+    check(none['gold'] == '' and none['silver'] == '' and none['bronze'] == '',
+          'a place off the podium pays nothing', repr(none))
+    ctx.close()
     b.close()
 print()
 print('  %s' % ('all checks passed' if not fails else '%d check(s) FAILED' % len(fails)))
