@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.109';
+window.ROAD_BUILD = '0.14.110';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15388,6 +15388,10 @@ let WALL_FOOT = 0.34,      /* how dark the foot of the face goes              */
     WALL_CAP_VARY = 0.34,  /* and how much THAT wanders                       */
     WALL_LAP = 0.7;        /* how far a band starts behind the seam, in pixels */
 const CAP_RUN = 9;         /* in segments, for both boundaries                */
+/* how the face at a boundary is cut up across the frame, and how many columns a
+   shoulder of it spans (RLG-301) */
+let END_COLS = 22;
+const END_RUN = 8;
 /* ---- AND A RANGE ACROSS THE VALLEY (owner, 2026-09-20, RLG-297) ---------
    "And what about distance mountain scenery (same as skyline) out to the side
    where the drop is?"
@@ -15845,6 +15849,78 @@ function drawValleyRange(g, B, side, feetY, farSeg){
   g.globalAlpha = 1;
   g.restore();
   return 1;
+}
+
+/* ---- THE FACE YOU DRIVE AT (owner, 2026-09-20, RLG-301) ----------------
+   "What we do need is the canyon walls facing the roadway when you're driving
+   towards the canyon and also in the rearview mirror when you exit one."
+
+   A CANYON ARRIVED AS A HAIRLINE. RLG-297's walls run ALONGSIDE the road and
+   nothing stands at the end of them, so a canyon seen from a mile of desert was
+   a thin vertical sliver at the vanishing point that widened as you reached it.
+   You never drove AT anything.
+
+   WHAT IS MISSING IS THE MASSIF. A slot canyon is a cut through rock, so what
+   you see coming is a wall across the whole view with a NOTCH in it, and the
+   road goes through the notch. That is this: the place's own rock, from the
+   wall's own height down to the ground at the boundary, filling the frame on
+   both sides of the slot - and the slot is exactly the gap the two walls leave,
+   `wallFootX` either side, so the face and the walls cannot disagree about how
+   wide the way through is.
+
+   IT IS DRAWN AT THE BOUNDARY SLICE, after that slice's ground and before every
+   nearer one, so the desert in front of it paints over its foot and the road
+   through the slot is painted after it. Nothing here computes occlusion.
+   ------------------------------------------------------------------------ */
+function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
+  if(!B || !B.wall || wallOff || endWallOff) return 0;
+  /* `pane` is the glass: its own left edge, width and bottom. Absent, the
+     windscreen, which is the whole frame. The face is the same drawing either
+     way - a massif seen from in front and a massif seen from behind are the
+     same landmass - so the only thing that differs is what it is drawn into. */
+  const px = pane ? pane.x : 0, pw = pane ? pane.w : W;
+  const bot = Math.min(pane ? pane.y + pane.h : H, groundY);
+  const lx = wallFootX(p, -1), rx = wallFootX(p, 1);
+  const base = CAM_H * H / 2 * WALL_RISE * ((B.wall > 0) ? B.wall : 1);
+  const ridgeK = (B.ridge === undefined) ? 1 : B.ridge;
+  /* ---- IT IS BUILT IN COLUMNS, BECAUSE A MASSIF HAS A SKYLINE ----------
+     The first build drew two rectangles and its top was a DEAD STRAIGHT LINE
+     across the whole frame - a mesa, and the same flat-wall complaint the face
+     beside the road had already earned. A landmass seen head-on has a broken
+     top, so the face is cut into columns and each takes its own height from the
+     SAME ridge noise the walls use, sampled along the lateral axis instead of
+     along the road. One noise, two directions, so the rock that faces you and
+     the rock that runs beside you are the same rock.
+
+     The columns are `END_COLS` wide across the frame; each is a rectangle, so
+     the area is what the two rectangles cost and the call count is the only
+     thing that grows. */
+  let drew = 0;
+  const step = pw / END_COLS;
+  for(let i = 0; i < END_COLS; i++){
+    const x0 = px + i * step, x1 = x0 + step + 0.7;  /* a hair of overlap, or the
+                                                        seams show sky between them */
+    /* the slot is the gap the two walls leave, so the face and the walls cannot
+       disagree about how wide the way through is */
+    if(x1 > lx && x0 < rx) continue;
+    const lift = ridgeK <= 0 ? 1
+               : 1 + ridgeK * ((ridgeNoise(i, END_RUN, 941) - 0.5) * WALL_RIDGE
+                             + (ridgeNoise(i, 4, 943) - 0.5) * WALL_BREAK * 0.6);
+    const topY = p.y - p.scale * base * lift;
+    if(bot <= topY + 0.5) continue;
+    
+    const far = clamp(1 - fadeAt * 0.55, 0, 1);
+    const facet = ridgeK <= 0 ? 0
+                : (ridgeNoise(i, 3, 947) - 0.5) * WALL_FACET * ridgeK;
+    g.fillStyle = mixRGB(mixRGB(groundTone(seg, !!(i % 2)),
+                                clamp(WALL_SHADE + facet, 0, 1), DROP_DARK),
+                         WALL_HAZE * far, hexRGB(B.sky || '#2a3550'));
+    const yTop = pane ? Math.max(topY, pane.y) : topY;
+    if(bot <= yTop + 0.5) continue;
+    g.fillRect(x0, yTop, x1 - x0, bot - yTop);
+    drew = 1;
+  }
+  return drew;
 }
 
 /* ---- WHICH SIDES A PLACE IS WALLED ON (RLG-297) -------------------------
@@ -25955,11 +26031,17 @@ let wallSeam = [null, null];
    have painted one since a check last reset the count. The count is what a
    harness reads: whether one particular frame painted it is terrain. */
 let rangeDrawn = 0, rangeN = 0, rangeX = 0;
+/* and whether the face at a walled place's boundary was painted (RLG-301) */
+let endWallDrawn = 0, endWallN = 0;
+/* debug: no face at a boundary, so a check can diff the two frames without
+   taking the walls beside the road away with it (RLG-301) */
+let endWallOff = false;
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
   wallSeam = [null, null];
   rangeDrawn = 0;
+  endWallDrawn = 0;
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
@@ -26487,6 +26569,18 @@ function drawRoad(){
             ctx.fillStyle = base;
           }
           wallTrace.push([n, ws, +Math.max(0, wy2).toFixed(1)]);
+        }
+      }
+
+      /* ---- AND THE FACE AT A WALLED PLACE'S BOUNDARY (RLG-301) ----------
+         Once, on the slice the boundary falls in. The walk is far to near, so
+         `idx <= biomeEdge` first becomes true at the edge itself. It is only
+         drawn while the boundary is AHEAD - once it is behind, the massif is
+         behind too and belongs to the glass. */
+      if(!endWallDrawn && biomeEdge > Math.floor(pos/SEG) && idx <= biomeEdge){
+        const eB = BIOMES[biomeTo];
+        if(drawEndWall(ctx, eB, p2, idx + 1, y2, clamp(1 - n/DRAW, 0, 1))){
+          endWallDrawn = 1; endWallN++;
         }
       }
 
@@ -29529,6 +29623,7 @@ function drawMirrorFull(mx, my, mw, mh){
      shifts by one every time the player crosses one.
      ---------------------------------------------------------------- */
   const mFar = Math.floor((pos - MIRROR_BACK) / MSEG) * MSEG;
+  let mEndDrawn = 0;
   for(let wz = mFar; wz < pos - 200; wz += MSEG){
     const a = rproj(0, wz), b2 = rproj(0, wz + MSEG);
     if(!a || !b2) continue;
@@ -29601,6 +29696,33 @@ function drawMirrorFull(mx, my, mw, mh){
        BOTTOM of the pane for the reason the floor is: a slice the walk skips
        must not leave a hole, and the nearer slices' own ground lands over it.
        ---------------------------------------------------------------- */
+    /* ---- AND THE FACE YOU CAME THROUGH, BEHIND YOU (RLG-301) --------
+       Owner, 2026-09-20: the canyon walls facing the roadway "also in the
+       rearview mirror when you exit one". The glass walks far to near behind
+       you exactly as the road pass walks far to near ahead, so the massif goes
+       in at the first step AT OR PAST the boundary and everything between it
+       and the car is painted over it afterwards.
+
+       THE PLACE IS READ FROM THE SEGMENT BEYOND THE EDGE rather than from
+       `biomeFrom`, because `biomeFrom` becomes the NEW place the moment the
+       change completes - and that is exactly when you are looking back at the
+       one you left. Two segments past the edge is inside the canyon whichever
+       way the blend has gone. */
+    /* ---- AND ONLY WHILE THE BOUNDARY IS STILL IN THE GLASS ------------
+       `widx >= biomeEdge` is true for EVERY step once the edge has fallen past
+       the mirror's own reach, so the first step drew the massif at the back of
+       the pane and left it there for ever - measured still painting with the
+       boundary 52,000 units behind a glass that looks 34,000 back. The edge has
+       to be inside `MIRROR_BACK` for there to be anything to look at. */
+    if(!mEndDrawn && biomeEdge < Math.floor(pos/SEG)
+       && biomeEdge * SEG > pos - MIRROR_BACK && widx >= biomeEdge){
+      const xB = bioAt(biomeEdge - 2);
+      if(drawEndWall(ctx, xB, a, biomeEdge - 1, a.y,
+                     clamp((pos - wz) / MIRROR_BACK, 0, 1),
+                     { x:mx, w:mw, y:my, h:mh })){
+        mEndDrawn = 1; endWallN++;
+      }
+    }
     if(!mB.truss && !mB.overWater){
       const mWalls = wallSides(mB);
       if(mWalls){
@@ -34259,6 +34381,14 @@ requestAnimationFrame(frameLoop);
   /* which sides this place is walled on, and what the wall pass actually painted */
   API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
   API.rangeOff = function(on){ rangeOff = !!on; return rangeOff; };
+  /* the face at a walled place's boundary: whether it painted this frame, and on
+     how many frames since a check last reset the count (RLG-301) */
+  API.endWallOff = function(on){ endWallOff = !!on; return endWallOff; };
+  API.endWall = function(reset){
+    const out = { drawn:endWallDrawn, frames:endWallN };
+    if(reset) endWallN = 0;
+    return out;
+  };
   API.rangeModel = function(o){
     if(o){
       if(o.scale > 0) RANGE_SCALE = o.scale;

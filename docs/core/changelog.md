@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-110"></a>
+## [0.14.110] - 2026-09-20
+- Added: **a canyon has a face at its mouth, and you see it behind you when you leave.** Its walls
+  ran alongside the road and nothing stood at the end of them, so a canyon seen from a mile of
+  desert was a thin sliver at the vanishing point that widened as you reached it - you never drove
+  AT anything. The massif is the place's own rock across the whole view, cut into columns with a
+  broken top, and the slot through it is exactly the gap the two walls leave.
+  [RLG-301](../fragments/RLG-301.md)
+
 <a id="v0-14-109"></a>
 ## [0.14.109] - 2026-09-20
 - Removed: **the loose rock in front of a canyon or mountain's sheer face.** Both places drew
