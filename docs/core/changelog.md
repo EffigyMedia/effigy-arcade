@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-108"></a>
+## [0.14.108] - 2026-09-20
+- Fixed: **the range across the valley stands in the valley, and drifts as you pass it.** It was
+  planted just under the horizon at the furthest slice, which is the same thing as planting it ON
+  the horizon - every nearer slice paints its own ground from there down, so all that survived was
+  peaks poking above the skyline. It stands on the valley floor at its own distance now, with the
+  near valley swallowing its feet. And it slides slowly along the side as you drive, because it is
+  a few thousand units out rather than miles away. [RLG-297](../fragments/RLG-297.md)
+
 <a id="v0-14-107"></a>
 ## [0.14.107] - 2026-09-20
 - Added: **a range of peaks stands across the valley on a mountain's drop side.** The drop had a lit

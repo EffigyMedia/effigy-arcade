@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.107';
+window.ROAD_BUILD = '0.14.108';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15394,8 +15394,10 @@ const CAP_RUN = 9;         /* in segments, for both boundaries                */
 
    Tunables with committed defaults; `API.rangeModel` reads and writes them. */
 let RANGE_SCALE = 2.1,   /* how much bigger than the horizon band, so nearer  */
-    RANGE_DROP  = 0.030, /* how far its feet sit below the horizon, of H      */
-    RANGE_ALPHA = 0.88;  /* how solid it is against the floor behind it       */
+    RANGE_AT    = 0.78,  /* how far down the draw it stands, as a fraction    */
+    RANGE_SINK  = 0.35,  /* how much of its foot the valley floor swallows    */
+    RANGE_DRIFT = 0.0042,/* how fast it slides past, in pixels per road unit  */
+    RANGE_ALPHA = 0.92;  /* how solid it is against the floor behind it       */
 let rangeOff = false;    /* debug: no range, so a check can diff two frames   */
 /* ---- SMOOTH, NOT SPECKLED --------------------------------------------
    `sceneRand` answers a fresh number per index, and a height taken straight
@@ -15775,7 +15777,7 @@ function hazardSide(B){
    crest and its feet, so it cannot spill down the screen if a tunable is set
    to something silly.
    ------------------------------------------------------------------------ */
-function drawValleyRange(g, B, side, horizonY, farSeg){
+function drawValleyRange(g, B, side, feetY, farSeg){
   if(!B || !B.range || rangeOff || !side) return 0;
   const art = skylineFor(B.name);
   if(!art || !art.body) return 0;
@@ -15784,7 +15786,20 @@ function drawValleyRange(g, B, side, horizonY, farSeg){
   const sc = (H * 0.13 * skyRiseOf(B.name) / sh) * RANGE_SCALE;
   const w2 = sw * sc, h2 = sh * sc;
   if(w2 < 1 || h2 < 1) return 0;
-  const feet = horizonY + H * RANGE_DROP;
+  /* ---- IT STANDS ON THE FLOOR AT ITS OWN DISTANCE ----------------------
+     `feetY` is where the valley floor projects at the slice this is drawn on,
+     and the range is planted there rather than under the horizon. The first
+     build put its feet a fixed few per cent below the horizon and drew it at
+     the FURTHEST slice, which is the same thing as drawing it ON the horizon:
+     every slice nearer than that paints its own ground from just under the
+     horizon downward, so all that survived was the peaks poking ABOVE the
+     skyline. The owner read that correctly - "there is no opposing range" -
+     because what was on screen was a taller horizon, not land across a valley.
+
+     `RANGE_SINK` puts the feet below the floor line on purpose, so the near
+     floor swallows the bottom of the range the way ground swallows the bottom
+     of anything standing behind a rise. */
+  const feet = feetY + h2 * RANGE_SINK;
   const top  = feet - h2;
   /* the vanishing point, the same expression the far road and the coast use */
   const vx = W/2 + viewShift + bendPx(farSeg * SEG);
@@ -15793,11 +15808,22 @@ function drawValleyRange(g, B, side, horizonY, farSeg){
   if(side < 0) g.rect(0, top, Math.max(0, vx), feet - top);
   else         g.rect(vx, top, Math.max(0, W - vx), feet - top);
   g.clip();
-  /* a nearer thing sweeps more than the horizon does, so it takes the same
-     chase the skyline is on and a little more of it */
-  let o2 = ((-camX * W * 0.030) + skySmooth * 1.55) % w2;
+  /* ---- AND IT DRIFTS PAST, BECAUSE IT IS OUT TO THE SIDE ---------------
+     Owner, 2026-09-20: "it needs to move slowly parallaxed along the side as if
+     it's laterally out from the road." The horizon band does NOT do this and is
+     right not to - a skyline miles off is the same skyline a mile later, which
+     is why its only motion is the bend swinging it. A range across a valley is
+     a few thousand units out, so driving past it moves it, slowly, and that
+     motion is the whole difference between a thing standing in the world and a
+     thing painted on the sky.
+
+     `pos` is the road travelled, so the offset is simply a small multiple of
+     it. It takes the bend's chase as well, because it is still far enough away
+     to swing with a corner. */
+  let o2 = ((-camX * W * 0.030) + skySmooth * 1.55 - pos * RANGE_DRIFT) % w2;
   if(o2 > 0) o2 -= w2;
   g.globalAlpha = RANGE_ALPHA;
+  rangeX = +o2.toFixed(2);          /* where the tiling started, for a check */
   for(let x = o2; x < W + w2; x += w2) g.drawImage(art.body, x, top, w2, h2);
   g.globalAlpha = 1;
   g.restore();
@@ -25911,7 +25937,7 @@ let wallSeam = [null, null];
 /* whether the valley range has been painted THIS frame, and how many frames
    have painted one since a check last reset the count. The count is what a
    harness reads: whether one particular frame painted it is terrain. */
-let rangeDrawn = 0, rangeN = 0;
+let rangeDrawn = 0, rangeN = 0, rangeX = 0;
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
@@ -26233,8 +26259,21 @@ function drawRoad(){
            measured as `painted 0` on a mountain that was plainly showing one
            the run before. The walk is far to near, so the first is the
            furthest. */
-        if(!rangeDrawn && drawValleyRange(ctx, dB, dropSide, horizon,
-                                          Math.floor(pos/SEG) + DRAW)){
+        /* ---- AT ITS OWN DISTANCE DOWN THE VALLEY --------------------------
+           Drawn ONCE, on the first slice at or nearer than `RANGE_AT` of the
+           draw, and straight after that slice's floor - so every nearer slice's
+           ground and floor are painted afterwards and land in front of it. That
+           is what makes the near valley swallow its feet and leaves the land
+           across the valley standing above them.
+
+           NOT AT THE FURTHEST SLICE, which is what the first build did: at that
+           distance the floor line IS the horizon, every nearer slice paints
+           from just under the horizon down, and all that survived was peaks
+           poking above the skyline. `<=` rather than `===` because the slice at
+           exactly that index is culled behind a crest often enough to matter -
+           the same fault, one level down, that made `n === DRAW` unreliable. */
+        if(!rangeDrawn && n <= DRAW * RANGE_AT
+           && drawValleyRange(ctx, dB, dropSide, fy1, idx)){
           rangeDrawn = 1; rangeN++;
         }
         dropTrace.rim[n] = y1;
@@ -34202,12 +34241,14 @@ requestAnimationFrame(frameLoop);
   API.rangeModel = function(o){
     if(o){
       if(o.scale > 0) RANGE_SCALE = o.scale;
-      if(o.drop  >= 0) RANGE_DROP = o.drop;
+      if(o.at    >  0) RANGE_AT    = o.at;
+      if(o.sink  >= 0) RANGE_SINK  = o.sink;
+      if(o.drift >= 0) RANGE_DRIFT = o.drift;
       if(o.alpha >= 0) RANGE_ALPHA = o.alpha;
     }
     if(o && o.reset) rangeN = 0;
-    return { scale:RANGE_SCALE, drop:RANGE_DROP, alpha:RANGE_ALPHA,
-             drawn:rangeDrawn, frames:rangeN };
+    return { scale:RANGE_SCALE, at:RANGE_AT, sink:RANGE_SINK, drift:RANGE_DRIFT,
+             alpha:RANGE_ALPHA, drawn:rangeDrawn, frames:rangeN, x:rangeX };
   };
   API.wallTrace = function(){ return wallTrace.slice(); };
   /* debug: put the hazard on a NAMED side, so a check can render the same place

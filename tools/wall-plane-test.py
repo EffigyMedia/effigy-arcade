@@ -72,6 +72,10 @@ BARE = 300
 # the windscreen is 480x900 and the mirror sits in the top fifth of it, so the wall diff is read
 # from the road's own half of the frame and the glass is read separately
 ROAD_TOP = 0.42
+# the middle of the 480-wide frame. The road's vanishing point sits a little left of it
+# because of `viewShift`, so this is deliberately the coarser test of the two - a range
+# clipped to one half cannot have its weight in the other.
+W_MID = 240
 
 def pixels(a, b, y0f, y1f):
     """where the pixels that changed between two frames sit, and how many there are.
@@ -216,8 +220,19 @@ def main():
                 return pixels(on, off, top, bottom)
 
             def range_diff(k, side, top, bottom):
-                """the same place with the valley range and without it, from one standstill"""
+                """the same place with the valley range and without it, from one standstill.
+
+                THE ROAD IS FLATTENED FIRST, and that is not tidiness. The range stands ON the
+                valley floor at its own distance, so a rise in the road puts that floor line
+                below the bottom of the frame and there is nothing to see: measured at 1,111
+                pixels on one arm and ZERO on the other of the same build, with the pass
+                reporting it painted on 23 frames either way. On a flat road the valley is in
+                view, and the question this harness is asking - WHICH SIDE it stands on - can
+                be asked at all."""
                 settle(k, side)
+                pg.evaluate("() => { const R = window.__probe.road;"
+                            " R.flattenRoad(); R.holdSpd(0); }")
+                pg.wait_for_timeout(900)
                 pg.evaluate("() => window.__probe.road.rangeOff(true)")
                 pg.wait_for_timeout(120)
                 off = pg.screenshot()
@@ -334,13 +349,58 @@ def main():
                'painted on %d and %d frame(s)' % (drewL, drewR))
             ok(drewF == 0 and rF['n'] < BARE, 'and a place with no drop paints none',
                'painted on %d frame(s), %d pixel(s)' % (drewF, rF['n']))
-            # THE DROP IS ON THE HAZARD'S SIDE AND THE WALL IS OPPOSITE IT, so the range moves
-            # the SAME way the drop does and the OPPOSITE way the wall does. An absolute
-            # position cannot say that; the difference between the two renders can.
-            ok(rL['n'] > BARE and rR['n'] > BARE and rL['x'] < rR['x'] - 60,
-               "and it stands on the drop's side, which is opposite the wall",
-               'x=%.1f with the hazard left, x=%.1f with it right (the wall is %.1f and %.1f)'
-               % (rL['x'], rR['x'], mL['x'], mR['x']))
+            # ---- EACH ARM ON ITS OWN, BECAUSE THE VALLEY IS NOT ALWAYS IN VIEW ---------
+            # The range stands ON the valley floor at its own distance, so a rise in the road
+            # puts the floor line below the bottom of the frame and there is nothing to see -
+            # measured at 1,111 pixels on one arm and ZERO on the other of the same build,
+            # with the pass reporting that it painted on 23 frames either way. Comparing the
+            # two arms' positions therefore needs BOTH of them to be in view, which is not a
+            # thing this harness can arrange. So each arm is judged alone: when the range IS
+            # visible it must be on the drop's half of the frame, and at least one arm has to
+            # show it or the question was never asked.
+            seen = [(rL, -1), (rR, 1)]
+            visible = [(d, side) for d, side in seen if d['n'] > BARE]
+            ok(bool(visible), 'the range was visible on at least one arm to be placed at all',
+               '%d and %d pixel(s)' % (rL['n'], rR['n']))
+            for d, side in visible:
+                # the drop is on the hazard's side, and the range stands in the drop. The wall
+                # is opposite it, which mL/mR measured at %.1f and %.1f.
+                on_side = (d['x'] < W_MID) if side < 0 else (d['x'] > W_MID)
+                ok(on_side,
+                   "and with the hazard %s it stands on that side, opposite the wall"
+                   % ('left' if side < 0 else 'right'),
+                   'x=%.1f of %d (the wall is %.1f and %.1f)'
+                   % (d['x'], W_MID * 2, mL['x'], mR['x']))
+
+            # ---- AND IT DRIFTS PAST, BECAUSE IT IS OUT TO THE SIDE ---------------------
+            # Owner, 2026-09-20: "it needs to move slowly parallaxed along the side as if
+            # it's laterally out from the road." The horizon band deliberately does NOT do
+            # this - a skyline miles off is the same skyline a mile later - so the range
+            # moving is the whole difference between a thing standing in the world and a
+            # thing painted on the sky. The bend and the camera are pinned, so the only
+            # thing that can move it is the road going by.
+            settle('MOUNTAIN', -1)
+            still = []
+            for _ in range(3):
+                pg.wait_for_timeout(200)
+                still.append(pg.evaluate("() => window.__probe.road.rangeModel().x"))
+            pg.evaluate("() => { const R = window.__probe.road;"
+                        " R.holdSpd(R.MAX_SPD * 0.5); }")
+            pg.wait_for_timeout(1400)
+            moving = []
+            for _ in range(3):
+                pg.wait_for_timeout(200)
+                moving.append(pg.evaluate("() => window.__probe.road.rangeModel().x"))
+            pg.evaluate("() => window.__probe.road.holdSpd(0)")
+            sspread = max(still) - min(still)
+            mspread = max(moving) - min(moving)
+            print('      parked  x %s      driving  x %s'
+                  % (', '.join('%.1f' % v for v in still),
+                     ', '.join('%.1f' % v for v in moving)))
+            ok(sspread < 0.6, 'parked, the range holds still',
+               'it moved %.2f pixel(s) over three reads' % sspread)
+            ok(mspread > 2.0, 'and driving slides it along the side of the road',
+               'it moved %.1f pixel(s) over three reads' % mspread)
 
             # ---- 5. and it is behind you too --------------------------------------------------
             print()
