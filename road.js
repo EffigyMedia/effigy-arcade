@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.100';
+window.ROAD_BUILD = '0.14.101';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -12707,6 +12707,12 @@ function reset(){
      the line the launch is worth having. */
   pos=0; playerX=0; camX=0; targetX=0; spd=0; signalledMerges=0; signalsStarted=0; mergesAborted=0; patrolsWoken=0; radioSent=0; patrolsMade=0; copOrigins=[];
   gear=1; idleRev=IDLE; autoHold=0; autoDownT=0;
+  /* THE WHEEL IS NOT RESET HERE AND MUST NOT BE. `reset()` can fire during
+     setup through the CFG seam's `onReset`, before the wheel's own `let`s are
+     evaluated, and a `let` in its dead zone throws even under `typeof`. It
+     costs nothing to leave: a run starts with `targetX` and `playerX` both at
+     zero, so the demand is zero and the rim eases to straight inside a tenth
+     of a second - on a screen where the wheel is not drawn yet (RLG-298). */
   if(typeof knobRail !== 'undefined'){ knobRail=0; knobY=TOP_Y; }
   /* a car with no bottle starts with nothing in it rather than with a charge
      nothing in the game can ever spend (RLG-107) */
@@ -14052,6 +14058,9 @@ function autoGear(dt){
 
 let brakeLamp = 0;
 let slipT = 0, coasting = false, slideX = 0;
+/* the mark the front wheels are pointed at this frame, published so the
+   steering wheel can show the lock still outstanding (RLG-298) */
+let steerAim = 0;
 /* the wheel's position last frame, so the lateral block can read how fast it
    was moved rather than how far the car still has to go (RLG-048) */
 let lastTarget = 0;
@@ -18601,7 +18610,38 @@ let wheelGrab = null, wheelDpr = 0;
    is a rate, not a position: it winds on as you drag and unwinds to straight
    the moment you stop, exactly as the car stops changing lanes.
    -------------------------------------------------------------------------- */
-let steerTurn = 0;            /* -1 hard left, +1 hard right */
+let steerTurn = 0;            /* -1 hard left, +1 hard right — what the rim shows */
+/* the two terms behind it, kept apart so each can be tuned on its own */
+let wheelIn = 0;              /* the lock the front wheels are being asked for */
+let wheelKick = 0;            /* what the road is sending back up the column   */
+let wheelT = 0;               /* the shiver's own clock                        */
+let wheelPrevSlide = 0;       /* last frame's slide, to read the rate of it    */
+/* the per-step trace, null unless a harness has asked for it - see stepWheel */
+let wheelTrace = null;
+const WHEEL_TRACE_MAX = 4000;
+/* ---- THE WHEEL FOLLOWS THE INPUT, WITH FEEDBACK ON TOP (RLG-298) --------
+   Owner, 2026-09-20: "the steering wheel rotates based on the movement of the
+   car e.g. all the forces acting upon it, but it should only follow the inputs
+   to the front wheels", and "there would be some force feedback based on the
+   friction of the road, coming back up through the tires through the steering
+   column."
+
+   So there are two terms and they are separate on purpose. `lock` and `ease`
+   belong to the driver's half; `grain`, `bite` and `kick` belong to the road's.
+   Tunable at runtime through `API.wheelModel`, for the same reason the wet and
+   the slip models are - this is a FEEL change and only the owner can sign it
+   off, and a rebuild between readings turns one sitting into five.
+   -------------------------------------------------------------------------- */
+const WHEEL = {
+  lock:  0.55,  /* the outstanding demand, in lanes, that reads as full lock   */
+  ease:  14,    /* how fast the rim catches up with that demand                */
+  grain: 0.055, /* the shiver a surface with nothing left in it sends up       */
+  bite:  0.9,   /* how much of the shiver comes from the tyres being loaded    */
+  rough: 1.6,   /* how much rougher the verge is than a wet road               */
+  kick:  0.85,  /* how hard a tyre letting go kicks the rim                    */
+  cap:   0.35,  /* the most a kick may be — it must not read as steering       */
+  lag:   9      /* how fast a kick arrives and dies away                       */
+};
 
 /* ---- the wheel is for thumbs only ---------------------------------------
    A player with a keyboard or a pad is not going to drag a wheel, so showing
@@ -18618,30 +18658,90 @@ function applyTouchUI(){
              : optTouchUI === 'ON'  ? false
              : usingHardware;
   document.body.classList.toggle('hardware', hide);
-  if(hide) steerTurn = 0;
+  if(hide) steerTurn = wheelIn = wheelKick = 0;
 }
 function setInputSource(hardware){
   if(usingHardware === hardware) return;
   usingHardware = hardware;
   applyTouchUI();
 }
-/* ---- the wheel shows what the CAR is doing ------------------------------
-   It used to wind from the finger, so holding a drag against the edge of the
-   road kept turning the wheel while the car sat still against the verge. The
-   angle is now taken from the car's ACTUAL lateral movement: if the car is not
-   changing lanes, the wheel is straight, whatever your thumb is doing. That
-   makes them exactly in sync by construction rather than by tuning.
+/* ---- WHY THE DEMAND AND NOT THE MOVEMENT --------------------------------
+   Three versions of this have now been wrong in two opposite directions.
+
+   It first wound straight from the FINGER, so holding a drag against the edge
+   of the road kept turning the wheel while the car sat still against the verge.
+   The fix for that read the car's ACTUAL lateral movement - and that is the
+   defect the owner is naming here, because the car's movement is the sum of
+   every force on it. A shunt from behind, a corner running the car wide, the
+   crowd pushing it out of a pack and a wet road carrying it past its mark all
+   turned the rim, none of which is the driver steering.
+
+   WHAT THE FRONT WHEELS ARE ACTUALLY DOING is the demand still outstanding:
+   `steerAim` is the mark the wheels are pointed at and `playerX` is where the
+   car has got to, so the difference IS the lock being carried. It winds on the
+   instant a lane is asked for and unwinds as the car arrives; it is zero when
+   the car is settled; and it is zero pinned against the shoulder, because the
+   aim and the car clamp to the same edge - which is the original bug fixed
+   without reading the car's movement to do it.
+
+   WHY `steerAim` AND NOT `targetX`, WHICH IS THE PURER READING OF THE RULING.
+   The aim is the thumb's mark PLUS `slideX`, the distance a slippery road is
+   going to carry the car past it - and that difference decides whether the rim
+   is centred when the car is parked on snow. Against `targetX` it is not: the
+   slide DOES NOT FADE by design, so the car comes to rest past the mark and the
+   rim would hold that much counter-lock for as long as the driver held the
+   lane. `SLIP.hold` is 1.20 and `WET.floor` leaves 0.66 of slick, so that
+   resting offset reaches 0.79 of a lane - past full lock on a stationary car.
+   Against the aim it is zero, and the slide instead shows up while it is
+   HAPPENING, as extra lock carried for longer on a road that will not hold the
+   car. That is the road at the rim, which is what was asked for.
+
+   The feedback term is small by design and is CAPPED. It is the road talking,
+   and the moment it is large enough to be read as steering it is lying.
    -------------------------------------------------------------------------- */
-let wheelPrevX;
 function stepWheel(dt){
-  if(wheelPrevX === undefined) wheelPrevX = playerX;
-  const moved = (playerX - wheelPrevX) / Math.max(1/240, dt);   /* lanes/sec */
-  wheelPrevX = playerX;
-  /* full lock at about 2.4 lanes a second, which is as fast as the car turns */
-  const want = clamp(moved / 2.4, -1, 1);
-  /* a little smoothing so it does not jitter frame to frame */
-  steerTurn += (want - steerTurn) * Math.min(1, dt*14);
-  if(Math.abs(steerTurn) < 0.004) steerTurn = 0;
+  /* ---- the driver's half ---- */
+  const want = clamp((steerAim - playerX) / WHEEL.lock, -1, 1);
+  wheelIn += (want - wheelIn) * Math.min(1, dt * WHEEL.ease);
+  if(Math.abs(wheelIn) < 0.004) wheelIn = 0;
+
+  /* ---- the road's half ----------------------------------------------------
+     A shiver whose amplitude is how little grip there is to spare: the wet
+     itself, the verge, which is rougher than any wet tarmac, and `cornerLoad`,
+     which is how hard the corner is already working the tyres (RLG-099). Two
+     sines at rates that do not divide into each other, so it never settles into
+     a visible beat. It scales with speed, so a stopped car has a dead wheel.
+     -------------------------------------------------------------------- */
+  wheelT += dt;
+  const slick = 1 - wetGrip();
+  const rough = Math.abs(playerX) > 1.0 ? WHEEL.rough : 0;
+  const fast  = clamp(spd / (MAX_SPD * 0.5), 0, 1);
+  const grain = (Math.sin(wheelT * 41.3) + Math.sin(wheelT * 67.1)) * 0.5
+              * WHEEL.grain * fast * (slick + rough + cornerLoad * WHEEL.bite);
+  /* and a kick when a tyre lets go: the rate at which the road is carrying the
+     car past the mark it was aimed at, which is the one number in the lateral
+     block that is grip failing rather than the driver asking */
+  const letGo = (slideX - wheelPrevSlide) / Math.max(1/240, dt);
+  wheelPrevSlide = slideX;
+  const kick = clamp(letGo * WHEEL.kick, -WHEEL.cap, WHEEL.cap);
+  wheelKick += (kick - wheelKick) * Math.min(1, dt * WHEEL.lag);
+
+  steerTurn = clamp(wheelIn + wheelKick + grain, -1, 1);
+  /* ---- THE RIM MOVES FASTER THAN A FRAME (RLG-298) ----------------------
+     `FIXED` is 1/120 and a display is 60, so the world is advanced TWICE in an
+     animation frame and a harness sampling on `requestAnimationFrame` cannot
+     see a single step. That is not a detail here: the one reading that tells
+     the two models of this wheel apart is the step on which the car has been
+     moved and has not yet been steered back, and folding two steps into one
+     reading loses it - measured at -0.014 where the step itself reads +0.12.
+     So the trace is on the ENGINE's clock. Off by default and it costs a
+     boolean when it is off; `API.wheelTrace` turns it on and reads it back. */
+  if(wheelTrace){
+    wheelTrace.push({ step:stepN, turn:+steerTurn.toFixed(4), input:+wheelIn.toFixed(4),
+                      kick:+wheelKick.toFixed(4), x:+playerX.toFixed(4),
+                      demand:+(steerAim - playerX).toFixed(4) });
+    if(wheelTrace.length > WHEEL_TRACE_MAX) wheelTrace.shift();
+  }
 }
 
 
@@ -19614,7 +19714,16 @@ if(AR && AR.pad) AR.pad.onPress(name=>{
 
 /* ---------- simulation ---------- */
 let simT = 0;
+/* ---- HOW MANY TIMES THE WORLD HAS BEEN ADVANCED ------------------------
+   `frameLoop` runs a fixed-timestep accumulator, so ONE animation frame can
+   carry none, one or two of these. A harness sampling on `requestAnimationFrame`
+   therefore cannot tell how much world went by between two of its own readings,
+   which is the recorded lesson that a harness holding the world still must hold
+   it on the ENGINE's clock. Published through `API.steps` so a check that has to
+   name a single step can name one (RLG-298). */
+let stepN = 0;
 function step(dt){
+  stepN++;
   /* ---- A RESUME HOLDS THE WHOLE WORLD (RLG-147) ------------------------
      Only the count runs: nothing moves, nothing scores, nothing spends the
      clock. See `startResumeCount`. */
@@ -19825,6 +19934,7 @@ function step(dt){
   /* the edge is the road's, or a bore's wall when you are in one (RLG-237) */
   const edge = edgeX();
   const aim = clamp(targetX + slideX, -edge, edge);
+  steerAim = aim;                 /* the steering wheel reads this (RLG-298) */
   const grip = 1 - Math.exp(-STEER.snap*dt);
   /* the ceiling is this car's, not the fleet's (RLG-119) */
   const lim  = steerRate() * dt;
@@ -33969,6 +34079,16 @@ requestAnimationFrame(frameLoop);
     if(o) for(const k in o) if(k in SLIP) SLIP[k] = o[k];
     return Object.assign({}, SLIP);
   };
+  /* the wheel's two terms, apart, so a check can prove the rim follows the
+     DEMAND and not the car's movement (RLG-298) - reading `steerTurn` alone
+     cannot tell the input from the feedback riding on it */
+  API.wheelModel = function(o){
+    if(o) for(const k in o) if(k in WHEEL) WHEEL[k] = o[k];
+    return { turn:+steerTurn.toFixed(4), input:+wheelIn.toFixed(4),
+             kick:+wheelKick.toFixed(4), aim:+steerAim.toFixed(4),
+             x:+playerX.toFixed(4), demand:+(steerAim - playerX).toFixed(4),
+             steps:stepN, model:Object.assign({}, WHEEL) };
+  };
   /* the live lateral state, so a check can watch a slide arrive and wash off
      rather than infer it from where the car ended up */
   API.slide = function(){ return { slide:+slideX.toFixed(5), target:+targetX.toFixed(4),
@@ -36152,6 +36272,27 @@ requestAnimationFrame(frameLoop);
      verge - a jump of a third of a lane that has nothing to do with grip and
      lands in the measurement as though it did. */
   API.setLane = function(x){ targetX = playerX = camX = (x || 0); return playerX; };
+  /* ---- A FORCE THE DRIVER DID NOT ASK FOR (RLG-298) ---------------------
+     Moves the CAR across the road and leaves the aim where it was, which is
+     what a shunt from behind and a rub down the side both do. It is the one
+     thing that tells the ruling's two models apart: a wheel driven by the
+     car's movement follows the shove, and a wheel driven by the demand turns
+     the OTHER way, because the car now has to be steered back. Every other
+     force in the engine moves `targetX` and so moves both models together.
+     Harness only, and it writes exactly what `nudge` writes. */
+  API.steps = function(){ return stepN; };
+  /* the wheel, every ENGINE step rather than every frame. `on` starts a fresh
+     trace, `off` ends it; either way the rows so far come back (RLG-298). */
+  API.wheelTrace = function(on){
+    const out = wheelTrace ? wheelTrace.slice() : [];
+    if(on === true) wheelTrace = [];
+    else if(on === false) wheelTrace = null;
+    return out;
+  };
+  API.shove = function(d){
+    playerX = clamp(playerX + (d || 0), -EDGE_X, EDGE_X);
+    return +playerX.toFixed(4);
+  };
   /* ---- ONE CAR, WHERE YOU PUT IT (RLG-058) -----------------------------
      The instrument this ruling asks for drives at a known lateral offset and
      reports the offset at which a hit registers. That needs a car standing

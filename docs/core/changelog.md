@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-101"></a>
+## [0.14.101] - 2026-09-20
+- Changed: **the steering wheel follows the input to the front wheels.** It was reading the car's
+  lateral movement, which is the sum of every force on it - a shunt from behind, a corner running the
+  car wide, another car pushing it out of a pack and a wet road carrying it past its mark all turned
+  the rim, and none of those is the driver steering. It now shows the lock still outstanding: it
+  winds on the instant a lane is asked for, unwinds as the car arrives, and is straight when the car
+  is settled. [RLG-298](../fragments/RLG-298.md)
+- Added: **the road comes back up the steering column.** A shiver whose strength is how little grip
+  is left - the wet, the verge, and how hard a corner is already working the tyres - plus a kick when
+  a tyre lets go. Both are capped well below what reads as steering, and every part of it is a
+  tunable with a committed default in `WHEEL`. [RLG-298](../fragments/RLG-298.md)
+
 <a id="v0-14-52"></a>
 ## [0.14.52] - 2026-09-16
 - Changed: **the road edge is the biome's own ground.** The red-and-white kerb is gone and the tarmac
