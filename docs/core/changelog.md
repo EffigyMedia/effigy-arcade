@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-107"></a>
+## [0.14.107] - 2026-09-20
+- Added: **a range of peaks stands across the valley on a mountain's drop side.** The drop had a lit
+  lip, a floor twelve camera heights down and then the horizon, so the eye read down into a hazed
+  plane and never across to anything. What tells you a valley is a valley is the land on its far
+  side. It is the place's own skyline art drawn nearer and lower, clipped to the side the drop is on.
+  [RLG-297](../fragments/RLG-297.md)
+
 <a id="v0-14-106"></a>
 ## [0.14.106] - 2026-09-20
 - Fixed: **the road had almost no traffic.** Doubling the draw put the spawn horizon at 65,000 while

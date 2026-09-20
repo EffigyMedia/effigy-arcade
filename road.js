@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.106';
+window.ROAD_BUILD = '0.14.107';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14532,6 +14532,9 @@ const BIOMES = {
                  the FULL ridge: a mountainside is broken, and the owner turned
                  down the version that was one flat height in one colour */
               wall:2.2, ridge:1,
+              /* and a range stands across the valley on the drop side, drawn
+                 from this place's own peaks (RLG-297) */
+              range:1,
               sky:'#33405e', city:0.10, trees:0.55, skyForm:'peak' },
   /* ---- A CITY HAS NO CLIMATE OF ITS OWN, SO IT ROLLS ONE (RLG-109) ----
      `vary` at 0.45 is the widest on the board and it is doing the work a
@@ -15368,6 +15371,32 @@ let WALL_FOOT = 0.34,      /* how dark the foot of the face goes              */
     WALL_CAP_VARY = 0.34,  /* and how much THAT wanders                       */
     WALL_LAP = 0.7;        /* how far a band starts behind the seam, in pixels */
 const CAP_RUN = 9;         /* in segments, for both boundaries                */
+/* ---- AND A RANGE ACROSS THE VALLEY (owner, 2026-09-20, RLG-297) ---------
+   "And what about distance mountain scenery (same as skyline) out to the side
+   where the drop is?"
+
+   THE DROP SIDE HAD NOTHING STANDING IN IT. Beyond the rim there is a lit lip,
+   a floor twelve camera heights down, and then the horizon - so the eye reads
+   DOWN into a hazed plane and never ACROSS to anything. What tells you a valley
+   is a valley is the land on its far side.
+
+   IT IS THE PLACE'S OWN SKYLINE ART, DRAWN NEARER. Same band, a larger scale
+   and a base below the horizon, so it stands in the valley rather than on the
+   edge of the world - and it is the same drawing as the horizon's, so a
+   mountain's far side is made of the mountain's own peaks rather than of a
+   second set that could drift away from them.
+
+   IT IS DRAWN IN THE ROAD PASS, NOT IN `drawSky`, and that is not a detail. The
+   sky is painted before the ground, and the valley floor is painted over it -
+   so a range drawn with the skyline would be buried by the floor it is supposed
+   to be standing behind. It goes in at the FARTHEST drawn slice, straight after
+   that slice's floor, which puts every nearer thing in front of it for free.
+
+   Tunables with committed defaults; `API.rangeModel` reads and writes them. */
+let RANGE_SCALE = 2.1,   /* how much bigger than the horizon band, so nearer  */
+    RANGE_DROP  = 0.030, /* how far its feet sit below the horizon, of H      */
+    RANGE_ALPHA = 0.88;  /* how solid it is against the floor behind it       */
+let rangeOff = false;    /* debug: no range, so a check can diff two frames   */
 /* ---- SMOOTH, NOT SPECKLED --------------------------------------------
    `sceneRand` answers a fresh number per index, and a height taken straight
    from it is a comb rather than a ridge. This picks a value per BUCKET of
@@ -15738,6 +15767,43 @@ function hazardSide(B){
   if(!B || !B.hazard) return 0;
   return B.hazard === 'water' ? sideRoll : hazardRoll;
 }
+/* ---- THE RANGE ON THE FAR SIDE OF A DROP (RLG-297) ---------------------
+   `side` is the drop's own side, so the range is clipped to the half of the
+   frame the valley is in - the same split the coast's islands use, at the
+   ROAD'S OWN VANISHING POINT, because that is where the two sides of the
+   picture meet. It is clipped vertically as well, to the band between its own
+   crest and its feet, so it cannot spill down the screen if a tunable is set
+   to something silly.
+   ------------------------------------------------------------------------ */
+function drawValleyRange(g, B, side, horizonY, farSeg){
+  if(!B || !B.range || rangeOff || !side) return 0;
+  const art = skylineFor(B.name);
+  if(!art || !art.body) return 0;
+  const sh = art.body.height, sw = art.body.width;
+  if(!sh || !sw) return 0;
+  const sc = (H * 0.13 * skyRiseOf(B.name) / sh) * RANGE_SCALE;
+  const w2 = sw * sc, h2 = sh * sc;
+  if(w2 < 1 || h2 < 1) return 0;
+  const feet = horizonY + H * RANGE_DROP;
+  const top  = feet - h2;
+  /* the vanishing point, the same expression the far road and the coast use */
+  const vx = W/2 + viewShift + bendPx(farSeg * SEG);
+  g.save();
+  g.beginPath();
+  if(side < 0) g.rect(0, top, Math.max(0, vx), feet - top);
+  else         g.rect(vx, top, Math.max(0, W - vx), feet - top);
+  g.clip();
+  /* a nearer thing sweeps more than the horizon does, so it takes the same
+     chase the skyline is on and a little more of it */
+  let o2 = ((-camX * W * 0.030) + skySmooth * 1.55) % w2;
+  if(o2 > 0) o2 -= w2;
+  g.globalAlpha = RANGE_ALPHA;
+  for(let x = o2; x < W + w2; x += w2) g.drawImage(art.body, x, top, w2, h2);
+  g.globalAlpha = 1;
+  g.restore();
+  return 1;
+}
+
 /* ---- WHICH SIDES A PLACE IS WALLED ON (RLG-297) -------------------------
    A canyon is walled on BOTH sides - that is what a canyon is. A mountain has a
    cliff on one side and the hill it is cut into on the other, so its wall is
@@ -25842,10 +25908,15 @@ let wallTrace = [];
    seam rather than on its own far corner - which is what closes the stripe a
    slice hidden behind a crest would otherwise leave (RLG-297) */
 let wallSeam = [null, null];
+/* whether the valley range has been painted THIS frame, and how many frames
+   have painted one since a check last reset the count. The count is what a
+   harness reads: whether one particular frame painted it is terrain. */
+let rangeDrawn = 0, rangeN = 0;
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
   wallSeam = [null, null];
+  rangeDrawn = 0;
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
@@ -26153,6 +26224,18 @@ function drawRoad(){
           ctx.closePath();
           ctx.fill();
           dropTrace.floor.push([n, fy2, H]);
+        }
+        /* ---- THE FARTHEST SLICE THAT ACTUALLY DRAWS, NOT SLICE `DRAW` -----
+           Once, and after its floor, so everything nearer is painted later in
+           this walk and lands in front of it. IT IS THE FIRST ONE TO GET HERE
+           rather than `n === DRAW`, because the farthest slice is routinely
+           culled behind a crest and then the range was not painted at all -
+           measured as `painted 0` on a mountain that was plainly showing one
+           the run before. The walk is far to near, so the first is the
+           furthest. */
+        if(!rangeDrawn && drawValleyRange(ctx, dB, dropSide, horizon,
+                                          Math.floor(pos/SEG) + DRAW)){
+          rangeDrawn = 1; rangeN++;
         }
         dropTrace.rim[n] = y1;
         /* THE LIP, which is the part that makes it read. A dark band alone is a
@@ -34115,6 +34198,17 @@ requestAnimationFrame(frameLoop);
   };
   /* which sides this place is walled on, and what the wall pass actually painted */
   API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
+  API.rangeOff = function(on){ rangeOff = !!on; return rangeOff; };
+  API.rangeModel = function(o){
+    if(o){
+      if(o.scale > 0) RANGE_SCALE = o.scale;
+      if(o.drop  >= 0) RANGE_DROP = o.drop;
+      if(o.alpha >= 0) RANGE_ALPHA = o.alpha;
+    }
+    if(o && o.reset) rangeN = 0;
+    return { scale:RANGE_SCALE, drop:RANGE_DROP, alpha:RANGE_ALPHA,
+             drawn:rangeDrawn, frames:rangeN };
+  };
   API.wallTrace = function(){ return wallTrace.slice(); };
   /* debug: put the hazard on a NAMED side, so a check can render the same place
      twice and watch the rail move. Absolute positions cannot settle this on their

@@ -31,7 +31,13 @@ the two frames, and whatever changed IS the wall.
      nearest slices must be at zero - off the screen. A skyline band does neither: it stands at
      one height at every distance, because it is drawn once at the horizon.
 
-  4. AND IT IS BEHIND YOU TOO. The drop had to be put in the mirror twice - once for the rail
+  4. A RANGE STANDS ACROSS THE VALLEY, ON THE DROP'S SIDE AND NOT THE WALL'S. Owner, 2026-09-20:
+     "what about distance mountain scenery (same as skyline) out to the side where the drop is?"
+     It is found the way the wall is - rendered away through `API.rangeOff` and diffed - and it
+     must sit on the OPPOSITE half of the frame from the wall, which is the only thing that
+     separates it from the horizon band it is drawn from.
+
+  5. AND IT IS BEHIND YOU TOO. The drop had to be put in the mirror twice - once for the rail
      standing on open ground, and again when the owner reported a mountain's glass still showing
      "rocks on both sides". The glass is a second road pass with its own walk and its own scale,
      so anything beside the road has to be drawn twice or it does not exist behind you.
@@ -135,12 +141,15 @@ def main():
             if args.falsify:
                 # the flag struck out of the ENGINE's own recipes rather than out of this file's
                 # idea of them, so the check meets the picture it would have met before the work
+                import re
                 src = (ROOT / 'road.js').read_text(encoding='utf-8')
-                need = '              wall:1,\n'
-                if src.count(need) != 2:
-                    raise SystemExit('[wall-plane-test] --falsify expects two walled places, '
-                                     'found %d' % src.count(need))
-                src = src.replace(need, '')
+                # THE PROPERTY, NOT A LINE OF TEXT. This matched a literal `wall:1,` until a
+                # mountain was given its own height and became `wall:2.2,`, at which point the
+                # falsify arm found nothing to strike and stopped falsifying anything.
+                src, hit = re.subn(r"\bwall:\s*[\d.]+,\s*", "", src)
+                if hit != 2:
+                    raise SystemExit("[wall-plane-test] --falsify expects two walled places, "
+                                     "struck %d" % hit)
                 ctx.route('**/road.js', lambda route: route.fulfill(
                     status=200, content_type='application/javascript', body=src))
             pg = ctx.new_page()
@@ -154,7 +163,8 @@ def main():
             pg.click('[data-act="drive"]')
             pg.wait_for_timeout(1500)
 
-            need = ('wallOff', 'wallTrace', 'wallSidesOf', 'setBiomePair', 'setHazardSide')
+            need = ('wallOff', 'wallTrace', 'wallSidesOf', 'setBiomePair', 'setHazardSide',
+                    'rangeOff', 'rangeModel')
             have = pg.evaluate("(ns) => ns.every(n => typeof window.__probe.road[n] === 'function')",
                                list(need))
             if not have:
@@ -202,6 +212,18 @@ def main():
                 off = pg.screenshot()
                 pg.evaluate("(v) => window.__probe.road.wallOff(v)", bool(still))
                 pg.wait_for_timeout(120)
+                on = pg.screenshot()
+                return pixels(on, off, top, bottom)
+
+            def range_diff(k, side, top, bottom):
+                """the same place with the valley range and without it, from one standstill"""
+                settle(k, side)
+                pg.evaluate("() => window.__probe.road.rangeOff(true)")
+                pg.wait_for_timeout(120)
+                off = pg.screenshot()
+                pg.evaluate("() => { const R = window.__probe.road;"
+                            " R.rangeOff(false); R.rangeModel({reset:1}); }")
+                pg.wait_for_timeout(260)
                 on = pg.screenshot()
                 return pixels(on, off, top, bottom)
 
@@ -280,7 +302,47 @@ def main():
                    'top edge %.1f far against %.1f near'
                    % (sum(deep)/len(deep), sum(near)/len(near)))
 
-            # ---- 4. and it is behind you too --------------------------------------------------
+            # ---- 4. a range across the valley --------------------------------------------------
+            print()
+            print('  AND A RANGE STANDS ACROSS THE VALLEY')
+            # the range is drawn just under the horizon, so it is read from the band BETWEEN the
+            # mirror and the road rather than from the road's own half of the frame
+            # THE WHOLE FRAME, because the toggle already isolates the range - nothing else
+            # moves between the two renders. A band was tried first, from just above the road
+            # to just below it, and it read ZERO on a run where the pass reported painting:
+            # the horizon rides up and down with the road's slope, so a fixed band is not
+            # where the range is. The diff does not need help finding it.
+            rL = range_diff('MOUNTAIN', -1, 0.0, 1.0)
+            drewL = pg.evaluate("() => window.__probe.road.rangeModel().frames")
+            rR = range_diff('MOUNTAIN', 1, 0.0, 1.0)
+            drewR = pg.evaluate("() => window.__probe.road.rangeModel().frames")
+            rF = range_diff('FARMLAND', -1, 0.0, 1.0)
+            drewF = pg.evaluate("() => window.__probe.road.rangeModel().frames")
+            print('      hazard left   range %6d px at x=%5.1f   painted on %d frame(s)'
+                  % (rL['n'], rL['x'], drewL))
+            print('      hazard right  range %6d px at x=%5.1f   painted on %d frame(s)'
+                  % (rR['n'], rR['x'], drewR))
+            print('      FARMLAND      range %6d px                painted on %d frame(s)'
+                  % (rF['n'], drewF))
+            # ---- WHETHER IT WAS PAINTED IS ASKED, NOT COUNTED ----------------------------
+            # How MUCH of the range shows is terrain: it stands in a narrow band under the
+            # horizon and a rise in the road buries most of it. Measured at 768 pixels on one
+            # arm and 3,682 on the other of the same build, which is a threshold nobody can
+            # set honestly. `rangeModel().drawn` is the pass reporting that it ran, and the
+            # diff is kept for the one question a count can answer - WHICH SIDE it is on.
+            ok(drewL > 0 and drewR > 0, 'a mountain paints a range either way round',
+               'painted on %d and %d frame(s)' % (drewL, drewR))
+            ok(drewF == 0 and rF['n'] < BARE, 'and a place with no drop paints none',
+               'painted on %d frame(s), %d pixel(s)' % (drewF, rF['n']))
+            # THE DROP IS ON THE HAZARD'S SIDE AND THE WALL IS OPPOSITE IT, so the range moves
+            # the SAME way the drop does and the OPPOSITE way the wall does. An absolute
+            # position cannot say that; the difference between the two renders can.
+            ok(rL['n'] > BARE and rR['n'] > BARE and rL['x'] < rR['x'] - 60,
+               "and it stands on the drop's side, which is opposite the wall",
+               'x=%.1f with the hazard left, x=%.1f with it right (the wall is %.1f and %.1f)'
+               % (rL['x'], rR['x'], mL['x'], mR['x']))
+
+            # ---- 5. and it is behind you too --------------------------------------------------
             print()
             print('  AND IT IS BEHIND YOU TOO')
             glass = wall_diff('CANYON', -1, 0.0, ROAD_TOP)
