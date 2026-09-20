@@ -16,6 +16,7 @@ WHAT IT ASSERTS, driving real runs:
     letters, the car and the race's own time;
   . a test drive writes its distance to the board of the STATE it was driven in, and the same drive
     under a different switch writes a different board;
+  . a test drive with NEITHER switch keeps no board at all: it is practice;
   . a run that would not make the ten asks for nothing and ends as it always did.
 
 WHAT IT CANNOT SEE: whether tapping three letters feels right on a phone. The owner's.
@@ -127,9 +128,11 @@ with sync_playwright() as p:
           'and every mode has a board', repr(modes))
     tap(pg, 'm:drive')
     states = [a for a in acts(pg) if a.startswith('s:')]
-    check(sorted(states) == ['s:cp', 's:cp+hp', 's:hp', 's:none'],
-          'a test drive opens its four states', repr(states))
-    tap(pg, 's:none')
+    # THREE, NOT FOUR (owner, 2026-09-20): a test drive with neither switch is practice,
+    # it is effectively infinite, and with the checkpoints off it has no clock to end it.
+    check(sorted(states) == ['s:cp', 's:cp+hp', 's:hp'],
+          'a test drive opens its three scored states, and practice is not one', repr(states))
+    tap(pg, 's:cp')
     check('NOTHING ON THIS BOARD YET' in veil_text(pg), 'and an empty board says so',
           veil_text(pg).replace('\n', ' / ')[:90])
     tap(pg, 'back'); tap(pg, 'back'); tap(pg, 'back')
@@ -196,14 +199,18 @@ with sync_playwright() as p:
 
     # ---- AND A RUN THAT DOES NOT MAKE THE TEN ASKS FOR NOTHING ---------------------------
     print('  a run that does not place')
+    # ON THE BOARD OF A STATE THAT HAS A CLOCK. The first version of this drove with both
+    # switches off, and a test drive with the checkpoints off HAS NO CLOCK to run out - so
+    # cutting the clock ended nothing and the run drove on until the harness gave up. The
+    # state is what decides the board here, not the difficulty, so it uses the timed one.
     pg.evaluate("""() => { const A = window.Arcade, k = 'interstate-board';
         const all = A.save.get(k) || {};
-        all['drive:none'] = Array.from({length: 10}, (_, i) => ({ n:'AAA', car:'HATCH', v: 500 - i }));
+        all['drive:cp'] = Array.from({length: 10}, (_, i) => ({ n:'AAA', car:'HATCH', v: 500 - i }));
         A.save.set(k, all); }""")
     pg.evaluate("() => { const R = window.__probe.road; R.showGarage(); }")
     pg.wait_for_timeout(250)
     set_mode(pg, 'HATCH', 'TEST DRIVE')
-    switches(pg, False, False)
+    switches(pg, True, False)
     tap(pg, 'drive', 500)
     pg.evaluate(DRIVER, False)
     pg.wait_for_timeout(2500)
@@ -211,9 +218,24 @@ with sync_playwright() as p:
     ended = wait_act(pg, 'again', 60)
     check(ended and not pg.query_selector('#veil [data-act="ok"]'),
           'it ends on its own card and asks for no initials', veil_text(pg).replace('\n', ' / ')[:80])
-    rows = pg.evaluate("() => (window.__probe.road.boards().all || {})['drive:none'] || []")
+    rows = pg.evaluate("() => (window.__probe.road.boards().all || {})['drive:cp'] || []")
     check(len(rows) == 10 and all(r['n'] == 'AAA' for r in rows), 'and the board is untouched',
           '%d rows' % len(rows))
+
+    # ---- AND PRACTICE KEEPS NO BOARD (owner, 2026-09-20) --------------------------------
+    print('  practice')
+    pg.evaluate("() => { const R = window.__probe.road; R.showGarage(); }")
+    pg.wait_for_timeout(250)
+    set_mode(pg, 'HATCH', 'TEST DRIVE')
+    switches(pg, False, False)
+    off = pg.evaluate("() => window.__probe.road.boards()")
+    switches(pg, True, False)
+    on = pg.evaluate("() => window.__probe.road.boards()")
+    print('      neither switch: state %r keeps %s; checkpoints on: state %r keeps %s'
+          % (off['state'], off['keeps'], on['state'], on['keeps']))
+    check(off['state'] == 'none' and off['keeps'] is False,
+          'with neither switch a test drive is scored by nothing', repr(off['state']))
+    check(on['keeps'] is True, 'and with a switch on it is scored again', repr(on['state']))
 
     errs = pg.evaluate("() => window.__probe.errors")
     check(not errs, 'no page errors', '; '.join(errs[:2]))

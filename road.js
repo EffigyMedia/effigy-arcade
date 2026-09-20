@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.99';
+window.ROAD_BUILD = '0.14.100';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -933,12 +933,20 @@ const BOARD_MODES = [
   { key:'tour',  name:'TOURNAMENT',  unit:'S',  high:false },
   { key:'drag',  name:'DRAG RACE',   unit:'S',  high:false, needs:dragOffered }
 ];
+/* ---- THREE STATES, NOT FOUR (owner, 2026-09-20) --------------------------
+   "Test drive with no state modifiers doesn't need a leaderboard because it's
+   effectively infinite. It's a complete practice mode." With the checkpoints
+   off there is no clock to run out either, so such a run only ever ends by
+   crashing - a board for it would rank how soon somebody hit something. */
 const BOARD_STATES = [
   { key:'cp+hp', name:'CHECKPOINTS + PURSUIT' },
   { key:'hp',    name:'HOT PURSUIT' },
-  { key:'cp',    name:'CHECKPOINTS' },
-  { key:'none',  name:'NEITHER' }
+  { key:'cp',    name:'CHECKPOINTS' }
 ];
+/* whether what is being driven is scored at all: practice is not */
+function boardKeeps(mode){
+  return mode !== 'drive' || BOARD_STATES.some(S => S.key === boardState());
+}
 /* the state a test drive is being driven in: the two switches, as they stand */
 function boardState(){
   const cp = !!timedRun, hp = !optEasy;
@@ -978,6 +986,8 @@ function boardPut(key, entry, high){
    run's own end card - so the initials come first and the card follows. */
 function boardOffer(mode, v, then){
   const M = boardMode(mode), key = boardKey(mode);
+  /* practice keeps no board, so it asks for nothing (owner, 2026-09-20) */
+  if(!boardKeeps(mode)){ if(then) then(); return -1; }
   const at = (typeof v === 'number' && isFinite(v) && v > 0) ? boardWouldRank(key, v, M.high) : -1;
   if(at < 0){ if(then) then(); return -1; }
   showInitials(M, key, { car: optBody, v: +v.toFixed(3) }, at, then);
@@ -35836,7 +35846,10 @@ requestAnimationFrame(frameLoop);
   /* the manual gearbox's bonus, live, so a check can measure the same run with
      it and without it rather than read the constants back (RLG-294) */
   /* the boards as they stand, and the state a test drive would score under */
-  API.boards = function(){ return { state: boardState(), all: boardsAll(), name: boardName.join('') }; };
+  API.boards = function(){
+    return { state: boardState(), keeps: boardKeeps('drive'), all: boardsAll(),
+             states: BOARD_STATES.map(S => S.key), name: boardName.join('') };
+  };
   API.manualBonus = function(a, t){
     if(typeof a === 'number') MANUAL_ACCEL = a;
     if(typeof t === 'number') MANUAL_TOP = t;
