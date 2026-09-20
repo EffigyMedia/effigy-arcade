@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.110';
+window.ROAD_BUILD = '0.14.111';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15883,6 +15883,8 @@ function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
   const lx = wallFootX(p, -1), rx = wallFootX(p, 1);
   const base = CAM_H * H / 2 * WALL_RISE * ((B.wall > 0) ? B.wall : 1);
   const ridgeK = (B.ridge === undefined) ? 1 : B.ridge;
+  const faces = wallSides(B);
+  if(!faces || !faces.length) return 0;
   /* ---- IT IS BUILT IN COLUMNS, BECAUSE A MASSIF HAS A SKYLINE ----------
      The first build drew two rectangles and its top was a DEAD STRAIGHT LINE
      across the whole frame - a mesa, and the same flat-wall complaint the face
@@ -15903,6 +15905,14 @@ function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
     /* the slot is the gap the two walls leave, so the face and the walls cannot
        disagree about how wide the way through is */
     if(x1 > lx && x0 < rx) continue;
+    /* ---- AND ONLY ON THE SIDES THIS PLACE IS WALLED ON (RLG-301) ------
+       A canyon is walled on both, so its face fills the frame either side of
+       the slot. A MOUNTAIN is walled on one and has a DROP on the other, and
+       the first build put a massif across the valley as well - a mountain pass
+       with rock on the side the ground falls away. `wallSides` is the same coin
+       the walls beside the road read, so the face cannot stand where they do
+       not. */
+    if(faces && faces.indexOf(x0 + (x1 - x0) / 2 < lx ? -1 : 1) < 0) continue;
     const lift = ridgeK <= 0 ? 1
                : 1 + ridgeK * ((ridgeNoise(i, END_RUN, 941) - 0.5) * WALL_RIDGE
                              + (ridgeNoise(i, 4, 943) - 0.5) * WALL_BREAK * 0.6);
@@ -26036,6 +26046,12 @@ let endWallDrawn = 0, endWallN = 0;
 /* debug: no face at a boundary, so a check can diff the two frames without
    taking the walls beside the road away with it (RLG-301) */
 let endWallOff = false;
+/* the arrival ramp's value per kind of thing drawn this frame (RLG-302) */
+let rampSeen = {};
+/* debug: no arrival ramp on the three painters that take it here, so a check can
+   render the SAME thing at the SAME distance with it and without it (RLG-302).
+   Comparing two distances instead measures the projection, not the ramp. */
+let rampOff = false;
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
@@ -27356,6 +27372,7 @@ function drawCopLights(box, phase, spr, scheme){
 }
 
 function drawWorld(){
+  rampSeen = {};
   drawRubber();
 
   const items = [];
@@ -27539,14 +27556,39 @@ function paintBucket(list, onRoad){
   if(list.length > 1) list.sort((a, b) => (b.z || 0) - (a.z || 0));
   for(const it of list){
     if(onRoad !== null && !!ON_ROAD[it.kind] !== onRoad) continue;
+    /* ---- AND THESE THREE ARE ON THE ARRIVAL RAMP TOO (RLG-302) ---------
+       Owner, 2026-09-20: "we also want to make sure that the gantry and other
+       items fade in as it spawned in as opposed to just popping in."
+
+       RLG-218 made ONE ramp and said so: cars, trees, crops, boats and lamp
+       posts all arrive over the same last stretch of the drawn road, because a
+       car arriving on one schedule and the trees behind it on another is the
+       owner's "vehicles need the same Alpha ramp or else that just looks funky".
+       THE RAMP LIVES IN `drawSprite`, and that is why these three were not on
+       it: a GANTRY, the FINISH LINE and a BRIDGE TOWER are drawn by their own
+       painters and never go through it. Every other kind in this pass does -
+       traffic, police, roadblocks, crates and rivals all reach `drawSprite` -
+       which is why the gantry is the one the owner could name.
+
+       IT IS APPLIED HERE RATHER THAN IN EACH PAINTER, so there is still ONE
+       ramp and one place that reads `edgeFade`. A painter that grew its own
+       would be the second copy that RLG-218 exists to prevent. */
+    const eSpan = DRAW * SEG;
+    const eA = rampOff ? 1 : edgeFade((eSpan - ((it.z || 0) - pos)) / eSpan);
+    /* what the ramp gave each kind this frame, nearest first, so a check can ask
+       whether a thing arrives rather than counting pixels at the vanishing point
+       where it is three pixels wide (RLG-302) */
+    if(rampSeen[it.kind] === undefined || (it.z || 0) < rampSeen[it.kind].z)
+      rampSeen[it.kind] = { z:+((it.z || 0) - pos).toFixed(0), a:+eA.toFixed(4) };
+    if(eA <= 0.004 && (it.kind === 'c' || it.kind === 'f' || it.kind === 'w')) continue;
     if(it.kind==='c'){
-      drawGantry(it.o);
+      ctx.globalAlpha = eA; drawGantry(it.o); ctx.globalAlpha = 1;
     } else if(it.kind==='f'){
       /* RLG-179: the finish keeps its own range guard, so an item pushed for a
          line that is miles away still costs nothing */
-      drawFinish();
+      ctx.globalAlpha = eA; drawFinish(); ctx.globalAlpha = 1;
     } else if(it.kind==='w'){
-      drawTower(it.o);
+      ctx.globalAlpha = eA; drawTower(it.o); ctx.globalAlpha = 1;
     } else if(it.kind==='g'){
       /* a rival: your car, in its own paint, with its number on the boot */
       const r = it.o;
@@ -34384,6 +34426,19 @@ requestAnimationFrame(frameLoop);
   /* the face at a walled place's boundary: whether it painted this frame, and on
      how many frames since a check last reset the count (RLG-301) */
   API.endWallOff = function(on){ endWallOff = !!on; return endWallOff; };
+  /* ---- THE ONE ARRIVAL RAMP, AND WHAT IT IS WORTH NOW (RLG-302) --------
+     `band` is the fraction of the draw things arrive over and has not changed;
+     `units` and `seconds` are what that fraction is WORTH, and both doubled
+     when RLG-295 doubled the draw without anybody looking. `seen` is what the
+     ramp actually gave each kind of thing on the last frame, nearest first. */
+  API.rampOff = function(on){ rampOff = !!on; return rampOff; };
+  API.arrivalRamp = function(mph){
+    const span = DRAW * SEG, units = span * EDGE_FADE;
+    const v = (mph === undefined ? spd : MAX_SPD * (mph / 200)) || 1;
+    return { band:EDGE_FADE, draw:span, units:Math.round(units),
+             seconds:+(units / v).toFixed(3), atSpd:Math.round(v),
+             seen:Object.assign({}, rampSeen) };
+  };
   API.endWall = function(reset){
     const out = { drawn:endWallDrawn, frames:endWallN };
     if(reset) endWallN = 0;
@@ -35268,6 +35323,20 @@ requestAnimationFrame(frameLoop);
     if(dz !== null)
       cpGantries.push({ z: pos - (dz === undefined ? 20000 : dz), hit:true, n:1 });
     return cpGantries.length;
+  };
+  /* the same thing AHEAD, which is the half the arrival ramp needs: a board has
+     to be put at a stated distance UP the road to ask what the ramp gave it, and
+     `parkGantry` only ever puts one behind (RLG-302) */
+  API.stageGantry = function(dz, quiet){
+    cpGantries.length = 0;
+    /* `quiet` marks the board PASSED, which stops its countdown. An unpassed
+       board's clock ticks about once a second, so two renders of one taken a
+       moment apart differ by the digits on it - measured at 135 changed pixels,
+       which is most of the signal a check of the arrival ramp is looking for.
+       A quiet board draws far less, though, so it is the caller's choice
+       (RLG-302). */
+    cpGantries.push({ z: pos + (dz === undefined ? 20000 : dz), hit: !!quiet, n:1 });
+    return cpGantries[0].z - pos;
   };
   /* ---- AND THE FINISH LINE, WHICH NEEDS A RACE TO EXIST (RLG-133) ------
      It is one number rather than an array, so this MOVES the line instead of

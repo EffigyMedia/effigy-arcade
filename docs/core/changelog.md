@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-111"></a>
+## [0.14.111] - 2026-09-20
+- Fixed: **the gantry, the finish line and a bridge tower fade in rather than popping.** One arrival
+  ramp has covered cars, trees, crops, boats and lamp posts since RLG-218, and it lives in the
+  shared sprite painter - these three are drawn by their own and never went through it, which is
+  why the gantry is the one that could be named. [RLG-302](../fragments/RLG-302.md)
+- Changed: **a mountain shows a face at its boundary too, and only on the side it is walled on.**
+  It already qualified, and its columns are already less uniform than a canyon's because the same
+  `ridge` number scales both. But the face filled the frame either side of the slot, so a mountain
+  pass had rock standing where the ground falls away. [RLG-301](../fragments/RLG-301.md)
+
 <a id="v0-14-110"></a>
 ## [0.14.110] - 2026-09-20
 - Added: **a canyon has a face at its mouth, and you see it behind you when you leave.** Its walls

@@ -168,21 +168,31 @@ def main():
             # ---- 1 and 2. the face, ahead and behind -----------------------------------------
             print()
             print('  A CANYON, DRIVEN AT AND LEFT BEHIND')
-            arrive('CANYON')
-            seen = {}
-            for gap in AHEAD + BEHIND + (GONE,):
-                seen[gap] = at(gap)
-                print('      %5d segments from the boundary   painted on %2d frame(s)'
-                      % (gap, seen[gap]))
-            ok(all(seen[g] > 0 for g in AHEAD),
-               'driving at a canyon, its face is in the windscreen',
-               'at %s segments: %s' % (AHEAD, [seen[g] for g in AHEAD]))
-            ok(all(seen[g] > 0 for g in BEHIND),
-               'and having left one, its face is in the glass',
-               'at %s segments: %s' % (BEHIND, [seen[g] for g in BEHIND]))
-            ok(seen[GONE] == 0,
-               'and it stops once the boundary is past what the glass can see',
-               '%d segments back, painted on %d frame(s)' % (GONE, seen[GONE]))
+            # ---- BOTH WALLED PLACES, because they are not the same landform -------------
+            # Owner, 2026-09-20, on seeing the canyon's: "We might need the same thing for
+            # mountain biome, but less sheer and uniform than canyon." It already has one -
+            # `drawEndWall` is gated on a place declaring `wall`, and a MOUNTAIN declares
+            # 2.2 of it - and it is already less uniform, because the columns' heights are
+            # scaled by the place's own `ridge`, which is 1 for a mountain against 0.25 for
+            # a canyon. That is the same number that makes the face BESIDE the road broken
+            # on one and near-vertical on the other, so the two can never disagree about
+            # what kind of rock the place is made of. This asks both.
+            for place in ('CANYON', 'MOUNTAIN'):
+                arrive(place)
+                seen = {}
+                for gap in AHEAD + BEHIND + (GONE,):
+                    seen[gap] = at(gap)
+                    print('      %-9s %5d segments from the boundary   painted on %2d frame(s)'
+                          % (place, gap, seen[gap]))
+                ok(all(seen[g] > 0 for g in AHEAD),
+                   'driving at a %s, its face is in the windscreen' % place.lower(),
+                   'at %s segments: %s' % (AHEAD, [seen[g] for g in AHEAD]))
+                ok(all(seen[g] > 0 for g in BEHIND),
+                   'and having left one, its face is in the glass',
+                   'at %s segments: %s' % (BEHIND, [seen[g] for g in BEHIND]))
+                ok(seen[GONE] == 0,
+                   'and it stops once the boundary is past what the glass can see',
+                   '%d segments back, painted on %d frame(s)' % (GONE, seen[GONE]))
 
             # ---- 3. and something actually changed on screen ---------------------------------
             print()
