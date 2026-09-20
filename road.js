@@ -276,7 +276,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.97';
+window.ROAD_BUILD = '0.14.98';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -791,12 +791,20 @@ let timedRun = true;
    apart from `raceMode` and `duty` so it never overwrites either; `dragOn` is
    what a run reads, set by `enforceModeRules`. */
 let optDrag = false, dragOn = false;
-/* the run's own clock, from GO: `simT` runs on across runs */
-let dragT = 0;
+/* ---- THE RUN'S OWN CLOCK, FROM GO (RLG-156, RLG-292) ---------------------
+   `simT` runs on across runs, so a time has to be counted per run. It was the
+   drag race's; every mode's times are read off it now - a race's finish, a
+   tournament's rounds added up - so it is `runT`. */
+let runT = 0;
+/* how long a tournament has taken so far, its rounds added up */
+let tourT = 0;
 /* the player's own gearbox setting while a drag race forces MANUAL, or null */
 let dragKeepBox = null;
 /* the result of the last drag race, for its end card */
 let dragResult = null;
+/* whether this run has already been offered to a board, so the end card it
+   returns to does not offer it again (RLG-292) */
+let boardAsked = false;
 /* ---- THE LIVERY, AND THE FOUR COLOURS OF IT (RLG-071) ---------------------
    Owner, 2026-09-19: "we get to choose the color for each of the two tones,
    the striped colors and the under glow if all are turned on." So each livery
@@ -900,6 +908,174 @@ const DRAG_DRIVERS = [
 /* whether this machine offers drag racing at all: a circuit has no straight
    mile, so the seam that already keeps traffic off Motorsport keeps this off */
 function dragOffered(){ return !CFG.circuitOnly; }
+
+/* ---- THE LEADERBOARD (owner, 2026-09-19/20, RLG-292) ----------------------
+   "we should be recording times for everything, like a little local
+   leaderboard." Each MODE keeps its own board, and each board holds ten
+   entries of initials, the car, and the score.
+
+   WHAT A SCORE IS DIFFERS BY MODE, which is the owner's own shape: a test
+   drive scores the DISTANCE DRIVEN, a race and a tournament their TIME. So a
+   board says which way is better rather than every reader guessing.
+
+   AND A TEST DRIVE HAS A BOARD PER STATE. "A test drive with checkpoints and
+   hot pursuit enabled is one state. A test drive with just hot pursuit is a
+   different state." Two switches, four states, four boards - a distance driven
+   with the clock and the police on is not the same feat as one driven with
+   neither, and one board would bury the harder runs.
+
+   THE BOARD IS THIS MACHINE'S OWN, under `<id>-board` - the `-suffix` rule,
+   registered in smoke-test's list of stores. */
+const BOARD_MAX = 10;
+const BOARD_MODES = [
+  { key:'drive', name:'TEST DRIVE',  unit:'MI', high:true,  states:true },
+  { key:'race',  name:'SINGLE RACE', unit:'S',  high:false },
+  { key:'tour',  name:'TOURNAMENT',  unit:'S',  high:false },
+  { key:'drag',  name:'DRAG RACE',   unit:'S',  high:false, needs:dragOffered }
+];
+const BOARD_STATES = [
+  { key:'cp+hp', name:'CHECKPOINTS + PURSUIT' },
+  { key:'hp',    name:'HOT PURSUIT' },
+  { key:'cp',    name:'CHECKPOINTS' },
+  { key:'none',  name:'NEITHER' }
+];
+/* the state a test drive is being driven in: the two switches, as they stand */
+function boardState(){
+  const cp = !!timedRun, hp = !optEasy;
+  return cp && hp ? 'cp+hp' : hp ? 'hp' : cp ? 'cp' : 'none';
+}
+function boardMode(key){ return BOARD_MODES.find(m => m.key === key) || BOARD_MODES[0]; }
+function boardKey(mode, state){ return mode === 'drive' ? 'drive:' + (state || boardState()) : mode; }
+function boardsAll(){
+  const all = (AR && AR.save) ? AR.save.get(GAME_ID + '-board') : null;
+  return (all && typeof all === 'object') ? all : {};
+}
+function boardRows(key){
+  const a = boardsAll()[key];
+  return Array.isArray(a) ? a : [];
+}
+/* where a score would land on a board, or -1 if it would not make it */
+function boardWouldRank(key, v, high){
+  const rows = boardRows(key);
+  let at = rows.length;
+  for(let i = 0; i < rows.length; i++)
+    if(high ? v > rows[i].v : v < rows[i].v){ at = i; break; }
+  return at < BOARD_MAX ? at : -1;
+}
+/* write one entry and keep the ten best, in the board's own direction */
+function boardPut(key, entry, high){
+  const all = boardsAll();
+  const rows = boardRows(key).concat([entry]);
+  rows.sort((a, b) => high ? b.v - a.v : a.v - b.v);
+  all[key] = rows.slice(0, BOARD_MAX);
+  if(AR && AR.save) AR.save.merge(GAME_ID + '-board', all);
+  return all[key];
+}
+/* ---- WHAT A FINISHED RUN OFFERS THE BOARD --------------------------------
+   One door for every mode: the score, the board it belongs on, and the car.
+   A run that would not make the ten asks for nothing, which is why an ordinary
+   run ends exactly as it did before. `then` is what happens afterwards - the
+   run's own end card - so the initials come first and the card follows. */
+function boardOffer(mode, v, then){
+  const M = boardMode(mode), key = boardKey(mode);
+  const at = (typeof v === 'number' && isFinite(v) && v > 0) ? boardWouldRank(key, v, M.high) : -1;
+  if(at < 0){ if(then) then(); return -1; }
+  showInitials(M, key, { car: optBody, v: +v.toFixed(3) }, at, then);
+  return at;
+}
+/* the initials a player taps in, and the three letters they start from */
+let boardName = ['A', 'A', 'A'];
+const BOARD_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ';
+/* ---- THREE LETTERS, TAPPED IN (owner, 2026-09-20) ------------------------
+   An arcade cabinet's own way, and no keyboard: this product is touch only
+   (RLG-002), and a text field would open the phone's keyboard over the game. */
+function showInitials(M, key, entry, at, then){
+  const done = () => {
+    entry.n = boardName.join('');
+    boardPut(key, entry, M.high);
+    if(AR && AR.save) AR.save.merge(GAME_ID + '-opts', { name: entry.n });
+    /* the board first, so a player sees where they landed, and BACK from it
+       is the run's own end card rather than the board menu */
+    showBoard(M.key, M.states ? boardState() : null, then);
+  };
+  const acts = { ok: done };
+  let slots = '';
+  for(let i = 0; i < 3; i++){
+    acts['up' + i]   = () => { boardStep(i, 1); showInitials(M, key, entry, at, then); };
+    acts['down' + i] = () => { boardStep(i, -1); showInitials(M, key, entry, at, then); };
+    slots += '<div class="bslot">' +
+      '<button class="go ghost" data-act="up' + i + '">\u25B2</button>' +
+      '<b>' + (boardName[i] === ' ' ? '_' : boardName[i]) + '</b>' +
+      '<button class="go ghost" data-act="down' + i + '">\u25BC</button>' +
+      '</div>';
+  }
+  openVeil(
+    '<div class="eyebrow">' + M.name + (M.states ? ' \u00B7 ' + boardStateName(boardState()) : '') + '</div>' +
+    '<h1>' + (at + 1) + ordinal(at + 1) + '<u>ON THE BOARD</u></h1>' +
+    '<div class="gnote">' + entry.car + ' \u00B7 ' + boardScore(M, entry.v) + '</div>' +
+    '<div class="bname">' + slots + '</div>' +
+    '<div class="gstack"><button class="go" data-act="ok">ENTER</button></div>',
+    acts);
+}
+function boardStep(i, d){
+  const at = BOARD_LETTERS.indexOf(boardName[i]);
+  boardName[i] = BOARD_LETTERS[(at + d + BOARD_LETTERS.length) % BOARD_LETTERS.length];
+}
+function boardStateName(k){
+  const S = BOARD_STATES.find(x => x.key === k);
+  return S ? S.name : k;
+}
+function boardScore(M, v){
+  return M.unit === 'MI' ? v.toFixed(1) + ' MI' : v.toFixed(3) + ' S';
+}
+/* ---- THE BOARD ITSELF ----------------------------------------------------
+   A button on the title screen opens the modes; a mode opens its board, and a
+   test drive opens its four states first. `back` is where the reader came
+   from, so the same screen serves the title and the end of a run. */
+function showBoards(then){
+  const acts = { back: then || showTitle };
+  let btns = '';
+  for(const M of BOARD_MODES){
+    if(M.needs && !M.needs()) continue;
+    acts['m:' + M.key] = () => (M.states ? showBoardStates(then)
+                                         : showBoard(M.key, null, () => showBoards(then)));
+    btns += '<button class="go ghost" data-act="m:' + M.key + '">' + M.name + '</button>';
+  }
+  openVeil(
+    '<div class="eyebrow">LEADERBOARD</div>' +
+    '<div class="gstack">' + btns +
+      '<button class="go" data-act="back">BACK</button></div>',
+    acts);
+}
+function showBoardStates(then){
+  const acts = { back: () => showBoards(then) };
+  let btns = '';
+  for(const S of BOARD_STATES){
+    acts['s:' + S.key] = () => showBoard('drive', S.key, () => showBoardStates(then));
+    btns += '<button class="go ghost" data-act="s:' + S.key + '">' + S.name + '</button>';
+  }
+  openVeil(
+    '<div class="eyebrow">TEST DRIVE</div>' +
+    '<div class="gnote">A BOARD FOR EACH SET OF SWITCHES</div>' +
+    '<div class="gstack">' + btns +
+      '<button class="go" data-act="back">BACK</button></div>',
+    acts);
+}
+/* `back` is where this board's own BACK goes: the menu it was opened from, or
+   the end card of the run that just placed on it */
+function showBoard(mode, state, back){
+  const M = boardMode(mode), rows = boardRows(boardKey(mode, state));
+  let list = '';
+  for(let i = 0; i < rows.length; i++)
+    list += '<div class="brow"><span>' + (i + 1) + '</span><b>' + (rows[i].n || '---') +
+            '</b><span>' + rows[i].car + '</span><u>' + boardScore(M, rows[i].v) + '</u></div>';
+  if(!rows.length) list = '<div class="gnote">NOTHING ON THIS BOARD YET</div>';
+  openVeil(
+    '<div class="eyebrow">' + M.name + (state ? ' \u00B7 ' + boardStateName(state) : '') + '</div>' +
+    '<div class="board">' + list + '</div>' +
+    '<div class="gstack"><button class="go" data-act="back">BACK</button></div>',
+    { back: back || showTitle });
+}
 /* ---- ONE LIVERY PER RUN --------------------------------------------------
    A force does not run half its cars in white and half in black on the same
    night. The livery is chosen once when the run starts and every cruiser wears
@@ -1074,6 +1250,7 @@ let tourRetries = TOUR_RETRIES;
 let tourClass = '';
 function tourReset(){
   tourRound = 0; tourPts = 0;
+  tourT = 0;                    /* a fresh ladder times itself from zero (RLG-292) */
   tourRetries = TOUR_RETRIES;
   /* eleven rivals who carry their own points between rounds */
   tourField = [];
@@ -12541,7 +12718,12 @@ function reset(){
      Left out of this list, it was module state that survived every restart -
      and started at zero, so the first run always opened with a siren. */
   ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
-  clock = CLOCK_START; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
+  clock = CLOCK_START;
+  runT = 0;                       /* every run times itself from GO (RLG-292) */
+  /* and it has not been offered to a board yet. Set here rather than trusted to
+     be cleared on the way out: a player who walks out of the board by another
+     door would otherwise have the next run keep its score to itself. */
+  boardAsked = false; nextCP = 1; cpGantries = []; lastBeep = -1; wreckWait = 0;
   /* if you are driving one, the force matches you; otherwise the night decides */
   barOn = false; coasting = false;
   if(hornBtn) hornBtn.classList.remove('on');
@@ -16981,7 +17163,7 @@ function buildDragField(){
   /* the player finishes when `pos` reaches this, and the rival when its own z
      reaches this plus PLAYER_Z - both one mile from where each car stood */
   finishZ = pos + DRAG_MILES * MILE;
-  place = 1; finished = false; dragT = 0; dragResult = null;
+  place = 1; finished = false; dragResult = null;
 }
 /* draw the rival's driver: SHARP, STEADY or SLOPPY, and where it falls in it */
 /* a check can name the next race's driver, so it can compare two; never set by play */
@@ -17929,7 +18111,7 @@ function stepRacers(dt){
   place = ahead + 1;
   /* and the rival's own time at the line, when it gets there (RLG-156) */
   if(dragOn) for(const r of racers)
-    if(r.dragTime === undefined && r.z >= finishZ + PLAYER_Z) r.dragTime = dragT;
+    if(r.dragTime === undefined && r.z >= finishZ + PLAYER_Z) r.dragTime = runT;
 
   for(const r of racers){
     let n = 0;
@@ -17984,7 +18166,7 @@ function stepRacers(dt){
     if(dragOn){
       dragFinish();
       snd.quiet(); menuMusic(); snd.checkpoint();
-      setTimeout(showDragEnd, 700);
+      setTimeout(() => boardOffer('drag', runT, showDragEnd), 700);
       return;
     }
     bestScore = Math.max(bestScore, Math.round(dist*10)/10);
@@ -18006,6 +18188,8 @@ function stepRacers(dt){
     snd.checkpoint();
     if(tourOn){
       tourScore(place);
+      /* a tournament's score is its rounds added up (RLG-292) */
+      tourT += runT;
       const last = (tourRound >= tourRounds() - 1);
       if(last){
         const st = tourStanding();
@@ -18090,14 +18274,20 @@ function stepRacers(dt){
              reads them, and nothing rewrites them.
              ------------------------------------------------------------- */
         }
-        setTimeout(() => showTrophy(st), 700);
+        /* the ladder is over, so its total time goes to the board (RLG-292) */
+        setTimeout(() => { const total = tourT;
+                           boardOffer('tour', total, () => showTrophy(st)); }, 700);
       } else {
         tourRound++;
         setTimeout(() => showRound(place), 700);
       }
     } else {
-      setTimeout(() => showEnd(place === 1 ? 'WON'
-        : 'FINISHED ' + place + ordinal(place)), 700);
+      /* a single race scores the time it took to finish it (RLG-292) */
+      setTimeout(() => {
+        const reason = place === 1 ? 'WON' : 'FINISHED ' + place + ordinal(place);
+        boardAsked = true;
+        boardOffer('race', runT, () => { boardAsked = false; showEnd(reason); });
+      }, 700);
     }
   }
 }
@@ -20125,7 +20315,7 @@ function step(dt){
      ------------------------------------------------------------------- */
   if(mode === 'race' && !finished){
     /* the drag race's own clock, from GO to the line (RLG-156) */
-    if(dragOn && !held && !finished) dragT += dt;
+    if(!held && !finished) runT += dt;
     if(!held) stepRacers(dt);
     else if(!standingStart()) rollField(dt);
   }
@@ -31823,6 +32013,8 @@ function showTitle(){
       '<button class="go" data-act="play">PLAY</button>' +
       /* MODE and HOT PURSUIT moved to the garage: they are choices about the
          drive you are about to take, so they belong beside the car. */
+      /* the machine's own times, per mode (RLG-292) */
+      '<button class="go ghost" data-act="board">LEADERBOARD</button>' +
       '<button class="go ghost" data-act="opts">OPTIONS</button>' +
       '<button class="go ghost" data-act="quit">QUIT</button>' +
     '</div>' +
@@ -31831,6 +32023,7 @@ function showTitle(){
       play: showGarage,
 
       chase: () => { optEasy = !optEasy; showTitle(); },
+      board: () => showBoards(showTitle),
       opts: () => showOptions(),
       quit: () => { if(AR && AR.home) AR.home(); }
     });
@@ -32396,11 +32589,11 @@ function showTourEnd(reason){
    race abandoned. */
 function dragFinish(){
   const r = racers[0];
-  const mine = dragT;
+  const mine = runT;
   let theirs = null, est = false;
   if(r){
     if(r.dragTime !== undefined) theirs = r.dragTime;
-    else { theirs = dragT + Math.max(0, finishZ + PLAYER_Z - r.z) / Math.max(1, r.spd); est = true; }
+    else { theirs = runT + Math.max(0, finishZ + PLAYER_Z - r.z) / Math.max(1, r.spd); est = true; }
   }
   const all = (AR && AR.save) ? (AR.save.get(GAME_ID + '-drag') || {}) : {};
   const was = typeof all[optBody] === 'number' ? all[optBody] : null;
@@ -32441,6 +32634,16 @@ function showEnd(reason){
   /* the tournament has its own end card - see `showTourEnd`. This is the one
      door both `wreck()` and the clock come through. */
   if(tourOn) return showTourEnd(reason);
+  /* ---- AND A TEST DRIVE SCORES THE DISTANCE (RLG-292) ------------------
+     Here because this IS the one door a test drive ends at, whether it ran out
+     of clock or hit something. A race that ends here ended in a wreck and has
+     no time to offer; its own finish offers one. The board asks for initials
+     only if the run made the ten, and the end card follows either way. */
+  if(mode !== 'race' && !boardAsked){
+    boardAsked = true;
+    return boardOffer('drive', dist, () => showEnd(reason));
+  }
+  boardAsked = false;
   openVeil(
     '<div class="eyebrow">'+reason+'</div>'+
     '<h1>'+dist.toFixed(1)+'<u>MILES DRIVEN</u></h1>'+
@@ -35572,7 +35775,7 @@ requestAnimationFrame(frameLoop);
   /* ---- THE DRAG RACE, AS NUMBERS (RLG-156) ------------------------------ */
   API.drag = function(){
     const r = racers[0];
-    return { on: dragOn, pick: optDrag, t: +dragT.toFixed(3), finished: finished, place: place,
+    return { on: dragOn, pick: optDrag, t: +runT.toFixed(3), finished: finished, place: place,
              manual: optManual, kept: dragKeepBox, finishZ: finishZ, pos: pos, playerZ: pos + PLAYER_Z,
              playerX: playerX, traffic: traffic.length, cops: cops.length, racers: racers.length,
              clock: clockRuns(), wet: wet,
@@ -35603,6 +35806,8 @@ requestAnimationFrame(frameLoop);
   API.dragDriver = function(name){ dragForce = name || null; return dragForce; };
   /* the manual gearbox's bonus, live, so a check can measure the same run with
      it and without it rather than read the constants back (RLG-294) */
+  /* the boards as they stand, and the state a test drive would score under */
+  API.boards = function(){ return { state: boardState(), all: boardsAll(), name: boardName.join('') }; };
   API.manualBonus = function(a, t){
     if(typeof a === 'number') MANUAL_ACCEL = a;
     if(typeof t === 'number') MANUAL_TOP = t;

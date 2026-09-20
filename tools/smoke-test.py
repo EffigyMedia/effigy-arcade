@@ -275,6 +275,8 @@ def saves(page, base):
       // RLG-156's best drag time per car: the same `-suffix` path, registered here
       // for the same reason as the tournament store above.
       A.save.set('inter-drag', { HATCH: 31.2 });
+      // RLG-292's leaderboard, one board per mode and per test-drive state. Same path again.
+      A.save.set('inter-board', { 'drive:cp+hp': [{ n: 'ABC', car: 'HATCH', v: 4.2 }] });
       localStorage.setItem('effigyarcade.inter.tally.v1', '{}');         // its own key
       localStorage.setItem('effigyarcade.inter.opts.v1', '{"mirror":"OFF"}');  // shell options
       localStorage.setItem('effigyarcade.inter.audio.v1', '{"music":false}');  // audio prefs

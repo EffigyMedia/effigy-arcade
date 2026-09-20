@@ -915,6 +915,22 @@ h1 u{text-decoration:none;display:block;font-size:.34em;letter-spacing:.26em;col
 #gcar{display:block;margin:0 auto;position:relative;z-index:1}
 .gname{font-family:var(--disp);font-size:20px;letter-spacing:.10em;color:#fff3e2;margin-top:2px}
 .gnote{font-size:9px;letter-spacing:.14em;color:#8a7f92;margin:4px 0 10px}
+/* ---- THE LEADERBOARD AND ITS INITIALS (RLG-292) --------------------------
+   A board row is rank, initials, car and score on one line, and the initials
+   are three tall slots with an arrow above and below - an arcade cabinet's own
+   entry, and no keyboard on a touch-only product. */
+.board{margin:10px 0 4px;display:flex;flex-direction:column;gap:4px}
+.brow{display:grid;grid-template-columns:22px 1fr 1fr auto;align-items:center;gap:6px;
+  padding:5px 8px;border:1px solid rgba(255,255,255,.10);border-radius:3px;
+  background:rgba(255,255,255,.03);font-size:11px;letter-spacing:.10em}
+.brow span{color:#8a7f92}
+.brow b{font-family:var(--disp);letter-spacing:.16em;color:#fff3e2}
+.brow u{text-decoration:none;color:var(--sodium,#ffb347)}
+.bname{display:flex;justify-content:center;gap:10px;margin:12px 0}
+.bslot{display:flex;flex-direction:column;align-items:center;gap:4px}
+.bslot .go{padding:4px 14px;margin:0}
+.bslot b{font-family:var(--disp);font-size:26px;letter-spacing:.10em;color:#fff3e2}
+
 .gstat{display:flex;justify-content:space-between;align-items:center;
   padding:5px 4px;border-bottom:1px solid rgba(255,255,255,.07);
   font-size:10px;letter-spacing:.12em;color:#9aa0ae}
