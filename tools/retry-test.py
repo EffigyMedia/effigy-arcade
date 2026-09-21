@@ -128,7 +128,9 @@ def main():
         page.wait_for_timeout(400)
         dirty = page.evaluate('() => window.__probe.road.worldState()')
         print('      the world was dirtied to: %s' % dirty)
-        res.check(dirty['snowy'] == 1 and dirty['settle'] > 0.2 and dirty['storm'] == 1,
+        # `storm` is EASED toward what `setSky` asked for, so 400ms later it reads a little under
+        # it - 0.926 was measured on 2026-09-21. The question is whether the world is stormy.
+        res.check(dirty['snowy'] == 1 and dirty['settle'] > 0.2 and dirty['storm'] > 0.9,
                   'the world really is snowy and stormy before the retry',
                   str(dirty))
         res.check(float(dirty.get('pool', 0)) > 0.9 and float(dirty.get('grip', 1)) < 0.75,
@@ -138,9 +140,27 @@ def main():
         # ---- THEN START THE NEXT RUN ----------------------------------------
         # `start` is the path RETRY and DRIVE both take, so this is the same reset a
         # time-over retry runs. Going through the menu would test the menu.
-        page.evaluate('() => window.__probe.road.restart()')
+        # ---- AND WHAT CAME ACROSS IS READ AT THE INSTANT OF THE RESET ---------
+        # This used to wait 500ms and then assert that nothing had settled, and it failed on
+        # about one run in six with nothing carried at all (RLG-310). A new run OPENS somewhere,
+        # and a mountain or a tundra has a snow floor of its own that fills at 0.12 a second -
+        # so half a second in, a clean reset reads 0.057, which is the new place settling rather
+        # than the last one surviving. Measured over 24 resets on 2026-09-21: settle read 0.000
+        # every time at the instant of the reset, and was non-zero at 500ms ONLY where the place
+        # opened had a floor. The instant is the only moment the question can be asked.
+        #
+        # STANDING WATER IS THE SAME QUESTION, SO IT IS READ THE SAME WAY. `pool` fills from
+        # zero while a run is wet, and a run can OPEN in rain - so waiting before reading it
+        # measures the new place's weather rather than the last place's road.
+        carried = page.evaluate('''() => { const R = window.__probe.road;
+            R.restart(); const w = R.worldState();
+            return { settle: R.settle(), pool: w.pool, biome: R.biome(), floor: R.snowFloor() }; }''')
         page.wait_for_timeout(500)
         fresh = page.evaluate('() => window.__probe.road.worldState()')
+        fresh['settle'] = carried['settle']
+        fresh['pool'] = carried['pool']
+        print('      at the instant of the reset: settle %s, pool %s, opening in %s (its own floor %s)'
+              % (carried['settle'], carried['pool'], carried['biome'], carried['floor']))
         print('      and the next run starts at: %s' % fresh)
 
         # 1. NOTHING ACCUMULATED SURVIVES. Settled snow is the clearest case: it is built
