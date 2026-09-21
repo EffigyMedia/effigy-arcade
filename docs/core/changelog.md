@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-113"></a>
+## [0.14.113] - 2026-09-20
+- Changed: **the canyon's skyline is as tall as the canyon walls.** It was capped to the tallest
+  loose rock the road pass could place, which was right when the walls WERE loose rock and stopped
+  being right when a sheer plane replaced them and the rock stopped being drawn at all. The cap is
+  the wall's own height now, from the expression the wall pass uses, so the two cannot drift: the
+  band went from 23.7 px to 38.0 px. It also found the mirror reading the wall at a height of its
+  own - a mountain's wall stood at 6 camera heights in the glass and 13.2 in the windscreen.
+  [RLG-304](../fragments/RLG-304.md)
+
 <a id="v0-14-112"></a>
 ## [0.14.112] - 2026-09-20
 - Removed: **the boundary face on the mountain.** A slot canyon IS a rock face you drive into and a

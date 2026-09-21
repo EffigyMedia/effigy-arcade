@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.112';
+window.ROAD_BUILD = '0.14.113';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10128,11 +10128,14 @@ function drawScenery(idx, p1, y1, z1, fade){
      front of a surface that already covers everything they stand against, at
      the two densest settings on the board: a canyon is 0.98 over five ranks.
 
-     THE SPEC ITSELF STAYS, and that is not tidiness either. `skyRiseOf` derives
-     the skyline's height cap from this place's own scenery height (RLG-104), so
-     deleting the row would drop a canyon's horizon to the default and put the
-     band back behind the wall it was capped to. What changes is which SIDES it
-     is drawn on, which is the same shape as the rolled hazard above. */
+     THE SPEC ITSELF STAYS, and the reason has changed. It was kept because
+     `skyRiseOf` derived the skyline's height cap from this place's own scenery
+     height, and deleting the row would have dropped a canyon's horizon to the
+     default. RLG-304 pointed that cap at the WALL instead, so the row no longer
+     holds the horizon up - it is what the place would put beside the road on a
+     side that is not walled, and every side of these two is. What changes here
+     is which SIDES it is drawn on, which is the same shape as the rolled hazard
+     above. */
   const faced = wallSides(B);
   for(const side of [-1, 1]){
     const seaSideNow = water && side === water;
@@ -10415,22 +10418,47 @@ function skyBucket(){ return Math.round(phase() * 40); }
    is told that the furthest object is the nearest one.
 
    SO A PLACE ASKS FOR THE CAP RATHER THAN STATING A HEIGHT. `skyWall` derives
-   it from the place's OWN roadside scenery, through the same expression
-   `drawScenery` sizes a wall with and the same growth range - so a change to
-   the rock spec moves the horizon with it and the two cannot drift. A stated
-   `skyRise` still works and nothing uses one.
+   it from the tallest thing the road pass can put at the far end of its own
+   draw - so a change to that object moves the horizon with it and the two
+   cannot drift. A stated `skyRise` still works and nothing uses one.
+   ------------------------------------------------------------------------- */
+/* ---- AND THE TALLEST THING IS NO LONGER A ROCK (owner, 2026-09-20, RLG-304)
+   Owner: "as for the skyline, in the canyon, we should rise it up to meet the
+   height of the now three D canyon walls."
+
+   RLG-104's reasoning above is untouched. What changed is the OBJECT it points
+   at. The cap was derived from the tallest ROCK SPRITE `drawScenery` can place,
+   because in 2026-09-01 that was the wall - loose rock, ranked five deep. RLG-297
+   replaced it with a continuous plane and RLG-300 stopped drawing the rock on a
+   walled side altogether, so the cap was measuring a thing the place does not
+   draw, and standing a canyon's horizon at a fifth of the wall beside it.
+
+   A WALLED PLACE READS ITS WALL. The expression is the wall pass's own -
+   `CAM_H * H / 2 * wallPlain(B)` against the projection at the far end of the
+   draw - so `WALL_RISE` moves the horizon with it and the two cannot drift,
+   which is RLG-104 restated for the object that replaced the one it was
+   written about. A place with no wall keeps the scenery derivation.
+
+   THE PLAIN RISE, NOT A SAMPLED ONE. `wallRiseAt` carries the ridge noise and
+   answers a different number every segment; this is called once a frame from
+   `drawSky` and its result scales the band's tile, so a sampled height would
+   make the skyline breathe as the road went by.
    ------------------------------------------------------------------------- */
 function skyRiseOf(key){
   const B = BIOMES[key];
   if(!B) return 1;
   if(!B.skyWall) return B.skyRise || 1;
-  const spec = SCENERY[B.name];
-  if(!spec || !spec.h) return 1;
   /* the far end of the draw: `proj` at that distance is a constant, so this
      does not breathe frame to frame */
   const scale = CAM_D / (DRAW * SEG);
-  const wall = scale * SCENE_UNIT * W/2 * spec.h * (SCENE_GROW_LO + SCENE_GROW_SPAN);
-  return clamp(wall / (H * 0.13), 0.15, 2.5);
+  if(B.wall > 0){
+    const wall = scale * CAM_H * H/2 * wallPlain(B);
+    return clamp(wall / (H * 0.13), 0.15, 2.5);
+  }
+  const spec = SCENERY[B.name];
+  if(!spec || !spec.h) return 1;
+  const rock = scale * SCENE_UNIT * W/2 * spec.h * (SCENE_GROW_LO + SCENE_GROW_SPAN);
+  return clamp(rock / (H * 0.13), 0.15, 2.5);
 }
 
 /* ---- THE CITY IS THE PLACE'S, NOT THE HOUR'S (RLG-094) ------------------
@@ -15454,8 +15482,23 @@ function ridgeNoise(seg, run, salt){
    does to colour and the arrival ramp does to opacity: detail that cannot be
    resolved is not drawn. It grows in smoothly as the car approaches, over
    seconds, which is what those two already do. */
+/* ---- THE PLACE'S WALL AT FULL SIZE, WITH NOTHING SAMPLED ON IT (RLG-304) --
+   How high this place's wall plane stands, in camera heights, with no ridge and
+   no growth on it. It is separated out because THREE other drawings need the
+   same number and each had written its own copy of it: the boundary face, the
+   mirror's wall, and the skyline's height cap. The mirror's copy had already
+   drifted - it read `WALL_RISE` alone and never the place's multiple, so a
+   mountain's wall in the glass stood at 6 camera heights where the windscreen
+   put it at 13.2.
+
+   IT MUST STAY CONSTANT FOR A GIVEN PLACE, because `skyRiseOf` calls it once
+   per frame and a cap that varies per segment makes the horizon breathe. That
+   is why the ridge noise is on `wallRiseAt` and not in here. */
+function wallPlain(B){
+  return WALL_RISE * ((B && B.wall > 0) ? B.wall : 1);
+}
 function wallRiseAt(seg, B, near){
-  const tall = WALL_RISE * ((B && B.wall > 0) ? B.wall : 1);
+  const tall = wallPlain(B);
   const k = (B && B.ridge !== undefined) ? B.ridge : 1;
   const res = near === undefined ? 1 : clamp(near * 8, 0, 1);
   if(k <= 0 || res <= 0) return tall;
@@ -15466,6 +15509,8 @@ function wallRiseAt(seg, B, near){
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
+/* what the skyline band was last PAINTED at, per place - see `paint` in drawSky */
+const skyBandDrawn = {};
 /* what rain does to a surface, as a colour to mix toward rather than as a black
    sheet over the frame */
 const WET_DARK = [12,18,30];
@@ -15892,7 +15937,7 @@ function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
   const px = pane ? pane.x : 0, pw = pane ? pane.w : W;
   const bot = Math.min(pane ? pane.y + pane.h : H, groundY);
   const lx = wallFootX(p, -1), rx = wallFootX(p, 1);
-  const base = CAM_H * H / 2 * WALL_RISE * ((B.wall > 0) ? B.wall : 1);
+  const base = CAM_H * H / 2 * wallPlain(B);
   const ridgeK = (B.ridge === undefined) ? 1 : B.ridge;
   const faces = wallSides(B);
   if(!faces || !faces.length) return 0;
@@ -24513,6 +24558,16 @@ function drawSky(){
     let o2 = ox % w2;
     if(o2 > 0) o2 -= w2;
     const y2 = horizon - h2 + 1 + drop;
+    /* ---- WHAT WAS ACTUALLY PAINTED, WRITTEN AT THE PAINT (RLG-304) ------
+       `skyRiseOf` answers a height cap and a check that reads it is reading
+       what the program CALCULATED, which RLG-302 is the standing lesson about.
+       This is the band's height and top as `drawImage` is given them, recorded
+       per place, the same instrument `dropTrace` and `wallTrace` already are.
+       The record is reused rather than rebuilt, because this runs three times
+       a frame for the life of a run. */
+    let rec = skyBandDrawn[key];
+    if(!rec) rec = skyBandDrawn[key] = { h:0, top:0, alpha:0 };
+    rec.h = h2; rec.top = y2; rec.alpha = alpha;
     ctx.globalAlpha = alpha;
     for(let x=o2; x<W+w2; x+=w2) ctx.drawImage(art, x, y2, w2, h2);
     /* windows on: full at night, out by day */
@@ -29780,7 +29835,11 @@ function drawMirrorFull(mx, my, mw, mh){
       const mWalls = wallSides(mB);
       if(mWalls){
         const mDropS = mB.hazard === 'roll' ? hazardSide(mB) : 0;
-        const mkU = CAM_H_M * H_M / 2 * WALL_RISE;
+        /* THE PLACE'S OWN MULTIPLE, which this had never read (RLG-304). It
+           was `WALL_RISE` alone, so a mountain's wall stood at 6 camera heights
+           in the glass and 13.2 in the windscreen - the same wall, two heights,
+           because the expression was written twice. `wallPlain` is the one. */
+        const mkU = CAM_H_M * H_M / 2 * wallPlain(mB);
         const mwy = wz === mFar ? vpy : Math.max(my, a.y - a.scale * mkU);
         const mfarW = clamp((pos - wz) / MIRROR_BACK, 0, 1);
         ctx.fillStyle = mixRGB(mixRGB(groundTone(widx, dark), WALL_SHADE, DROP_DARK),
@@ -34501,25 +34560,35 @@ requestAnimationFrame(frameLoop);
   /* how tall a place stands its skyline, as a multiple of the ordinary band.
      A check reads it to prove a wall is not drawn at horizon scale (RLG-104). */
   API.skyRise = function(k){ return +skyRiseOf(k || biome).toFixed(4); };
+  /* the band as the last frame DREW it, not as it computes (RLG-304) */
+  API.skyBandDrawn = function(k){ return skyBandDrawn[k || biome] || null; };
   /* ---- THE SKYLINE AGAINST THE WALLS, IN PIXELS (RLG-104) --------------
      The owner's report was that the skyline stands higher than the canyon
      walls, and a ratio cannot answer that: it says how tall the band is
      against the ordinary band, not against the scenery beside it. These are
      the two heights on screen, computed the way each is actually drawn - the
-     skyline from its band, and the wall from the same expression
-     `drawScenery` sizes one with at the far end of the draw.
+     skyline from its band, and the wall from the expression the WALL PASS sizes
+     one with at the far end of the draw.
+
+     IT REPORTED THE ROCK UNTIL RLG-304, which is the same fault the cap itself
+     had: a walled place stopped drawing loose rock in RLG-300, so a check
+     reading this was comparing the horizon against an object that is not on
+     screen. `rock` is kept beside it, because a place with no wall still puts
+     scenery at the far end of the draw and that is what caps ITS horizon.
      ------------------------------------------------------------------ */
   API.skylineVsWall = function(k){
     const key = k || biome;
     const B = BIOMES[key] || BIOMES.FOREST;
     const spec = SCENERY[B.name];
     const scale = CAM_D / (DRAW * SEG);
+    const rock = spec && spec.h
+      ? +(scale * SCENE_UNIT * W/2 * spec.h * (SCENE_GROW_LO + SCENE_GROW_SPAN)).toFixed(1)
+      : null;
     return {
       name: B.name,
       sky: +(H * 0.13 * skyRiseOf(key)).toFixed(1),
-      wall: spec && spec.h
-        ? +(scale * SCENE_UNIT * W/2 * spec.h * (SCENE_GROW_LO + SCENE_GROW_SPAN)).toFixed(1)
-        : null
+      wall: B.wall > 0 ? +(scale * CAM_H * H/2 * wallPlain(B)).toFixed(1) : rock,
+      rock: rock
     };
   };
   /* what kind of water a place has, if any. Two different things and a check
