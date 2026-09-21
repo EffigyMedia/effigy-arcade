@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.114';
+window.ROAD_BUILD = '0.14.115';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15514,9 +15514,34 @@ const END_RUN = 8;
 let RANGE_SCALE = 2.1,   /* how much bigger than the horizon band, so nearer  */
     RANGE_AT    = 0.78,  /* how far down the draw it stands, as a fraction    */
     RANGE_SINK  = 0.35,  /* how much of its foot the valley floor swallows    */
-    RANGE_DRIFT = 0.0042,/* how fast it slides past, in pixels per road unit  */
     RANGE_ALPHA = 0.92;  /* how solid it is against the floor behind it       */
+/* ---- HOW FAR OUT THE RANGE STANDS, AND IT REPLACES A TYPED RATE (RLG-309)
+   Owner, 2026-09-21: the valley range parallaxes too fast.
+
+   IT DID, AND THE RATE WAS THE ONLY THING IN THIS MODEL NOTHING DERIVED.
+   `RANGE_DRIFT` was 0.0042 pixels of slide per unit of road travelled, picked
+   by hand. Every other depth cue in the engine falls out of the projection, and
+   a rate that does not match the distance the range is supposed to be at reads
+   as the wrong speed however it is tuned.
+
+   WHAT THE OLD NUMBER IMPLIED IS THE ARGUMENT AGAINST IT. A point at lateral
+   `L` and distance `dz` sits at `CAM_D * L * W/2 / dz` from the vanishing point
+   and sweeps outward at that over `dz` again, so a slide rate IS a standoff.
+   Read backwards, 0.0042 puts the range 45,700 units out while it stands 46,800
+   ahead - forty-four degrees off the road, which is land BESIDE you rather than
+   across a valley. That is why it moved like something close.
+
+   SO THE STANDOFF IS STATED AND THE RATE IS DERIVED. In multiples of `ROAD`,
+   which is the unit every other roadside distance is written in. Twelve of them
+   is about 27,600 units - a little over twice the valley's own depth, which is
+   what land across a valley looks like. A tunable with a committed default. */
+let RANGE_OUT = 12;
+/* how much of the road's own turn AT THE RANGE'S DISTANCE it takes. One is the
+   road's, which is what a thing standing in the world does. */
+let RANGE_SWING = 1;
 let rangeOff = false;    /* debug: no range, so a check can diff two frames   */
+/* the range's offset broken into the terms that make it up (RLG-309) */
+const rangeTerms = { lane:0, bend:0, drift:0, smooth:0, own:0, far:0, tile:0 };
 /* ---- SMOOTH, NOT SPECKLED --------------------------------------------
    `sceneRand` answers a fresh number per index, and a height taken straight
    from it is a comb rather than a ridge. This picks a value per BUCKET of
@@ -15968,7 +15993,52 @@ function drawValleyRange(g, B, side, feetY, farSeg, grow){
      `pos` is the road travelled, so the offset is simply a small multiple of
      it. It takes the bend's chase as well, because it is still far enough away
      to swing with a corner. */
-  let o2 = ((-camX * W * 0.030) + skySmooth * 1.55 - pos * RANGE_DRIFT) % w2;
+  /* ---- THE THREE TERMS, WRITTEN DOWN SEPARATELY (RLG-309) -------------
+     The owner reports the range parallaxing too fast, and the offset is three
+     things added together. A check cannot tell which of them is moving it from
+     the sum, so each is recorded at the point it is computed - the same
+     instrument `wallTrace` and `dropTrace` are. `own` is what the bend term
+     WOULD be if the range read the road's turn at its own distance rather than
+     borrowing the horizon's, which is the comparison this ruling turns on. */
+  const tLane  = -camX * W * 0.030;
+  /* ---- THE CORNER IT TAKES IS THE ONE AT ITS OWN DISTANCE (RLG-309) ----
+     This was `skySmooth * 1.55` - the horizon band's smoothed swing, borrowed
+     and multiplied. The horizon sits at `SKY_BEND_AT`, the far end of the
+     world; the range stands at `RANGE_AT` of the draw, which is NEARER, and
+     bend accumulates with distance. So the range was swinging half as much
+     again as the horizon behind it when it should swing less - measured at 0.66
+     of it over six seconds of mountain road, against the 1.55 it was taking.
+
+     `bendPx` at its own distance is what the ROAD uses at every slice, with no
+     smoothing, because a thing standing in the world turns with the world. The
+     smoothing on `skySmooth` belongs to the sprite at the horizon (RLG-096) and
+     is not a property of bends.
+
+     AND IT IS NEGATED, WHICH IS THE ONE THING THE BORROWED TERM HAD RIGHT.
+     This is a TILE OFFSET, not an object's screen position. When the road bends
+     right the view turns right and everything standing in the world slides
+     LEFT, so the texture offset moves against the bend. `skyWant` is
+     `-bendPx(pos + SKY_BEND_AT) * 0.55` for the same reason, and taking
+     `skySmooth * 1.55` inherited the sign without stating it. Dropping the
+     negation inverted the swing, which was caught by comparing the direction
+     the range moves against the direction the horizon behind it moves - two
+     pieces of distant scenery cannot travel opposite ways through one corner.
+
+     THE HORIZON'S OWN 0.55 IS NOT COPIED. That band stands for things at no
+     particular distance and its fraction is a feel; this one is at a stated
+     distance and takes the whole of the turn there. */
+  const rangeZ = RANGE_AT * DRAW * SEG;
+  const tBend  = -bendPx(pos + rangeZ) * RANGE_SWING;
+  /* the slide, derived from the standoff rather than typed - see `RANGE_OUT` */
+  const tDrift = -pos * (CAM_D * (RANGE_OUT * ROAD) * (W/2) / (rangeZ * rangeZ));
+  rangeTerms.lane = +tLane.toFixed(2);
+  rangeTerms.bend = +tBend.toFixed(2);
+  rangeTerms.drift = +tDrift.toFixed(2);
+  rangeTerms.smooth = +skySmooth.toFixed(2);
+  rangeTerms.own = +bendPx(pos + rangeZ).toFixed(2);
+  rangeTerms.far = +bendPx(pos + SKY_BEND_AT).toFixed(2);
+  rangeTerms.tile = +w2.toFixed(1);
+  let o2 = (tLane + tBend + tDrift) % w2;
   if(o2 > 0) o2 -= w2;
   g.globalAlpha = RANGE_ALPHA;
   rangeX = +o2.toFixed(2);          /* where the tiling started, for a check */
@@ -34626,12 +34696,17 @@ requestAnimationFrame(frameLoop);
       if(o.scale > 0) RANGE_SCALE = o.scale;
       if(o.at    >  0) RANGE_AT    = o.at;
       if(o.sink  >= 0) RANGE_SINK  = o.sink;
-      if(o.drift >= 0) RANGE_DRIFT = o.drift;
+      if(o.out   >  0) RANGE_OUT   = o.out;
+      if(o.swing >= 0) RANGE_SWING = o.swing;
       if(o.alpha >= 0) RANGE_ALPHA = o.alpha;
     }
     if(o && o.reset) rangeN = 0;
-    return { scale:RANGE_SCALE, at:RANGE_AT, sink:RANGE_SINK, drift:RANGE_DRIFT,
-             alpha:RANGE_ALPHA, drawn:rangeDrawn, frames:rangeN, x:rangeX };
+    const rz = RANGE_AT * DRAW * SEG;
+    return { scale:RANGE_SCALE, at:RANGE_AT, sink:RANGE_SINK,
+             out:RANGE_OUT, outZ:Math.round(RANGE_OUT * ROAD), atZ:Math.round(rz),
+             drift:+(CAM_D * (RANGE_OUT * ROAD) * (W/2) / (rz*rz)).toFixed(6),
+             swing:RANGE_SWING, alpha:RANGE_ALPHA, drawn:rangeDrawn, frames:rangeN,
+             x:rangeX, terms:Object.assign({}, rangeTerms) };
   };
   API.wallTrace = function(){ return wallTrace.slice(); };
   /* debug: put the hazard on a NAMED side, so a check can render the same place

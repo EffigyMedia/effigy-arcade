@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-115"></a>
+## [0.14.115] - 2026-09-21
+- Changed: **the range across a valley moves like something at a stated distance.** Its slide was
+  the one number in that model nothing derived, and read backwards it put the range forty-four
+  degrees off the road - land beside you rather than across a valley, which is why it moved like
+  it. The standoff is stated now and the rate falls out of the projection: about forty per cent
+  slower. The corner it takes is the road's own turn where it stands, instead of the horizon
+  band's scroll borrowed and multiplied. [RLG-309](../fragments/RLG-309.md)
+
 <a id="v0-14-114"></a>
 ## [0.14.114] - 2026-09-20
 - Changed: **a mountain grows out of the ground instead of standing on it at a line.** The ground
