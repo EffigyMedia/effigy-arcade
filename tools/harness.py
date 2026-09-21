@@ -21,17 +21,34 @@ CHANNELS = ("chrome", "msedge")
 
 
 def launch_chromium(p, **kw):
-    """Playwright's own build first, then an installed Chrome or Edge. Says which it got."""
+    """Playwright's own build first, then an installed Chrome or Edge. Says which it got.
+
+    ▶ EFFIGY_NO_GPU=1 RUNS IT WITHOUT THE GPU, AND SAYS SO ON THE BROWSER LINE. On 2026-09-21
+    every driving cabinet crashed its renderer on load ('Target crashed') while a blank page and
+    a plain canvas were fine - and with `--disable-gpu` the same cabinet came up at once. Build
+    0.14.114, which had passed smoke-test the day before, failed identically, which is what made
+    it the machine rather than the engine. It is RLG-211's unhealthy GPU path, grown from a slow
+    boot into a crash. Software rendering draws the same canvas, so a check about WHAT is drawn
+    still means what it says; a FRAME RATE does not, and the browser line is what tells the two
+    apart, which is why it is never silent.
+    """
+    import os
+    if os.environ.get('EFFIGY_NO_GPU') == '1':
+        kw = dict(kw)
+        kw['args'] = list(kw.get('args') or []) + ['--disable-gpu']
+        gpu_note = ' - GPU OFF (EFFIGY_NO_GPU), so no frame rate here is comparable'
+    else:
+        gpu_note = ''
     try:
         browser = p.chromium.launch(**kw)
-        print("  browser: playwright bundled chromium (pinned)")
+        print("  browser: playwright bundled chromium (pinned)" + gpu_note)
         return browser
     except Exception as bundled_failed:
         for channel in CHANNELS:
             try:
                 browser = p.chromium.launch(channel=channel, **kw)
                 print(f"  browser: installed {channel} - no bundled chromium, so the engine "
-                      f"version is whatever this machine has")
+                      f"version is whatever this machine has" + gpu_note)
                 return browser
             except Exception:
                 continue
