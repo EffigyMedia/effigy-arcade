@@ -332,7 +332,12 @@ def main():
         sides = []
         for _ in range(40):
             page.evaluate("() => window.__probe.road.startBiomeChange('FARMLAND')")
-            sides.append(page.evaluate("() => window.__probe.road.sideRoll()"))
+            # THE SIDE THE PLACED PLACE WAS DEALT, which is `sideTo` since RLG-308 gave each end of
+            # the pair its own. `startBiomeChange` places a place AHEAD; `sideRoll()` and `seaSide()`
+            # mean the place the player is IN. This passed before only because the shared coin
+            # overwrote the current place with the new one's side - the check was leaning on the
+            # exact defect RLG-308 removed. The question it asks is unchanged.
+            sides.append(page.evaluate("() => window.__probe.road.sides().sideTo"))
         left = sides.count(-1)
         print('      over 40 placements: %d left, %d right' % (left, len(sides) - left))
         res.check(all(v in (-1, 1) for v in sides),

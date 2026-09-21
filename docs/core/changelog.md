@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-117"></a>
+## [0.14.117] - 2026-09-21
+- Fixed: **a coast keeps its sea on one side for as long as you are driving along it.** The side
+  was one coin shared by every place, and it was thrown when the NEXT place was planned - so the
+  coast you were still on changed sides half the time, with nothing else changing. Each place
+  keeps its own side now. A mountain's cliff was the same fault and could move the same way.
+  [RLG-308](../fragments/RLG-308.md)
+- Fixed: **deer cross the road in a forest.** They never had. The planner asked that same coin
+  whether a forest had a sea beside it, and the coin was never the answer that meant no - so
+  every forest said yes, in every run, from the day the deer shipped.
+  [RLG-152](../fragments/RLG-152.md)
+
 <a id="v0-14-116"></a>
 ## [0.14.116] - 2026-09-21
 - Fixed: **the road keeps running when a race ends.** Crossing the line set a state nothing reads,

@@ -194,7 +194,17 @@ def main():
         print('  THE COINS, OVER 200 ROLLS')
         rolls = page.evaluate("""() => {
           const R = window.__probe.road, out = [];
-          for(let i = 0; i < 200; i++){ R.rollSide(); out.push([R.sideRoll(), R.hazardRoll()]); }
+          /* THE COIN A NEW PLACE IS DEALT, which is the place AHEAD since RLG-308 gave
+             each end of the pair its own side. `sideRoll()` and `hazardRoll()` still mean
+             the place the player is IN, and reading them here after a roll measured a
+             coin that the roll no longer touches - 200 of 200 on one side and 100 per
+             cent agreement, which read as one welded coin and was the harness asking the
+             wrong end of the pair. The two questions below are unchanged. */
+          for(let i = 0; i < 200; i++){
+            R.rollSide();
+            const s = R.sides();
+            out.push([s.sideTo, s.hazardTo]);
+          }
           return out;
         }""")
         sea = [r[0] for r in rolls]

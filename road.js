@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.116';
+window.ROAD_BUILD = '0.14.117';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10101,7 +10101,7 @@ function drawScenery(idx, p1, y1, z1, fade){
      scenery system rather than around it is what makes that a cheap change
      later instead of a second one.
      ------------------------------------------------------------------ */
-  const water = B.sea ? sideRoll : 0;
+  const water = B.sea ? sideFor(B) : 0;
   /* ---- AND A CLIFF IS A DROP, SO NOTHING STANDS ON IT (RLG-265) --------
      Owner, 2026-09-15: "In mountain we have big mountainous scenery on both
      sides of the road. I feel like we should pick one side of the road, and the
@@ -10153,7 +10153,7 @@ function drawScenery(idx, p1, y1, z1, fade){
        empty that left the first spec with no side to draw on, which is dead code
        dressed as generality. Farmland uses BOTH sides, so both specs are live.
        ---------------------------------------------------------------- */
-    const cropSide = B.crop && side === sideRoll;
+    const cropSide = B.crop && side === sideFor(B);
     /* out at sea it is the big ships; nearer in, the small craft. The choice is
        per SEGMENT and comes from the same placement hash everything else uses,
        so a given stretch of water always holds the same vessels. */
@@ -12039,10 +12039,29 @@ let deerZ = -1, deerSide = 1;
 /* ---- IT WANTS A FOREST WITH TREES ON BOTH SIDES (RLG-152) ------------
    The owner said "from one tree line to the other", so a place with water, a
    wall or a bore down one side is not it - there is nothing for the animal to
-   come out of. `sideRoll` is the sea's side and is zero when there is none.
+   come out of.
    -------------------------------------------------------------------- */
-function planDeer(){
-  if(biome !== 'FOREST' || sideRoll) { deerZ = -1; return; }
+/* ---- AND IT HAS NEVER ONCE RUN, BECAUSE OF WHAT IT ASKED (RLG-308) --------
+   This read `if(biome !== 'FOREST' || sideRoll)`, and the note above it said
+   "`sideRoll` is the sea's side and is zero when there is none". IT WAS NEVER
+   ZERO. The coin was only ever thrown to -1 or 1, and it started at 1, so every
+   forest was rejected as a forest by the sea - and no deer was planned in a real
+   run from the day this was written. Found by restructuring the coin for
+   RLG-308, which forced the question of what this line meant.
+
+   `deer-test` passed the whole time, and it is the textbook case the note above
+   `rollSide` warns about. Its probe set the coin to ZERO by hand to ask about a
+   forest with no sea - a value the game never produces - so it measured the
+   odds through a path no run ever took.
+
+   WHETHER A PLACE HAS A SEA IS A PROPERTY OF THE PLACE, and the side it is on
+   is a different question. `sea` is the override the probe passes so it can ask
+   about a wood with water down one side, which no place on the board is; a run
+   passes nothing and gets the place's own answer. */
+function planDeer(sea){
+  const B = BIOMES[biome];
+  const wet = sea === undefined ? !!(B && B.sea) : !!sea;
+  if(biome !== 'FOREST' || wet) { deerZ = -1; return; }
   if(Math.random() >= DEER_ODDS) { deerZ = -1; return; }
   /* never nearer than the spawn horizon, or a deer is planned inside the
      drawn road and walks into view out of nothing (RLG-295) */
@@ -15834,7 +15853,28 @@ function authoredSlope(z){
    A SECOND FUNCTION THAT ROLLS A SIDE WOULD BE A SECOND THING TO KEEP IN STEP,
    and this project has the receipts on that. One roll, read by two places.
    ------------------------------------------------------------------------- */
-let sideRoll = 1;
+/* ---- A SIDE BELONGS TO A PLACE, SO THERE ARE TWO OF THEM (RLG-308) --------
+   Owner, 2026-09-21: "For some reason I've seen the coastal biome flip sides
+   randomly."
+
+   IT WAS ONE GLOBAL, AND THE COIN WAS THROWN FOR THE WRONG PLACE. `rollSide()`
+   runs when the NEXT place is planned - at `here + DRAW >= planEdge`, the
+   moment its boundary enters the far end of the drawn road, three hundred
+   segments ahead and seconds or minutes before the car reaches it. Its comment
+   says why: "a fresh coin for every new place". But the place the player is
+   still driving through read the same variable, so planning the next one moved
+   the sea of THIS one - half the time, from one frame to the next, with nothing
+   else changing.
+
+   That is RLG-150's fault wearing different clothes: the place the picture is
+   SHOWING and the place the generator is building for held in one variable.
+
+   SO EACH END OF THE PAIR KEEPS ITS OWN. The place you are in is `sideFrom`,
+   the place ahead is `sideTo`; a new place rolls only the one it owns, and the
+   crossing hands `sideTo` over when `biomeFrom` becomes `biomeTo`. Every reader
+   asks `sideFor(B)` with the place it is drawing, which is how `bioGrow`
+   already tells the two ends apart. */
+let sideFrom = 1, sideTo = 1;
 /* debug only, and it exists to REINTRODUCE the defect. True draws the far band's
    shore as a straight line to the vanishing point, which is what it was before
    RLG-093. Reverting the engine cannot falsify the check - the instrument reads
@@ -15895,13 +15935,25 @@ let seaStraight = false;
    So a second coin, turned in the same function on the same event, and
    `hazardSide()` is the one place that decides which of the two a place reads.
    ------------------------------------------------------------------------- */
-let hazardRoll = 1;
+let hazardFrom = 1, hazardTo = 1;
+/* which side a place puts its own thing on, for whichever end of the pair it
+   is. `biomeFrom === biomeTo` is one place everywhere, and then it is the one
+   the player is in. */
+function sideFor(B){
+  return (B && biomeFrom !== biomeTo && B.name === biomeTo) ? sideTo : sideFrom;
+}
+function hazardFor(B){
+  return (B && biomeFrom !== biomeTo && B.name === biomeTo) ? hazardTo : hazardFrom;
+}
 let railsOff = false;   /* debug: draw no rail, so a check can diff the two frames */
 let dropOff = false;    /* debug: no cliff either - the ground runs straight across */
-function rollSide(){
-  sideRoll = Math.random() < 0.5 ? -1 : 1;
-  hazardRoll = Math.random() < 0.5 ? -1 : 1;
-  return sideRoll;
+/* the coin for the place AHEAD - see `sideFrom`. `both` is the opening place,
+   which is the only time there is no place behind to protect. */
+function rollSide(both){
+  sideTo = Math.random() < 0.5 ? -1 : 1;
+  hazardTo = Math.random() < 0.5 ? -1 : 1;
+  if(both){ sideFrom = sideTo; hazardFrom = hazardTo; }
+  return sideTo;
 }
 
 /* ---- WHAT STANDS AT THE LIMIT OF TRAVEL, PER SIDE (RLG-265) --------------
@@ -15930,7 +15982,7 @@ function rollSide(){
 function hazardSide(B){
   /* where the hazard IS the water, the rail goes on the water's own side */
   if(!B || !B.hazard) return 0;
-  return B.hazard === 'water' ? sideRoll : hazardRoll;
+  return B.hazard === 'water' ? sideFor(B) : hazardFor(B);
 }
 /* ---- THE RANGE ON THE FAR SIDE OF A DROP (RLG-297) ---------------------
    `side` is the drop's own side, so the range is clipped to the half of the
@@ -16324,7 +16376,7 @@ function openBiome(){
   biomeStarted = 1;
   /* OPEN_KEYS, not BIOME_KEYS: a run never begins inside a passage (RLG-140) */
   biome = pickOpening();
-  rollSide();
+  rollSide(true);
   /* and THIS one's temperature, on the same occasion and for the same reason
      the sea's side is rolled here: a thing decided once when the place opens
      rather than per frame (RLG-109) */
@@ -16492,6 +16544,9 @@ function stepBiome(dt){
         leftFrom = clamp(1 - (biomeEdge - Math.floor(pos/SEG)) / SKY_NEAR, 0, 1);
       }
       biomeFrom = biomeTo;
+      /* and the place you are now in keeps the side it was drawn with on the
+         way in - see `sideFrom` (RLG-308) */
+      sideFrom = sideTo; hazardFrom = hazardTo;
       biome = biomeTo;
       bandBase = -1;
       endImpossibleWeather();
@@ -24722,7 +24777,7 @@ function drawSky(){
   const seaOnly = (key) => {
     const B = BIOMES[key];
     if(!B || !B.sea || B.overWater) return null;
-    return { x: W/2 + viewShift + bendPx(farIdx*SEG), side: sideRoll };
+    return { x: W/2 + viewShift + bendPx(farIdx*SEG), side: sideFor(B) };
   };
   const paint = (art, lit, alpha, drop, sc, bdw, bdh, key, span) => {
     if(alpha <= 0.002) return;
@@ -26900,8 +26955,8 @@ function drawRoad(){
            carries the slope on down rather than dropping vertically, so the
            NEAREST slice, which nothing paints over, ends correctly too.
            ---------------------------------------------------------- */
-        const shF = p2.x + sideRoll * roadsideAt(p2, sB.beach);
-        const shN = p1.x + sideRoll * roadsideAt(p1, sB.beach);
+        const shF = p2.x + sideFor(sB) * roadsideAt(p2, sB.beach);
+        const shN = p1.x + sideFor(sB) * roadsideAt(p1, sB.beach);
         /* ---- A SLOPE MEASURED OVER HALF A PIXEL IS NOT A SLOPE -----
            The fill carries its edge on down to the bottom of the screen so the
            NEAREST slice, which nothing paints over, ends on the shoreline's own
@@ -26920,8 +26975,8 @@ function drawRoad(){
         const dyS = y1 - y2;
         const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((H - y1) / dyS), -4*W, 5*W)
                             : shN;
-        if(sideRoll < 0 ? (shF > 0 || shN > 0) : (shF < W || shN < W)){
-          const edge = sideRoll < 0 ? 0 : W;
+        if(sideFor(sB) < 0 ? (shF > 0 || shN > 0) : (shF < W || shN < W)){
+          const edge = sideFor(sB) < 0 ? 0 : W;
           /* `fade` is 1 at the bumper and 0 at the end of the draw, so the
              distance the water has receded through is its complement */
           ctx.fillStyle = seaTone(sB, 1 - fade);
@@ -29138,7 +29193,7 @@ function draw(){
     const fa = proj(0, fFar*SEG);
     farSea.y = +fa.y.toFixed(1); farSea.horizon = horizon; farSea.ok = fa.ok;
     if(fa.ok && fa.y > horizon){
-      const sa = fa.x + sideRoll * roadsideAt(fa, fB.beach);
+      const sa = fa.x + sideFor(fB) * roadsideAt(fa, fB.beach);
       /* ---- THE HORIZON'S OWN SHORE IS NOT EXTRAPOLATED --------------
          The first version read the shoreline at two depths and carried the
          line between them up to the horizon. It was wrong about a third of
@@ -29190,7 +29245,7 @@ function draw(){
          does not sit between the horizon and the shore already drawn is simply
          not added. The failure mode is a shorter walk, never a missing sea.
          ------------------------------------------------------------- */
-      const edge = sideRoll < 0 ? 0 : W;
+      const edge = sideFor(fB) < 0 ? 0 : W;
       /* NO RECESSION HERE. This band is painted before `drawHaze`, so the wash
          is applied to it as paint rather than mixed into its colour. Asking for
          both would haze it twice and put the seam back the other way round. */
@@ -29206,7 +29261,7 @@ function draw(){
           const q = proj(0, (fFar + k*FAR_SEA_STEP) * SEG);
           if(!q || !q.ok) continue;
           if(!(q.y > lastY + 0.25 && q.y < fa.y - 0.25)) continue;
-          ctx.lineTo(q.x + sideRoll * roadsideAt(q, fB.beach), q.y);
+          ctx.lineTo(q.x + sideFor(fB) * roadsideAt(q, fB.beach), q.y);
           lastY = q.y;
           walked++;
         }
@@ -29834,7 +29889,7 @@ function drawMirrorFull(mx, my, mw, mh){
     drawBoats(mBfar, { vh:H_M, horizon:vpy, cx:mx + mw/2, halfW:mw/2,
                        topY:vpy, botY:my + mh, back:true,
                        drop: mBfar.overWater ? undefined : 0,
-                       side: mBfar.overWater ? 0 : sideRoll,
+                       side: mBfar.overWater ? 0 : sideFor(mBfar),
                        shore: mBfar.overWater ? undefined : 20000,
                        spread: mBfar.overWater ? undefined : 100000,
                        still: !mBfar.overWater });
@@ -29848,10 +29903,10 @@ function drawMirrorFull(mx, my, mw, mh){
   if(mfB.sea){
     const ma = rproj(0, pos - MIRROR_BACK), mb = rproj(0, pos - MIRROR_BACK + 900*12);
     if(ma && mb && ma.y > vpy && mb.y > ma.y){
-      const s1 = ma.x + sideRoll * roadsideAt(ma, mfB.beach, mw);
-      const s2 = mb.x + sideRoll * roadsideAt(mb, mfB.beach, mw);
+      const s1 = ma.x + sideFor(mfB) * roadsideAt(ma, mfB.beach, mw);
+      const s2 = mb.x + sideFor(mfB) * roadsideAt(mb, mfB.beach, mw);
       const sh = s1 + (s2 - s1) * ((vpy - ma.y) / (mb.y - ma.y));
-      const edge = sideRoll < 0 ? mx : mx + mw;
+      const edge = sideFor(mfB) < 0 ? mx : mx + mw;
       ctx.fillStyle = seaTone(mfB);
       ctx.beginPath();
       ctx.moveTo(sh, vpy); ctx.lineTo(s1, ma.y);
@@ -30071,9 +30126,9 @@ function drawMirrorFull(mx, my, mw, mh){
       }
     }
     if(mB.sea && !mB.overWater){
-      const msh = a.x + sideRoll * roadsideAt(a, mB.beach, mw);
+      const msh = a.x + sideFor(mB) * roadsideAt(a, mB.beach, mw);
       ctx.fillStyle = seaTone(mB);
-      if(sideRoll < 0){ if(msh > mx) ctx.fillRect(mx, a.y, msh - mx, my + mh - a.y); }
+      if(sideFor(mB) < 0){ if(msh > mx) ctx.fillRect(mx, a.y, msh - mx, my + mh - a.y); }
       else { if(msh < mx + mw) ctx.fillRect(msh, a.y, mx + mw - msh, my + mh - a.y); }
     }
     /* ---- AND THE GLASS SHOWS THE SAME DECK (RLG-112) ----------------
@@ -30184,7 +30239,7 @@ function drawMirrorFull(mx, my, mw, mh){
              in the water while the windscreen shows an empty shore */
           /* the seaward side carries the boats rather than nothing, and picks
              the same spec the windscreen picked for this segment (RLG-059) */
-          const mSea = mB.sea && mside === sideRoll;
+          const mSea = mB.sea && mside === sideFor(mB);
           if(mSea && !mB.boats) continue;
           /* ---- AND NOTHING STANDS ON THE DROP, AS OUT OF THE FRONT (RLG-278)
              Owner, 2026-09-19: in the mirror "it's still rocks on both sides".
@@ -30201,7 +30256,7 @@ function drawMirrorFull(mx, my, mw, mh){
           /* the glass reads the same sided answer the windscreen does, so a
              cornfield is not on the left out of the front and on the right in
              the mirror (RLG-102) */
-          const mCrop = mB.crop && mside === sideRoll;
+          const mCrop = mB.crop && mside === sideFor(mB);
           /* the same field and the same herd the windscreen reads, for the same
              reason the SIDE is shared: the glass must not show a pasture where
              the road ahead has corn, or a cow where it has a horse (RLG-145) */
@@ -34658,8 +34713,22 @@ requestAnimationFrame(frameLoop);
   };
   /* which side the water is on for the stretch now in view, and the shoreline's
      distance from the tarmac. -1 left, 1 right (RLG-059). */
-  API.seaSide  = function(){ return sideRoll; };   /* the old name, kept: harnesses use it */
-  API.sideRoll = function(){ return sideRoll; };
+  /* the side of the place the player is IN - which is what both of these meant
+     before a side belonged to a place (RLG-308) */
+  API.seaSide  = function(){ return sideFrom; };   /* the old name, kept: harnesses use it */
+  API.sideRoll = function(){ return sideFrom; };
+  /* ---- BOTH ENDS OF THE PAIR, AND WHETHER THE PLACE YOU ARE IN MOVED -----
+     RLG-308's fault was the place you are in taking the coin thrown for the
+     place ahead. A check has to see both ends to tell a side that belongs to a
+     place from one that is shared, and has to read the side the DRAWING asks
+     for at a segment rather than a variable. */
+  API.sides = function(seg){
+    const at = seg === undefined ? Math.floor(pos/SEG) : seg;
+    const B = bioAt(at);
+    return { from: biomeFrom, to: biomeTo, sideFrom: sideFrom, sideTo: sideTo,
+             hazardFrom: hazardFrom, hazardTo: hazardTo,
+             here: B.name, sideHere: sideFor(B), hazardHere: hazardSide(B) };
+  };
   /* ---- WHAT STANDS AT EACH LIMIT, FOR A NAMED PLACE (RLG-265) -----------
      Exposed because the TABLE is the thing that can be wrong, and a picture
      cannot check it. A rail drawn on the landward side of a coast is a rail
@@ -34671,7 +34740,7 @@ requestAnimationFrame(frameLoop);
      STUCK reads exactly like a coin that is working if you only ever look at
      one stretch - which is the fault `rollSide`'s own note already records
      being caught by, 40 out of 40 on one side. */
-  API.hazardRoll = function(){ return hazardRoll; };
+  API.hazardRoll = function(){ return hazardFrom; };
   /* ---- DEBUG ONLY, AND IT EXISTS TO TAKE THE RAIL AWAY (RLG-265) ------
      A check that hunts for the rail's own colours is guessing: steel grey has
      to be told from a white shoulder line, from wet tarmac and from a
@@ -34760,8 +34829,10 @@ requestAnimationFrame(frameLoop);
      own - a rail converging on the vanishing point crosses the middle of the
      screen whichever side it is on - but the DIFFERENCE between the two answers
      can, and it shares every other term. */
-  API.setHazardSide = function(s){ hazardRoll = s < 0 ? -1 : 1; return hazardRoll; };
-  API.setSeaSide = function(s){ sideRoll = s < 0 ? -1 : 1; return sideRoll; };
+  /* a NAMED side means everywhere - both ends of the pair - or a check pinning a
+     side and then placing a boundary would draw the new place on the old coin */
+  API.setHazardSide = function(s){ hazardFrom = hazardTo = s < 0 ? -1 : 1; return hazardFrom; };
+  API.setSeaSide = function(s){ sideFrom = sideTo = s < 0 ? -1 : 1; return sideFrom; };
   /* turning the coins is exposed so a check can turn them MANY times. One stretch
      cannot tell a working coin from a jammed one, and this is the only way to ask
      the GAME's own roll rather than a harness's imitation of it - which is the
@@ -37255,7 +37326,7 @@ requestAnimationFrame(frameLoop);
   API.headsLit = function(){ const n = headsLit; headsLit = 0; return n; };
   API.scenerySides = function(){
     return { left:sceneSides.left, right:sceneSides.right,
-             mLeft:sceneSides.mLeft, mRight:sceneSides.mRight, sea:sideRoll,
+             mLeft:sceneSides.mLeft, mRight:sceneSides.mRight, sea:sideFrom,
              seaKeys:sceneSides.seaKeys, mSeaKeys:sceneSides.mSeaKeys };
   };
   API.resetScenerySides = function(){ sceneSides = { left:0, right:0, mLeft:0, mRight:0, seaKeys:{}, mSeaKeys:{} }; };
@@ -37649,15 +37720,16 @@ requestAnimationFrame(frameLoop);
      and the forest-only rule are measured through the code that does them rather
      than through a copy of its condition written in the harness */
   API.deerPlan = function(key, sea){
-    const wasZ = deerZ, wasB = biome, wasS = sideRoll;
+    const wasZ = deerZ, wasB = biome;
     /* THE SEA SIDE IS PART OF THE RULE and so it is part of what can be asked
        about. The live run has whatever side it rolled, and leaving that in place
        made every forest reject - which read as odds of zero rather than as the
        harness measuring a coastal wood. */
-    biome = key; sideRoll = sea ? 1 : 0;
-    planDeer();
+    biome = key;
+    /* the sea is passed rather than faked on a coin (RLG-308) - see `planDeer` */
+    planDeer(!!sea);
     const got = deerZ >= 0;
-    biome = wasB; deerZ = wasZ; sideRoll = wasS;
+    biome = wasB; deerZ = wasZ;
     return got;
   };
   API.crossings = function(){
