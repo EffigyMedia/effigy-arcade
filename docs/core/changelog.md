@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-116"></a>
+## [0.14.116] - 2026-09-21
+- Fixed: **the road keeps running when a race ends.** Crossing the line set a state nothing reads,
+  whose only effect was to stop the world being stepped at all - so the traffic, the rivals, the
+  police and the weather froze while your own car rolled on through them. The run is over, not the
+  world: the car is held by name instead, by the things that already existed for it. It also turns
+  out the finish's own promise to hand the car to the AI had never once run, because the freeze
+  arrived in the same breath. [RLG-305](../fragments/RLG-305.md)
+
 <a id="v0-14-115"></a>
 ## [0.14.115] - 2026-09-21
 - Changed: **the range across a valley moves like something at a stated distance.** Its slide was

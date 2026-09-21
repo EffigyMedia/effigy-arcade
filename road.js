@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.115';
+window.ROAD_BUILD = '0.14.116';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -18843,7 +18843,33 @@ function stepRacers(dt){
        ------------------------------------------------------------------ */
     coasting = true;
     setGas(false); setBrake(false); nosOn = false;
-    state = 'wrecked';
+    /* ---- AND THE WORLD DOES NOT STOP WITH YOU (owner, 2026-09-21, RLG-305)
+       "When the race is over all the traffic comes to a dead stop they should
+       just keep moving just like the player."
+
+       IT WAS ONE ASSIGNMENT, AND IT WAS `state = 'wrecked'` HERE. Nothing reads
+       that value: its only effect is to send `frameLoop` down the branch that
+       does not call `step()` at all. So crossing the line froze the traffic,
+       the rivals, the police, the weather and the biome, while the player's own
+       car rolled on through them under `pos += spd*0.985*dt`. Measured: the
+       traffic's mean position advanced 69,492 to 72,178 before the line and
+       then sat at 76,619 for the whole roll-out while the car travelled another
+       seven thousand units past it.
+
+       AND IT MADE THIS BLOCK'S OWN PROMISE DEAD CODE. The note below says the
+       car is handed to the AI, which "lifts, holds its lane, and coasts down".
+       That AI is `if(coasting && state === 'driving')` in `step`, so it has
+       never once run after a finish - what actually stopped the car was the
+       frozen branch's `spd *= 0.985`, which does not centre it and does not
+       keep it off the barriers.
+
+       THE RUN IS OVER, NOT THE WORLD. This is the shape RLG-121 already settled
+       for the count-in and RLG-110 for the penalty: everything keeps running
+       and the CAR is held by name. `coasting` holds the input and the engine
+       voice, `finished` holds the clock and the odometer, and the frames below
+       hold the collision - each of them findable by its own name rather than by
+       one flag that stops the universe.
+       ------------------------------------------------------------------ */
     /* ---- A DRAG RACE ENDS ON ITS OWN CARD (RLG-156) --------------------
        Before the best-distance write below: that one prints BEST x MI on the
        launcher's cabinet card, and a mile is not a run. */
@@ -20923,6 +20949,14 @@ function step(dt){
   if(coasting && state === 'driving'){
     targetX += (0 - targetX) * Math.min(1, dt * 1.6);
     spd = Math.max(0, spd - 2600 * dt);
+    /* ---- AND NOTHING MAY WRECK A CAR THAT HAS ALREADY FINISHED (RLG-305)
+       The world runs through the roll-out now, so the traffic the player was
+       racing through is still there and still moving - and the car is no
+       longer being steered. This block's own note says the fault it was built
+       to remove: "you could still crash after winning". Refreshed every frame,
+       the same way `serving` holds a car that is being put back on the road,
+       because `iframe` decays. */
+    iframe = Math.max(iframe, 0.25);
   }
 
   /* ---- the clock ------------------------------------------------------ */
@@ -21256,7 +21290,9 @@ function step(dt){
   pos += spd*dt;
   /* held: `spd` is pinned so `pos` does not move anyway, but distance unlocks
      cars and must never be earned by standing on the line */
-  if(!held) dist += spd*dt/1000 * 0.00777;
+  /* and not past the line either: the run's distance is what it was when it
+     ended, and `bestDist` was written from it one frame ago (RLG-305) */
+  if(!held && !finished) dist += spd*dt/1000 * 0.00777;
   runTopMph = Math.max(runTopMph, spd/MAX_SPD*200);     // ~ miles
   /* No score. The game is a drive, not a tally — distance is the only number
      worth keeping and the odometer already shows it. */
@@ -23192,7 +23228,17 @@ function step(dt){
      seconds later the run is over. The bar is the only warning you get, and
      the only way out is to move.
      ---------------------------------------------------------------------- */
-  if(state === 'driving' && wreckWait <= 0){
+  /* ---- AND YOU CANNOT BE ARRESTED AFTER THE LINE (RLG-305) -------------
+     `state` used to leave 'driving' the moment a race finished, so this whole
+     block was unreachable during the roll-out by accident. The world runs
+     through it now, which means a player who crosses the line with heat on
+     coasts to a stop in front of cruisers that are still chasing - and the
+     bust reads neither heat nor worth, only a cruiser standing near a stopped
+     car. Three seconds of that would replace the finish card with BUSTED.
+
+     It goes on the outer gate rather than beside `crawling`, because the
+     count itself must not accumulate either. */
+  if(state === 'driving' && !finished && wreckWait <= 0){
     /* you cannot be busted for standing still during the two seconds it takes
        to put a fresh car on the road */
     /* held: a car on the line IS crawling, by definition, and the count is
@@ -36031,6 +36077,27 @@ requestAnimationFrame(frameLoop);
   /* how many things are on the road that could hit you. A cornering measurement
      that is really a collision is the fault RLG-055's cornering half had, and a
      harness cannot see it without asking. */
+  /* ---- IS THE WORLD STILL MOVING? (RLG-305) ----------------------------
+     The owner reports the traffic coming to a dead stop when a race ends. A
+     count of cars cannot answer that and neither can a speed: a world that has
+     stopped being STEPPED keeps whatever speeds it had. What answers it is
+     POSITION, sampled twice - and it has to be an aggregate rather than one
+     car, because the traffic array is re-sorted by z every frame and a car
+     picked by index is a different car a frame later. */
+  API.motion = function(){
+    const mean = (a) => a.length ? a.reduce((t, o) => t + o.z, 0) / a.length : 0;
+    return { state: state, finished: finished, coasting: coasting,
+             pos: Math.round(pos), spd: Math.round(spd),
+             /* the three things the run's end has to HOLD while the world runs:
+                the odometer, the steering the AI is unwinding, and the frames
+                that keep a finished car from being wrecked (RLG-305) */
+             dist: +dist.toFixed(4), targetX: +targetX.toFixed(4),
+             iframe: +iframe.toFixed(3),
+             traffic: { n: traffic.length, meanZ: Math.round(mean(traffic)) },
+             racers:  { n: racers.length,  meanZ: Math.round(mean(racers)) },
+             cops:    { n: cops.length,    meanZ: Math.round(mean(cops)) },
+             dayClock: Math.round(dayClock * 100) / 100 };
+  };
   API.cars = function(){
     return (traffic ? traffic.length : 0) + (cops ? cops.length : 0)
          + (blocks ? blocks.length : 0) + (racers ? racers.length : 0);
