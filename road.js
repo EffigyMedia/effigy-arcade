@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.113';
+window.ROAD_BUILD = '0.14.114';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14577,6 +14577,14 @@ const BIOMES = {
                  the FULL ridge: a mountainside is broken, and the owner turned
                  down the version that was one flat height in one colour */
               wall:2.2, ridge:1,
+              /* AND IT GROWS OUT OF THE GROUND rather than standing on it at a
+                 line (RLG-303). The wall and the drop are both scaled by
+                 `bioGrow`, so arriving IS the land going up on one side and
+                 falling away on the other. A CANYON deliberately does not say
+                 this: its walls are what is left when water cut down through
+                 rock, and its boundary face would stand in front of walls that
+                 were not yet full height */
+              grow:1,
               /* and a range stands across the valley on the drop side, drawn
                  from this place's own peaks (RLG-297) */
               range:1,
@@ -15047,6 +15055,13 @@ let biomeFrom = 'FOREST', biomeTo = 'FOREST', biomeEdge = -1e9;
    `leftAt` IS WHEN, so the span can shrink with distance rather than with a
    frame count. It is the segment index of the boundary just crossed. */
 let biomePrev = 'FOREST', leftAt = -1e9;
+/* ---- WHERE THE PLACE YOU ARE IN BEGAN (RLG-303) ------------------------
+   `leftAt` answers the same question and cannot be used for it: `skyGone`
+   reads it, and a check that pins ONE place everywhere wants the skyline's
+   handover finished while the land is still full height. So the landform's
+   ramp gets its own anchor, set wherever `leftAt` is and cleared by the pair
+   setter, and nothing about the horizon moves when it does. */
+let growFrom = -1e9;
 /* ---- AND HOW MUCH OF THE HORIZON THE NEW PLACE ALREADY HELD (RLG-252) -----
    Owner, 2026-09-19, from the device: the new biome's skyline "happens twice
    like a glitch". Measured: the place ahead grows to the whole horizon by the
@@ -15211,6 +15226,25 @@ function snowFloorNow(){
 const BIOME_BAND = 18;
 /* the weather's own crossing width, four times the colour band. See stepBiome. */
 const WEATHER_BAND = 72;
+/* ---- AND THE LAND HAS ITS OWN, WIDER STILL (owner, 2026-09-20, RLG-303) ---
+   Owner, shown a mountain arriving as a wall at a line: "It's supposed to read
+   as if you're driving into a mountain biome with a mountain on one side and a
+   valley on the other."
+
+   THE COLOUR BAND CANNOT CARRY A SHAPE. It is 18 segments, which the car covers
+   in well under a second - the ground underfoot is allowed to change at
+   something close to a line because that is what ground does. A HILLSIDE is
+   not: land that reaches full height in under a second has not risen, it has
+   appeared, which is the thing the owner turned down.
+
+   So the landform takes the same run the WEATHER takes, for the same reason the
+   weather was given one - a place's slowest property gets the longest crossing.
+   It is measured from where the place TAKES OVER rather than from the middle of
+   the colour band, because the wall and the drop are not drawn at all before
+   that point, and a ramp that started earlier would begin at half height.
+
+   A tunable with a committed default; `API.wallModel` reads and writes it. */
+let GROW_BAND = 72;
 /* ---- HOW MUCH A PLACE HAS TO WANT WEATHER TO KEEP IT (RLG-022) ----------
    Read against a biome INSTANCE's own odds for whatever is falling. Above `KEEP`
    the new place produces it often enough that carrying it in needs no
@@ -15245,6 +15279,41 @@ function bioMix(idx){
 /* the record for a segment, for anything that needs one biome rather than a
    blend of two */
 function bioAt(idx){ return BIOMES[bioMix(idx) >= 0.5 ? biomeTo : biomeFrom] || BIOMES.FOREST; }
+/* ---- HOW FAR THIS PLACE'S LANDFORM HAS GROWN AT THIS SEGMENT (RLG-303) ---
+   Owner, 2026-09-20, shown a mountain arriving as a curtain of rock standing on
+   the desert: "that is ugly... Notice how it's disconnected. It doesn't read as
+   a mountain."
+
+   IT WAS DISCONNECTED BECAUSE NOTHING LED UP TO IT. `bioMix` runs 0 to 1 across
+   a boundary and everything that changes COLOUR reads it, while nothing that
+   changes SHAPE did - so the ground blended and the wall, the drop and the face
+   all switched on at a line. This is the same ramp for shape: the hillside
+   rises from nothing and the valley deepens from nothing over the same ground,
+   and driving into the place IS the land going up on one side and falling away
+   on the other. There is no second object to disconnect from the first, and no
+   hard base line, because the rise starts at zero.
+
+   IT IS THE PLACE'S OWN, DECLARED THE WAY `face` IS, and that is the trap this
+   ruling names. Applied to every walled place, a CANYON's walls would grow too
+   - and its boundary face, which the owner accepted, would then stand in front
+   of walls that are not yet full height. Only a place saying `grow` has one.
+
+   MEASURED FROM WHERE THE PLACE TAKES OVER, WHICH IS `biomeEdge`. `bioAt`
+   switches there, so nothing of this place is drawn before it; a ramp anchored
+   anywhere earlier would start at half height, which is the line again with a
+   slope painted on it. And it falls back to nothing over the same run as the
+   place is left, so a mountain sinks into the ground behind you rather than
+   ending.
+   ------------------------------------------------------------------------ */
+function bioGrow(seg, B){
+  if(!B || !B.grow) return 1;
+  let g = 1;
+  const began = (biomeFrom !== biomeTo && B.name === biomeTo) ? biomeEdge : growFrom;
+  if(began > -1e8) g = clamp((seg - began) / GROW_BAND, 0, 1);
+  if(biomeFrom !== biomeTo && B.name === biomeFrom && biomeEdge > -1e8)
+    g = Math.min(g, clamp((biomeEdge - seg) / GROW_BAND, 0, 1));
+  return g;
+}
 
 /* a colour as three numbers, so one colour can be a MIX TARGET for another.
    `mixRGB` takes its target as a triple; the biome table stores hex. */
@@ -15498,7 +15567,10 @@ function wallPlain(B){
   return WALL_RISE * ((B && B.wall > 0) ? B.wall : 1);
 }
 function wallRiseAt(seg, B, near){
-  const tall = wallPlain(B);
+  /* THE PLACE'S OWN GROWTH, on the place's own say-so (RLG-303). It multiplies
+     the plain height rather than the ridged one, so the shoulders and saddles
+     scale with the hillside instead of riding on top of a shrinking one. */
+  const tall = wallPlain(B) * bioGrow(seg, B);
   const k = (B && B.ridge !== undefined) ? B.ridge : 1;
   const res = near === undefined ? 1 : clamp(near * 8, 0, 1);
   if(k <= 0 || res <= 0) return tall;
@@ -15843,14 +15915,24 @@ function hazardSide(B){
    crest and its feet, so it cannot spill down the screen if a tunable is set
    to something silly.
    ------------------------------------------------------------------------ */
-function drawValleyRange(g, B, side, feetY, farSeg){
+function drawValleyRange(g, B, side, feetY, farSeg, grow){
   if(!B || !B.range || rangeOff || !side) return 0;
+  /* ---- AND IT RISES WITH THE VALLEY IT STANDS ACROSS (RLG-303) ---------
+     Checked FIRST, before anything is looked up, because the road pass offers
+     this slice after slice until one draws and every one of them is a call.
+     A range planted on a floor that has not fallen yet stands in the road:
+     `feetY` is the floor's own projection, and at zero depth that is the road
+     line. So it grows out of the ground the way the hillside opposite does.
+     The HEIGHT alone takes the ramp and the width does not - land rising is
+     not an object getting smaller. */
+  const rise = grow === undefined ? 1 : grow;
+  if(rise <= 0) return 0;
   const art = skylineFor(B.name);
   if(!art || !art.body) return 0;
   const sh = art.body.height, sw = art.body.width;
   if(!sh || !sw) return 0;
   const sc = (H * 0.13 * skyRiseOf(B.name) / sh) * RANGE_SCALE;
-  const w2 = sw * sc, h2 = sh * sc;
+  const w2 = sw * sc, h2 = sh * sc * rise;
   if(w2 < 1 || h2 < 1) return 0;
   /* ---- IT STANDS ON THE FLOOR AT ITS OWN DISTANCE ----------------------
      `feetY` is where the valley floor projects at the slice this is drawn on,
@@ -16179,7 +16261,7 @@ function openBiome(){
   climFrom = climTo = rollClimate(biome);
   wxFrom = wxTo = biome;
   biomeFrom = biomeTo = biome;
-  biomePrev = biome; leftAt = -1e9;
+  biomePrev = biome; leftAt = -1e9; growFrom = -1e9;
   biomeEdge = -1e9;
   /* and no place is planned yet - a fresh run is not carrying the last run's
      next place, and the road ahead of it is generated into THIS one (RLG-150) */
@@ -16336,7 +16418,7 @@ function stepBiome(dt){
     if(cross >= 1){
       /* the place being left is the one the pair is dropping (RLG-252) */
       if(biomeFrom !== biomeTo){
-        biomePrev = biomeFrom; leftAt = biomeEdge;
+        biomePrev = biomeFrom; leftAt = biomeEdge; growFrom = biomeEdge;
         leftFrom = clamp(1 - (biomeEdge - Math.floor(pos/SEG)) / SKY_NEAR, 0, 1);
       }
       biomeFrom = biomeTo;
@@ -26371,6 +26453,11 @@ function drawRoad(){
          same lesson: depth is a difference between near and far, not a colour.
          ------------------------------------------------------------- */
       const dB = bioAt(idx);
+      /* how far this place's land has grown at this slice, and at the next one
+         (RLG-303). Both ends are needed for the same reason the WALL needs
+         both: a slice's near end is the next slice's far end, and a floor built
+         from one depth at two distances steps at every seam. */
+      const bGrow = bioGrow(idx, dB), bGrowFar = bioGrow(idx + 1, dB);
       const dropSide = (dB.hazard === 'roll' && !dropOff) ? hazardSide(dB) : 0;
       if(dropSide){
         const dx1 = rimX(p1, idx, dropSide);
@@ -26408,9 +26495,16 @@ function drawRoad(){
            paints over any floor that strays inside ITS rim. The farthest slice
            reaches up to the horizon, which is where a plane of any depth
            meets the sky. */
-        const kD = CAM_H * H / 2 * DROP_DEPTH;
+        /* ---- AND THE VALLEY DEEPENS FROM NOTHING (RLG-303) --------------
+           `DROP_DEPTH` is the place's full fall and `bioGrow` is how much of
+           this place there is here, so at the boundary the ground beyond the
+           rim is simply the ground, and it falls away as you drive in. That is
+           the other half of the owner's sentence - a mountain on one side and a
+           valley on the other - and it is the same one idea as the wall. */
+        const kD    = CAM_H * H / 2 * DROP_DEPTH * bGrow;
+        const kDFar = CAM_H * H / 2 * DROP_DEPTH * bGrowFar;
         const fy1 = p1.y + p1.scale * kD;
-        const fy2 = n === DRAW ? horizon : p2.y + p2.scale * kD;
+        const fy2 = n === DRAW ? horizon : p2.y + p2.scale * kDFar;
         if(fy2 < H){
           /* the place's own ground in its own bands, hazed for the distance it
              really is: much further than the slice above it */
@@ -26454,7 +26548,7 @@ function drawRoad(){
            exactly that index is culled behind a crest often enough to matter -
            the same fault, one level down, that made `n === DRAW` unreliable. */
         if(!rangeDrawn && n <= DRAW * RANGE_AT
-           && drawValleyRange(ctx, dB, dropSide, fy1, idx)){
+           && drawValleyRange(ctx, dB, dropSide, fy1, idx, bGrow)){
           rangeDrawn = 1; rangeN++;
         }
         dropTrace.rim[n] = y1;
@@ -26462,7 +26556,10 @@ function drawRoad(){
            shadow; a dark band with a BRIGHT TOP EDGE is a lip you are looking
            over. */
         const lipW = Math.max(1.4, p1.w * 0.042);
-        ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52, RIM_LIT);
+        /* THE LIP ARRIVES WITH THE FALL IT IS THE EDGE OF (RLG-303). A lit band
+           on ground that does not drop is a bright line across the boundary,
+           which is the hard line this ruling exists to remove. */
+        ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52 * bGrow, RIM_LIT);
         quad(dx1, y1, dx1 + dropSide * lipW, y1,
              dx2 + dropSide * lipW, y2, dx2, y2);
       }
@@ -26499,7 +26596,10 @@ function drawRoad(){
          the edge of the screen. That is the whole depth cue, and it is the same
          one the drop uses, read across instead of down.
          ---------------------------------------------------------------- */
-      const wSides = wallSides(dB);
+      /* NOT DRAWN AT ALL WHERE THE LAND HAS NOT RISEN (RLG-303). A band of zero
+         height is not nothing: it reaches half a road width below its own top
+         edge, which paints rock over the ground beside the road. */
+      const wSides = bGrow > 0 ? wallSides(dB) : null;
       if(wSides && !dB.overWater){
         /* THE HEIGHT IS THIS SEGMENT'S, NOT THE PLACE'S, so the top edge has
            shoulders. The two ends take their OWN segment's height, which is
@@ -29775,7 +29875,9 @@ function drawMirrorFull(mx, my, mw, mh){
            glass projects `vpy + scale*CAM_H_M*H_M/2`, so the floor under this
            slice is that much more height under the eye, and the farthest slice
            reaches up to the glass's own horizon. `a` is the far end here. */
-        const mkD = CAM_H_M * H_M / 2 * DROP_DEPTH;
+        /* THE SAME RAMP AS THE WINDSCREEN (RLG-303), or a mountain sinks into
+           the ground ahead of you while standing at full height behind. */
+        const mkD = CAM_H_M * H_M / 2 * DROP_DEPTH * bioGrow(widx, mB);
         const mfy1 = wz === mFar ? vpy : a.y + a.scale * mkD;
         /* to the bottom of the pane, for the reason the windscreen's is */
         const mfy2 = my + mh;
@@ -29788,7 +29890,7 @@ function drawMirrorFull(mx, my, mw, mh){
         }
         /* the lit lip, which is what makes it an edge rather than a shadow */
         const mlip = Math.max(0.8, a.w * 0.042);
-        ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52, RIM_LIT);
+        ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52 * bioGrow(widx, mB), RIM_LIT);
         ctx.fillRect(mDrop < 0 ? mdx - mlip : mdx, a.y, mlip, Math.max(1, b2.y - a.y));
       }
     }
@@ -29839,7 +29941,7 @@ function drawMirrorFull(mx, my, mw, mh){
            was `WALL_RISE` alone, so a mountain's wall stood at 6 camera heights
            in the glass and 13.2 in the windscreen - the same wall, two heights,
            because the expression was written twice. `wallPlain` is the one. */
-        const mkU = CAM_H_M * H_M / 2 * wallPlain(mB);
+        const mkU = CAM_H_M * H_M / 2 * wallPlain(mB) * bioGrow(widx, mB);
         const mwy = wz === mFar ? vpy : Math.max(my, a.y - a.scale * mkU);
         const mfarW = clamp((pos - wz) / MIRROR_BACK, 0, 1);
         ctx.fillStyle = mixRGB(mixRGB(groundTone(widx, dark), WALL_SHADE, DROP_DARK),
@@ -34102,7 +34204,10 @@ requestAnimationFrame(frameLoop);
   API.setBiomePair = function(a, b, tA, tB){
     if(BIOMES[a]){ biomeFrom = a; wxFrom = a; climFrom = climateAt(a, tA === undefined ? BIOMES[a].temp : tA); }
     if(BIOMES[b]){ biomeTo   = b; wxTo   = b; climTo   = climateAt(b, tB === undefined ? BIOMES[b].temp : tB); }
-    if(biomeFrom === biomeTo){ biome = biomeFrom; biomeEdge = -1e9; }
+    /* ONE PLACE EVERYWHERE MEANS ITS LAND IS FULL HEIGHT (RLG-303). Without
+       this a check that pins a pair after driving across a boundary measures a
+       hillside still growing out of the last one. */
+    if(biomeFrom === biomeTo){ biome = biomeFrom; biomeEdge = -1e9; growFrom = -1e9; }
     /* a plan waiting at the generator's frontier would arrive on top of the
        pair this just pinned, seconds later. Pinning a pair means pinning it
        (RLG-150) - and see `startBiomeChange` on what that costs a check. */
@@ -34485,10 +34590,12 @@ requestAnimationFrame(frameLoop);
       if(o.cap   >= 0) WALL_CAP   = o.cap;
       if(o.capH  >  0) WALL_CAP_H = o.capH;
       if(o.lap   >= 0) WALL_LAP   = o.lap;
+      /* how many segments a place's land takes to reach full height (RLG-303) */
+      if(o.grow  >  0) GROW_BAND  = o.grow;
     }
     return { rise:WALL_RISE, shade:WALL_SHADE, haze:WALL_HAZE,
              ridge:WALL_RIDGE, brk:WALL_BREAK, facet:WALL_FACET, foot:WALL_FOOT, footH:WALL_FOOT_H,
-             cap:WALL_CAP, capH:WALL_CAP_H, lap:WALL_LAP };
+             cap:WALL_CAP, capH:WALL_CAP_H, lap:WALL_LAP, grow:GROW_BAND };
   };
   /* which sides this place is walled on, and what the wall pass actually painted */
   API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
@@ -34560,6 +34667,14 @@ requestAnimationFrame(frameLoop);
   /* how tall a place stands its skyline, as a multiple of the ordinary band.
      A check reads it to prove a wall is not drawn at horizon scale (RLG-104). */
   API.skyRise = function(k){ return +skyRiseOf(k || biome).toFixed(4); };
+  /* how far a place's landform has grown at a segment, and where it started
+     growing (RLG-303). `seg` is absolute, the same index `bioMix` takes. */
+  API.landGrow = function(seg, k){
+    const B = BIOMES[k] || bioAt(seg);
+    return { name:B.name, grow:+bioGrow(seg, B).toFixed(4), band:GROW_BAND,
+             from:growFrom <= -1e8 ? null : growFrom,
+             edge:biomeEdge <= -1e8 ? null : biomeEdge };
+  };
   /* the band as the last frame DREW it, not as it computes (RLG-304) */
   API.skyBandDrawn = function(k){ return skyBandDrawn[k || biome] || null; };
   /* ---- THE SKYLINE AGAINST THE WALLS, IN PIXELS (RLG-104) --------------
@@ -36973,10 +37088,19 @@ requestAnimationFrame(frameLoop);
   API.dropFloorAt = function(n){
     const y = dropTrace.rim[n];
     if(y === undefined) return null;
-    let hit = null;
-    for(const [m, top, bot] of dropTrace.floor)
+    let hit = null, own = null;
+    for(const [m, top, bot] of dropTrace.floor){
       if(top <= y && y <= bot && (hit === null || m < hit)) hit = m;
-    return { rimN: n, rimY: +y.toFixed(1), floorN: hit, floors: dropTrace.floor.length };
+      /* AND HOW FAR BELOW THE RIM THIS SLICE'S OWN FLOOR LANDED (RLG-303).
+         `floorN` answers whether the plane is below the road at all, which is
+         what RLG-278 needed; it cannot say HOW FAR, and a valley that deepens
+         over a band is a question about how far. This is the same two numbers
+         the pass drew, subtracted. */
+      if(m === n) own = top;
+    }
+    return { rimN: n, rimY: +y.toFixed(1), floorN: hit, floors: dropTrace.floor.length,
+             ownTop: own === null ? null : +own.toFixed(1),
+             deep: own === null ? null : +(own - y).toFixed(1) };
   };
   /* which side the water is on (RLG-093): `seaSide` and `sideRoll` are defined
      once, beside the road-table readers, and were defined here a second time */

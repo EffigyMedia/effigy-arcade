@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-114"></a>
+## [0.14.114] - 2026-09-20
+- Changed: **a mountain grows out of the ground instead of standing on it at a line.** The ground
+  colour has always blended across a boundary and nothing that changes SHAPE did, so the hillside,
+  the valley and the lit rim between them all switched on where the colour was still halfway. They
+  are on a ramp now: the land rises from nothing on one side and falls away from nothing on the
+  other, over a run of its own that is four times the colour band, and driving into the place is
+  the land arriving. It is the mountain's, declared the way its face was - a canyon's walls are
+  what water left behind and do not grow. [RLG-303](../fragments/RLG-303.md)
+
 <a id="v0-14-113"></a>
 ## [0.14.113] - 2026-09-20
 - Changed: **the canyon's skyline is as tall as the canyon walls.** It was capped to the tallest
