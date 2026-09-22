@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.123';
+window.ROAD_BUILD = '0.14.124';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15716,9 +15716,7 @@ const END_RUN = 8;
    that slice's floor, which puts every nearer thing in front of it for free.
 
    Tunables with committed defaults; `API.rangeModel` reads and writes them. */
-let RANGE_SCALE = 2.1,   /* how much bigger than the horizon band, so nearer  */
-    RANGE_AT    = 0.78,  /* how far down the draw it stands, as a fraction    */
-    RANGE_SINK  = 0.35,  /* how much of its foot the valley floor swallows    */
+let RANGE_SINK  = 0.35,  /* how much of its foot the valley floor swallows    */
     RANGE_ALPHA = 0.92;  /* how solid it is against the floor behind it       */
 /* ---- HOW FAR OUT THE RANGE STANDS, AND IT REPLACES A TYPED RATE (RLG-309)
    Owner, 2026-09-21: the valley range parallaxes too fast.
@@ -15739,14 +15737,59 @@ let RANGE_SCALE = 2.1,   /* how much bigger than the horizon band, so nearer  */
    SO THE STANDOFF IS STATED AND THE RATE IS DERIVED. In multiples of `ROAD`,
    which is the unit every other roadside distance is written in. Twelve of them
    is about 27,600 units - a little over twice the valley's own depth, which is
-   what land across a valley looks like. A tunable with a committed default. */
-let RANGE_OUT = 12;
+   what land across a valley looks like. A tunable with a committed default.
+   SIXTEEN SINCE RLG-316, about 36,800 units. With peaks that stand in the
+   world the standoff decides WHERE in the frame the range can appear at all:
+   a peak is on screen only where the road's half-width times RANGE_OUT is
+   under half the screen, which at 30 was nowhere inside the draw - the peaks
+   first judged right at 30 were the SKYLINE, which uses the same art, and a
+   screenshot with the range switched off is what told the two apart. At 12
+   and 40 camera heights tall the drop side was a wall of snow at the rail.
+   16 with peaks 20 camera heights tall stood a row of peaks beyond the rail -
+   and never broke the horizon, which the reviewer of UNT-417 worked out: the
+   top of a peak is RANGE_H*(1-RANGE_SINK) above the floor, and 20*0.65 is 13,
+   exactly the floor's depth plus the eye. So RANGE_H is 28 - a top about five
+   camera heights above the eye - and a range across a valley does rise above
+   you, which is the point of one. */
+let RANGE_OUT = 16;
 /* how much of the road's own turn AT THE RANGE'S DISTANCE it takes. One is the
    road's, which is what a thing standing in the world does. */
-let RANGE_SWING = 1;
+/* ---- THE RANGE IS PEAKS IN THE WORLD, NOT A PICTURE ON THE GLASS (RLG-316)
+   Owner, 2026-09-21, twice. First: "They just parallax weird." Then, from the
+   device: "as the road twists and turns they do unnatural things like clipping
+   through the near side mountain. And the mountain bugs out and renders through
+   the road depending on the road angle and height."
+
+   BOTH ARE ONE FAULT, AND IT WAS THE MODEL. The range was ONE tiled picture,
+   slid sideways by three offsets added in screen space - the lane, the road's
+   bend at one distance, and a drift with travel - painted once, at one depth,
+   inside a rectangle. No point of it moved like a point in the world, which is
+   the parallax, and nothing nearer than that one depth could stand in front of
+   it except by the order it happened to be painted in, which is the clipping.
+
+   SO IT IS A ROW OF PEAKS NOW, each one a world object: every `RANGE_STEP`
+   segments of a place that declares `range`, a peak stands `RANGE_OUT` road
+   widths out on the drop side, standing `RANGE_H` camera heights tall on the
+   valley floor - which is `DROP_DEPTH` below the road, so a range has to be
+   far taller than that to rise above the eye, as land across a valley does.
+   The road walk draws each one at its own slice, straight after that slice's
+   floor, so the projection moves it and the painter's order hides it - behind a
+   crest, behind the near mountain on a bend, and under the road where the road
+   runs in front of it. Nothing about it is computed that the ground is not.
+   The glass draws the same peaks from the same segments with its own
+   projection, so the two views cannot disagree about where the range is.
+
+   IT IS THE PLACE'S OWN SKYLINE ART, as it was: each peak draws HALF the tile
+   from a hashed offset, so neighbours are different pieces of the same range
+   rather than one picture repeating, each as wide as the art's own proportion
+   makes it. Tunables with committed defaults, read and written through
+   `API.rangeModel`. The old `RANGE_SCALE` and `RANGE_AT` went with the picture. */
+let RANGE_STEP = 10;      /* segments between peaks along the valley          */
+let RANGE_H    = 28;      /* how tall a peak stands, in camera heights        */
+/* the drawn peaks this frame, per view, for a check */
+let rangePeaks = { front: 0, glass: 0 };
+let rangeTrace = [];
 let rangeOff = false;    /* debug: no range, so a check can diff two frames   */
-/* the range's offset broken into the terms that make it up (RLG-309) */
-const rangeTerms = { lane:0, bend:0, drift:0, smooth:0, own:0, far:0, tile:0 };
 /* ---- SMOOTH, NOT SPECKLED --------------------------------------------
    `sceneRand` answers a fresh number per index, and a height taken straight
    from it is a comb rather than a ridge. This picks a value per BUCKET of
@@ -16428,111 +16471,37 @@ function hazardSide(B){
    crest and its feet, so it cannot spill down the screen if a tunable is set
    to something silly.
    ------------------------------------------------------------------------ */
-function drawValleyRange(g, B, side, feetY, farSeg, grow){
-  if(!B || !B.range || rangeOff || !side) return 0;
-  /* ---- AND IT RISES WITH THE VALLEY IT STANDS ACROSS (RLG-303) ---------
-     Checked FIRST, before anything is looked up, because the road pass offers
-     this slice after slice until one draws and every one of them is a call.
-     A range planted on a floor that has not fallen yet stands in the road:
-     `feetY` is the floor's own projection, and at zero depth that is the road
-     line. So it grows out of the ground the way the hillside opposite does.
-     The HEIGHT alone takes the ramp and the width does not - land rising is
-     not an object getting smaller. */
-  const rise = grow === undefined ? 1 : grow;
-  if(rise <= 0) return 0;
+/* ONE PEAK OF THE RANGE, for either view (RLG-316). `p` is the peak's segment
+   projected into the surface, `floorY` the valley floor under it there, and
+   `kv` the surface's pixels per camera height at unit scale - `CAM_H * H / 2`
+   out of the windscreen, the glass's own out of the mirror - which is what the
+   floor under it was measured with. `x0`/`x1` bound the surface. Returns whether
+   it painted. It sets and puts back only the alpha. */
+function rangePeak(B, side, p, floorY, idx, alpha, grow, kv, x0, x1, view){
+  if(!B || !B.range || rangeOff || !side || alpha <= 0.02 || grow <= 0) return 0;
   const art = skylineFor(B.name);
-  if(!art || !art.body) return 0;
-  const sh = art.body.height, sw = art.body.width;
-  if(!sh || !sw) return 0;
-  const sc = (H * 0.13 * skyRiseOf(B.name) / sh) * RANGE_SCALE;
-  const w2 = sw * sc, h2 = sh * sc * rise;
-  if(w2 < 1 || h2 < 1) return 0;
-  /* ---- IT STANDS ON THE FLOOR AT ITS OWN DISTANCE ----------------------
-     `feetY` is where the valley floor projects at the slice this is drawn on,
-     and the range is planted there rather than under the horizon. The first
-     build put its feet a fixed few per cent below the horizon and drew it at
-     the FURTHEST slice, which is the same thing as drawing it ON the horizon:
-     every slice nearer than that paints its own ground from just under the
-     horizon downward, so all that survived was the peaks poking ABOVE the
-     skyline. The owner read that correctly - "there is no opposing range" -
-     because what was on screen was a taller horizon, not land across a valley.
-
-     `RANGE_SINK` puts the feet below the floor line on purpose, so the near
-     floor swallows the bottom of the range the way ground swallows the bottom
-     of anything standing behind a rise. */
-  const feet = feetY + h2 * RANGE_SINK;
-  const top  = feet - h2;
-  /* the vanishing point, the same expression the far road and the coast use */
-  const vx = W/2 + viewShift + bendPx(farSeg * SEG);
-  g.save();
-  g.beginPath();
-  if(side < 0) g.rect(0, top, Math.max(0, vx), feet - top);
-  else         g.rect(vx, top, Math.max(0, W - vx), feet - top);
-  g.clip();
-  /* ---- AND IT DRIFTS PAST, BECAUSE IT IS OUT TO THE SIDE ---------------
-     Owner, 2026-09-20: "it needs to move slowly parallaxed along the side as if
-     it's laterally out from the road." The horizon band does NOT do this and is
-     right not to - a skyline miles off is the same skyline a mile later, which
-     is why its only motion is the bend swinging it. A range across a valley is
-     a few thousand units out, so driving past it moves it, slowly, and that
-     motion is the whole difference between a thing standing in the world and a
-     thing painted on the sky.
-
-     `pos` is the road travelled, so the offset is simply a small multiple of
-     it. It takes the bend's chase as well, because it is still far enough away
-     to swing with a corner. */
-  /* ---- THE THREE TERMS, WRITTEN DOWN SEPARATELY (RLG-309) -------------
-     The owner reports the range parallaxing too fast, and the offset is three
-     things added together. A check cannot tell which of them is moving it from
-     the sum, so each is recorded at the point it is computed - the same
-     instrument `wallTrace` and `dropTrace` are. `own` is what the bend term
-     WOULD be if the range read the road's turn at its own distance rather than
-     borrowing the horizon's, which is the comparison this ruling turns on. */
-  const tLane  = -camX * W * 0.030;
-  /* ---- THE CORNER IT TAKES IS THE ONE AT ITS OWN DISTANCE (RLG-309) ----
-     This was `skySmooth * 1.55` - the horizon band's smoothed swing, borrowed
-     and multiplied. The horizon sits at `SKY_BEND_AT`, the far end of the
-     world; the range stands at `RANGE_AT` of the draw, which is NEARER, and
-     bend accumulates with distance. So the range was swinging half as much
-     again as the horizon behind it when it should swing less - measured at 0.66
-     of it over six seconds of mountain road, against the 1.55 it was taking.
-
-     `bendPx` at its own distance is what the ROAD uses at every slice, with no
-     smoothing, because a thing standing in the world turns with the world. The
-     smoothing on `skySmooth` belongs to the sprite at the horizon (RLG-096) and
-     is not a property of bends.
-
-     AND IT IS NEGATED, WHICH IS THE ONE THING THE BORROWED TERM HAD RIGHT.
-     This is a TILE OFFSET, not an object's screen position. When the road bends
-     right the view turns right and everything standing in the world slides
-     LEFT, so the texture offset moves against the bend. `skyWant` is
-     `-bendPx(pos + SKY_BEND_AT) * 0.55` for the same reason, and taking
-     `skySmooth * 1.55` inherited the sign without stating it. Dropping the
-     negation inverted the swing, which was caught by comparing the direction
-     the range moves against the direction the horizon behind it moves - two
-     pieces of distant scenery cannot travel opposite ways through one corner.
-
-     THE HORIZON'S OWN 0.55 IS NOT COPIED. That band stands for things at no
-     particular distance and its fraction is a feel; this one is at a stated
-     distance and takes the whole of the turn there. */
-  const rangeZ = RANGE_AT * DRAW * SEG;
-  const tBend  = -bendPx(pos + rangeZ) * RANGE_SWING;
-  /* the slide, derived from the standoff rather than typed - see `RANGE_OUT` */
-  const tDrift = -pos * (CAM_D * (RANGE_OUT * ROAD) * (W/2) / (rangeZ * rangeZ));
-  rangeTerms.lane = +tLane.toFixed(2);
-  rangeTerms.bend = +tBend.toFixed(2);
-  rangeTerms.drift = +tDrift.toFixed(2);
-  rangeTerms.smooth = +skySmooth.toFixed(2);
-  rangeTerms.own = +bendPx(pos + rangeZ).toFixed(2);
-  rangeTerms.far = +bendPx(pos + SKY_BEND_AT).toFixed(2);
-  rangeTerms.tile = +w2.toFixed(1);
-  let o2 = (tLane + tBend + tDrift) % w2;
-  if(o2 > 0) o2 -= w2;
-  g.globalAlpha = RANGE_ALPHA;
-  rangeX = +o2.toFixed(2);          /* where the tiling started, for a check */
-  for(let x = o2; x < W + w2; x += w2) g.drawImage(art.body, x, top, w2, h2);
-  g.globalAlpha = 1;
-  g.restore();
+  if(!art || !art.body || !art.body.width || !art.body.height) return 0;
+  const bw = art.body.width, bh = art.body.height, half = bw / 2;
+  const ph = p.scale * kv * RANGE_H * grow;
+  if(ph < 1) return 0;
+  const pw = ph * (half / bh);
+  if(pw < 2) return 0;
+  const near = p.x + side * p.w * RANGE_OUT;
+  const xl = side > 0 ? near : near - pw;
+  if(xl > x1 || xl + pw < x0) return 0;
+  const feet = floorY + ph * RANGE_SINK;
+  const sx = Math.floor(sceneRand(idx, 971) * (bw - half));
+  /* where it stood, in road widths out from the road's own centre at its own
+     distance - which is RANGE_OUT for a peak the world placed, and something
+     else for one a screen-space term has moved (range-peak-test) */
+  if(drawWatch && rangeTrace.length < 5000)
+    rangeTrace.push({ view: view, idx: idx, side: side, x: +(side > 0 ? xl : xl + pw).toFixed(2),
+                      pw: +pw.toFixed(1), top: +(feet - ph).toFixed(1) });
+  const was = ctx.globalAlpha;
+  ctx.globalAlpha = was * alpha * RANGE_ALPHA;
+  ctx.drawImage(art.body, sx, 0, half, bh, xl, feet - ph, pw, ph);
+  ctx.globalAlpha = was;
+  rangePeaks[view]++;
   return 1;
 }
 
@@ -26834,7 +26803,7 @@ let wallSeam = [null, null];
 /* whether the valley range has been painted THIS frame, and how many frames
    have painted one since a check last reset the count. The count is what a
    harness reads: whether one particular frame painted it is terrain. */
-let rangeDrawn = 0, rangeN = 0, rangeX = 0;
+let rangeDrawn = 0, rangeN = 0;
 /* and whether the face at a walled place's boundary was painted (RLG-301) */
 let endWallDrawn = 0, endWallN = 0;
 /* debug: no face at a boundary, so a check can diff the two frames without
@@ -26929,6 +26898,24 @@ function paintStreetLamp(lx, y1, sc, side, alpha, lamp, glow, vw, vh, k){
     ctx.restore();
   }
 }
+/* ---- THE WINDSCREEN'S PEAK FOR ONE SLICE (RLG-316) ------------------------
+   Called from every branch of the walk - a painted slice, one hidden behind a
+   crest, and one inverted by under a pixel - because a peak is far taller than
+   the ground under it and stands whether or not that ground was painted. The
+   inverted case is about half the far draw on a hilly road, and missing it
+   made a peak blink out on every frame its slice flipped (review of UNT-417). */
+function peakSlice(idx, p1, fade){
+  if(idx % RANGE_STEP !== 0 || rangeOff || dropOff) return;
+  const B = bioAt(idx);
+  const side = B.hazard === 'roll' ? hazardSide(B) : 0;
+  if(!B.range || !side) return;
+  const grow = bioGrow(idx, B);
+  const fy = p1.y + p1.scale * CAM_H * H / 2 * DROP_DEPTH * grow;
+  if(rangePeak(B, side, p1, fy, idx, edgeFade(fade), grow, CAM_H * H / 2, 0, W, 'front')){
+    if(!rangeDrawn){ rangeDrawn = 1; rangeN++; }
+    if(drawWatch) layerSaw('front', 'range');
+  }
+}
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
@@ -26937,6 +26924,7 @@ function drawRoad(){
   massFront = null;
   wallSeam = [null, null];
   rangeDrawn = 0;
+  rangePeaks = { front: 0, glass: 0 };
   endWallDrawn = 0;
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
@@ -26991,6 +26979,7 @@ function drawRoad(){
          is the whole far half of a hilly draw - see `massSlice` (RLG-306) */
       const iB = bioAt(idx);
       massSlice(n, idx, p1, p2, y1, y2, fade, iB, (iB.hazard === 'roll' && !dropOff) ? hazardSide(iB) : 0);
+      peakSlice(idx, p1, fade);
       skipSlice(n, idx, p1); continue;
     }
     /* a mass place's front, the moment the walk has left it (RLG-307) */
@@ -27269,32 +27258,14 @@ function drawRoad(){
           dropTrace.floor.push([n, fy2, H]);
           if(drawWatch) layerSaw('front', 'drop');
         }
-        /* ---- THE FARTHEST SLICE THAT ACTUALLY DRAWS, NOT SLICE `DRAW` -----
-           Once, and after its floor, so everything nearer is painted later in
-           this walk and lands in front of it. IT IS THE FIRST ONE TO GET HERE
-           rather than `n === DRAW`, because the farthest slice is routinely
-           culled behind a crest and then the range was not painted at all -
-           measured as `painted 0` on a mountain that was plainly showing one
-           the run before. The walk is far to near, so the first is the
-           furthest. */
-        /* ---- AT ITS OWN DISTANCE DOWN THE VALLEY --------------------------
-           Drawn ONCE, on the first slice at or nearer than `RANGE_AT` of the
-           draw, and straight after that slice's floor - so every nearer slice's
-           ground and floor are painted afterwards and land in front of it. That
-           is what makes the near valley swallow its feet and leaves the land
-           across the valley standing above them.
-
-           NOT AT THE FURTHEST SLICE, which is what the first build did: at that
-           distance the floor line IS the horizon, every nearer slice paints
-           from just under the horizon down, and all that survived was peaks
-           poking above the skyline. `<=` rather than `===` because the slice at
-           exactly that index is culled behind a crest often enough to matter -
-           the same fault, one level down, that made `n === DRAW` unreliable. */
-        if(!rangeDrawn && n <= DRAW * RANGE_AT
-           && drawValleyRange(ctx, dB, dropSide, fy1, idx, bGrow)){
-          rangeDrawn = 1; rangeN++;
-          if(drawWatch) layerSaw('front', 'range');
-        }
+        /* ---- WHERE THE RANGE IS DRAWN -----------------------------------
+           The picture model placed its one tile at a chosen slice - first the
+           farthest, then the first at `RANGE_AT` of the draw - and both notes
+           on why are in the history of this file. With peaks there is nothing
+           to choose: each is drawn at its own slice (RLG-316). */
+        /* the range's peak for this segment, on the floor just painted, so
+           everything nearer is painted over it (RLG-316) */
+        peakSlice(idx, p1, fade);
         dropTrace.rim[n] = y1;
         /* THE LIP, which is the part that makes it read. A dark band alone is a
            shadow; a dark band with a BRIGHT TOP EDGE is a lip you are looking
@@ -27591,8 +27562,13 @@ function drawRoad(){
     } else {
       /* behind a crest: the road is hidden, and a mountain may not be (RLG-306) */
       const hB = bioAt(idx);
-      massSlice(n, idx, p1, p2, y1, y2, clamp(1 - n/DRAW, 0, 1), hB,
-                (hB.hazard === 'roll' && !dropOff) ? hazardSide(hB) : 0);
+      const hDrop = (hB.hazard === 'roll' && !dropOff) ? hazardSide(hB) : 0;
+      massSlice(n, idx, p1, p2, y1, y2, clamp(1 - n/DRAW, 0, 1), hB, hDrop);
+      /* A PEAK BEHIND A CREST IS STILL TALLER THAN THE CREST. Its ground is not
+         painted, because nearer ground already covers it, but the peak is drawn
+         anyway and the nearer ground lands over its foot - the same reason the
+         mass is drawn for hidden slices (RLG-306). */
+      peakSlice(idx, p1, clamp(1 - n/DRAW, 0, 1));
     }
     /* ---- THE SPRITES COME OUT WHETHER OR NOT THE GROUND WAS PAINTED -------
        This used to sit INSIDE the fill above, so a slice skipped as being
@@ -30507,6 +30483,35 @@ function drawMirrorFull(mx, my, mw, mh){
   }
 
   /* the road, drawn far-to-near in real z steps so it converges properly */
+  /* ---- THE RANGE BEYOND THE GLASS'S OWN REACH (RLG-316) ------------------
+     A peak stands `RANGE_OUT` road widths to the side, and inside the glass's
+     34,000 units that is more than sixty degrees off the road - outside the
+     pane. Looking back you see the range FARTHER off, where it has come round
+     toward the road behind you. So the peaks between `MIRROR_BACK` and the
+     windscreen's own reach are drawn here, far to near, on the far ground and
+     in front of the skyline, before the walk paints everything nearer over
+     them. They ease out over the last quarter of that reach, which is where
+     the windscreen's own peaks arrive. */
+  {
+    const rFar = DRAW * SEG;
+    const r0 = Math.ceil((pos - rFar) / SEG / RANGE_STEP) * RANGE_STEP;
+    /* up to where the walk begins, not to MIRROR_BACK: the walk's first step
+       starts a little beyond it, and those peaks were drawn twice */
+    const rWalk = Math.floor((pos - MIRROR_BACK) / 900) * 900;
+    for(let li = r0; li * SEG < rWalk; li += RANGE_STEP){
+      const lB = bioBehind(li);
+      const lSide = lB.hazard === 'roll' && !dropOff ? hazardSide(lB) : 0;
+      if(!lB.range || !lSide) continue;
+      const lp = rproj(0, li * SEG);
+      if(!lp) continue;
+      const lGrow = bioGrow(li, lB);
+      const lFy = lp.y + lp.scale * CAM_H_M * H_M / 2 * DROP_DEPTH * lGrow;
+      const lA = Math.min(1, clamp((rFar - (pos - li * SEG)) / rFar, 0, 1) * 4);
+      if(rangePeak(lB, lSide, lp, lFy, li, lA, lGrow, CAM_H_M * H_M / 2, mx, mx + mw, 'glass')
+         && drawWatch) layerSaw('glass', 'range');
+    }
+  }
+
   const MSEG = 900;
   /* ---- THE ROAD BEHIND IS IN THE SAME WEATHER AS THE ROAD AHEAD ---------
      The same two mixes the windscreen's tarmac takes: snow whitens it and
@@ -30549,7 +30554,6 @@ function drawMirrorFull(mx, my, mw, mh){
      ---------------------------------------------------------------- */
   const mFar = Math.floor((pos - MIRROR_BACK) / MSEG) * MSEG;
   let mEndDrawn = 0;
-  let mRangeDrawn = 0;
   for(let wz = mFar; wz < pos - 200; wz += MSEG){
     const a = rproj(0, wz), b2 = rproj(0, wz + MSEG);
     if(!a || !b2) continue;
@@ -30610,41 +30614,24 @@ function drawMirrorFull(mx, my, mw, mh){
           if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, mfy1, mdx - mx, Math.max(0.5, mfy2 - mfy1)); }
           else { if(mdx < mx + mw) ctx.fillRect(mdx, mfy1, mx + mw - mdx, Math.max(0.5, mfy2 - mfy1)); }
           if(drawWatch) layerSaw('glass', 'drop');
-          /* ---- AND THE RANGE ACROSS THE VALLEY (RLG-312) ---------------
-             The windscreen stands the place's own skyline art in the valley
-             at `RANGE_AT` of its draw; the glass had the floor and nothing
-             across it. The same art at the glass's own skyline scale, at the
-             same fraction of the glass's reach, standing on the glass's own
-             floor and clipped to the drop side of the road. It slides the
-             other way with travel, because the glass looks the other way; with
-             the lane it moves as `rproj` moves everything in the pane, so it
-             stays on the floor it stands on. */
-          if(!mRangeDrawn && mB.range && !rangeOff && pos - wz <= RANGE_AT * MIRROR_BACK){
-            const rArt = skylineFor(mB.name);
-            if(rArt && rArt.body && rArt.body.height && rArt.body.width){
-              const hT = (vpy - my) * 0.38 * skyRiseOf(mB.name) * RANGE_SCALE;
-              const rw2 = hT * rArt.body.width / rArt.body.height;
-              const rh2 = hT * bioGrow(widx, mB);
-              if(rw2 >= 1 && rh2 >= 1){
-                const feet = Math.min(my + mh, mfy1 + rh2 * RANGE_SINK);
-                const top = Math.max(my, feet - rh2);
-                const rZ = RANGE_AT * MIRROR_BACK;
-                let ro = (-camX * mw * 0.030
-                          + pos * (CAM_D * (RANGE_OUT * ROAD) * (mw / 2) / (rZ * rZ))) % rw2;
-                if(ro > 0) ro -= rw2;
-                ctx.save();
-                ctx.beginPath();
-                if(mDrop < 0) ctx.rect(mx, top, Math.max(0, a.x - mx), feet - top);
-                else          ctx.rect(a.x, top, Math.max(0, mx + mw - a.x), feet - top);
-                ctx.clip();
-                ctx.globalAlpha = RANGE_ALPHA;
-                for(let x = mx + ro; x < mx + mw + rw2; x += rw2)
-                  ctx.drawImage(rArt.body, x, feet - rh2, rw2, rh2);
-                ctx.restore();
-                mRangeDrawn = 1;
-                if(drawWatch) layerSaw('glass', 'range');
-              }
-            }
+          /* ---- AND THE RANGE ACROSS THE VALLEY (RLG-312, RLG-316) ------
+             The same peaks the windscreen draws - the same segments, the same
+             art, the same standoff - through the glass's own projection, each
+             on the glass's floor at its own distance, walked far to near with
+             everything else in the pane. */
+          for(let li = Math.ceil(wz / SEG); li * SEG < wz + MSEG; li++){
+            if(li % RANGE_STEP !== 0) continue;
+            const lB = bioBehind(li);
+            if(!lB.range || (lB.hazard === 'roll' ? hazardSide(lB) : 0) !== mDrop) continue;
+            const lp = rproj(0, li * SEG);
+            if(!lp) continue;
+            const lGrow = bioGrow(li, lB);
+            const lFy = lp.y + lp.scale * CAM_H_M * H_M / 2 * DROP_DEPTH * lGrow;
+            /* solid: the far loop before this walk carries the range on past the
+               glass's reach, so a fade here would be a hole at the hand-over */
+            if(rangePeak(lB, mDrop, lp, lFy, li, 1, lGrow, CAM_H_M * H_M / 2,
+                         mx, mx + mw, 'glass')
+               && drawWatch) layerSaw('glass', 'range');
           }
         }
         /* the lit lip, which is what makes it an edge rather than a shadow */
@@ -35640,22 +35627,22 @@ requestAnimationFrame(frameLoop);
     if(reset) endWallN = 0;
     return out;
   };
+  /* the windscreen's projection of a world point, so a check can say where a
+     thing SHOULD be without asking the painter that put it there (RLG-316) */
+  API.projAt = function(x, z){ const p = proj(x, z); return { x: p.x, y: p.y, ok: p.ok }; };
+  API.rangeTrace = function(reset){ const t = rangeTrace.slice(); if(reset) rangeTrace = []; return t; };
   API.rangeModel = function(o){
     if(o){
-      if(o.scale > 0) RANGE_SCALE = o.scale;
-      if(o.at    >  0) RANGE_AT    = o.at;
+      if(o.step  >  0) RANGE_STEP  = Math.max(1, Math.round(o.step));
+      if(o.h     >  0) RANGE_H     = o.h;
       if(o.sink  >= 0) RANGE_SINK  = o.sink;
       if(o.out   >  0) RANGE_OUT   = o.out;
-      if(o.swing >= 0) RANGE_SWING = o.swing;
       if(o.alpha >= 0) RANGE_ALPHA = o.alpha;
     }
     if(o && o.reset) rangeN = 0;
-    const rz = RANGE_AT * DRAW * SEG;
-    return { scale:RANGE_SCALE, at:RANGE_AT, sink:RANGE_SINK,
-             out:RANGE_OUT, outZ:Math.round(RANGE_OUT * ROAD), atZ:Math.round(rz),
-             drift:+(CAM_D * (RANGE_OUT * ROAD) * (W/2) / (rz*rz)).toFixed(6),
-             swing:RANGE_SWING, alpha:RANGE_ALPHA, drawn:rangeDrawn, frames:rangeN,
-             x:rangeX, terms:Object.assign({}, rangeTerms) };
+    return { step:RANGE_STEP, h:RANGE_H, sink:RANGE_SINK,
+             out:RANGE_OUT, outZ:Math.round(RANGE_OUT * ROAD), alpha:RANGE_ALPHA,
+             drawn:rangeDrawn, frames:rangeN, peaks:Object.assign({}, rangePeaks) };
   };
   API.wallTrace = function(){ return wallTrace.slice(); };
   /* debug: put the hazard on a NAMED side, so a check can render the same place

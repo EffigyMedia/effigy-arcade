@@ -379,28 +379,39 @@ def main():
             # moving is the whole difference between a thing standing in the world and a
             # thing painted on the sky. The bend and the camera are pinned, so the only
             # thing that can move it is the road going by.
+            # SINCE RLG-316 THE RANGE IS PEAKS, so this follows ONE PEAK - the one the
+            # windscreen drew most - through `API.rangeTrace`, where it used to read the
+            # one picture's offset. Parked it must hold; driving it must slide.
             settle('MOUNTAIN', -1)
-            still = []
-            for _ in range(3):
-                pg.wait_for_timeout(200)
-                still.append(pg.evaluate("() => window.__probe.road.rangeModel().x"))
+            pg.evaluate("() => window.__probe.road.watchDraw(true)")
+
+            def peak_spread(ms):
+                pg.evaluate("() => window.__probe.road.rangeTrace(true)")
+                pg.wait_for_timeout(ms)
+                tr = [e for e in pg.evaluate("() => window.__probe.road.rangeTrace(false)")
+                      if e['view'] == 'front']
+                by = {}
+                for e in tr:
+                    by.setdefault(e['idx'], []).append(e['x'])
+                if not by:
+                    return None, []
+                idx = max(by, key=lambda k: len(by[k]))
+                return max(by[idx]) - min(by[idx]), by[idx]
+            sspread, still = peak_spread(600)
             pg.evaluate("() => { const R = window.__probe.road;"
                         " R.holdSpd(R.MAX_SPD * 0.5); }")
             pg.wait_for_timeout(1400)
-            moving = []
-            for _ in range(3):
-                pg.wait_for_timeout(200)
-                moving.append(pg.evaluate("() => window.__probe.road.rangeModel().x"))
+            mspread, moving = peak_spread(600)
             pg.evaluate("() => window.__probe.road.holdSpd(0)")
-            sspread = max(still) - min(still)
-            mspread = max(moving) - min(moving)
-            print('      parked  x %s      driving  x %s'
-                  % (', '.join('%.1f' % v for v in still),
-                     ', '.join('%.1f' % v for v in moving)))
+            if sspread is None or mspread is None:
+                ok(False, 'a peak of the range was drawn to follow, parked and driving')
+                sspread = mspread = 0
+            print('      one peak parked, x over %d frame(s): spread %.2f      driving: spread %.1f'
+                  % (len(still), sspread, mspread))
             ok(sspread < 0.6, 'parked, the range holds still',
-               'it moved %.2f pixel(s) over three reads' % sspread)
+               'it moved %.2f pixel(s) over the frames read' % sspread)
             ok(mspread > 2.0, 'and driving slides it along the side of the road',
-               'it moved %.1f pixel(s) over three reads' % mspread)
+               'it moved %.1f pixel(s) over the frames read' % mspread)
 
             # ---- 5. and it is behind you too --------------------------------------------------
             print()

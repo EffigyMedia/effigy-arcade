@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-124"></a>
+## [0.14.124] - 2026-09-22
+- Changed: **the mountains across the valley are peaks standing in the world.** The range was one
+  picture slid across the screen by three offsets and painted at one depth, so it moved wrongly and
+  showed through the near mountain and the road on bends and crests. Each peak is now placed in
+  the world on the valley floor and drawn at its own depth, so it moves as you drive and the land in
+  front of it hides it. The mirror shows the same peaks, and the ones farther back that come into
+  its view behind you. [RLG-316](../fragments/RLG-316.md) [RLG-309](../fragments/RLG-309.md)
+
 <a id="v0-14-123"></a>
 ## [0.14.123] - 2026-09-22
 - Fixed: **headlights and light bars in the mirror fade with their car.** They were painted whole

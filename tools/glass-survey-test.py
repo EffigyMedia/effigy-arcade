@@ -71,8 +71,10 @@ FALSIFY = (
     ("    if(mB.truss || CFG.circuitOnly){\n      const mr1", "    if(false){\n      const mr1"),
     ("    if(mDeck && b2.w > 2){\n      const js", "    if(false){\n      const js"),
     ("        if(li % 8 !== 0 || bioBehind(li).name !== 'CITY') continue;", "        continue;"),
-    ("          if(!mRangeDrawn && mB.range && !rangeOff && pos - wz <= RANGE_AT * MIRROR_BACK){",
-     "          if(false){"),
+    # since RLG-316 the range is peaks from one painter; the glass's are cut there
+    ("function rangePeak(B, side, p, floorY, idx, alpha, grow, kv, x0, x1, view){\n",
+     "function rangePeak(B, side, p, floorY, idx, alpha, grow, kv, x0, x1, view){\n"
+     "  if(view === 'glass') return 0;\n"),
     ("      if(!!bB.bore !== !!aB.bore && zE < pos - 200 && zE > pos - MIRROR_BACK){",
      "      if(false){"),
 )
