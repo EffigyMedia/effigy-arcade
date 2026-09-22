@@ -170,6 +170,10 @@ def arrive(page, key):
          desert first, which is also the arrival the owner's report was about. */
       R.setBiomePair('DESERT', 'DESERT');
       R.startBiomeChange(k);
+      /* EVERY SLICE, not one a run: since RLG-306 the far part of the draw paints one
+         quad per run, so a slice read past it usually has no wall entry to find.
+         This proof is about growth, so it switches the merge off for its reads. */
+      if(R.massModel) R.massModel({ merge: 1 });
       R.setSpd(12000); R.holdSpd(12000);
     }""", key)
     until(page, """(a) => {
@@ -228,7 +232,10 @@ def run(page, res, key, grows):
         # ---- AND THE BAND ENDS WHERE IT SAYS IT DOES. One band past the boundary the
         # ramp is complete, so the grown land and the switched land are the SAME land -
         # which is the only reading that can tell a ramp from a permanent shortening.
-        endG = read_at(page, key, 72, into=72)
+        # PAST the band's end, not at it. The read takes the nearest PAINTED slice within
+        # eight of the one asked for, and one eight short of the end is 97 per cent grown -
+        # which read as a 3.5 px difference between two settings that agree by then.
+        endG = read_at(page, key, 72, into=82)
         endS = read_at(page, key, 1, n=endG['n'], need_floor=True)
         print('      one band in (%d past): %s px under the rim grown, %s px switched'
               % (endG['n'] - endG['edgeIn'], endG['floor'] and endG['floor']['deep'],

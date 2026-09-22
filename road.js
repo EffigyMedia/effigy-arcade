@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.117';
+window.ROAD_BUILD = '0.14.118';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -14604,6 +14604,9 @@ const BIOMES = {
                  rock, and its boundary face would stand in front of walls that
                  were not yet full height */
               grow:1,
+              /* AND IT IS A SURFACE rather than a sheet (RLG-306): the low-
+                 polygon mass stands where the wall stood - see `MASS_L` */
+              mass:1, massId:1,
               /* and a range stands across the valley on the drop side, drawn
                  from this place's own peaks (RLG-297) */
               range:1,
@@ -14709,6 +14712,15 @@ const BIOMES = {
                  stone reading as painted and not enough to turn it into a
                  mountainside. */
               wall:1, ridge:0.25, face:1,
+              /* ---- AND THE SAME SURFACE AS THE MOUNTAIN (owner, 2026-09-21,
+                 RLG-307) - "You should probably do the same thing for the canyon
+                 walls." The canyon's own profile, though: a cliff at the road
+                 up to a nearly flat rim, because a slot canyon's walls are near-
+                 vertical and near-uniform and that is what was accepted of them.
+                 Its FRONT is drawn from the same heights as its sides, which is
+                 what finally makes the face and the walls meet. */
+              mass:1, massId:2,
+              massH:[0, 1.0, 1.04, 1.0, 0.96, 0.92], massJag:0.10,
               skyBase:SANDSTONE.mid, skyWall:1,
               sky:'#5e3524', city:0.00, trees:0.04, skyForm:'ridge' },
   /* ---- THE FIRST PLACE THAT IS AN EVENT (RLG-112) ---------------------
@@ -15081,6 +15093,14 @@ let biomePrev = 'FOREST', leftAt = -1e9;
    ramp gets its own anchor, set wherever `leftAt` is and cleared by the pair
    setter, and nothing about the horizon moves when it does. */
 let growFrom = -1e9;
+/* ---- AND WHICH PLACE ENDED THERE (RLG-306) -------------------------------
+   `growFrom` is where the place you are in began, which is also where the one
+   you LEFT ended. Nothing remembered which place that was: once a crossing
+   completes the pair collapses, `bioMix` answers 1 everywhere, and every segment
+   BEHIND the car reports the new place - so the mirror showed the desert behind
+   you the moment you had driven out of a mountain. The owner asked for exactly
+   the opposite: "We also need to see it correctly in the mirror as we leave." */
+let growLeft = null;
 /* ---- AND HOW MUCH OF THE HORIZON THE NEW PLACE ALREADY HELD (RLG-252) -----
    Owner, 2026-09-19, from the device: the new biome's skyline "happens twice
    like a glitch". Measured: the place ahead grows to the whole horizon by the
@@ -15298,6 +15318,15 @@ function bioMix(idx){
 /* the record for a segment, for anything that needs one biome rather than a
    blend of two */
 function bioAt(idx){ return BIOMES[bioMix(idx) >= 0.5 ? biomeTo : biomeFrom] || BIOMES.FOREST; }
+/* ---- THE PLACE A SEGMENT BEHIND THE CAR BELONGS TO (RLG-306) -------------
+   `bioAt` for everything the MIRROR draws. While a crossing is live it is the
+   same answer; once it has completed, a segment behind the place you left's
+   end belongs to that place and not to the one you are in now. */
+function bioBehind(idx){
+  if(biomeFrom === biomeTo && growLeft && idx < growFrom && BIOMES[growLeft])
+    return BIOMES[growLeft];
+  return bioAt(idx);
+}
 /* ---- HOW FAR THIS PLACE'S LANDFORM HAS GROWN AT THIS SEGMENT (RLG-303) ---
    Owner, 2026-09-20, shown a mountain arriving as a curtain of rock standing on
    the desert: "that is ugly... Notice how it's disconnected. It doesn't read as
@@ -15326,6 +15355,10 @@ function bioAt(idx){ return BIOMES[bioMix(idx) >= 0.5 ? biomeTo : biomeFrom] || 
    ------------------------------------------------------------------------ */
 function bioGrow(seg, B){
   if(!B || !B.grow) return 1;
+  /* the place you LEFT, behind you: it sank back into the ground over the run
+     before its own end, and that is what the mirror has to show */
+  if(biomeFrom === biomeTo && growLeft && B.name === growLeft && seg < growFrom)
+    return clamp((growFrom - seg) / GROW_BAND, 0, 1);
   let g = 1;
   const began = (biomeFrom !== biomeTo && B.name === biomeTo) ? biomeEdge : growFrom;
   if(began > -1e8) g = clamp((seg - began) / GROW_BAND, 0, 1);
@@ -15401,7 +15434,12 @@ function snowHue(nAmt, gAmt){
 
 function groundTone(idx, dark, nAmt, gAmt){
   const t = bioMix(idx);
-  const B = BIOMES[biomeTo] || BIOMES.FOREST, B0 = BIOMES[biomeFrom] || B;
+  let B = BIOMES[biomeTo] || BIOMES.FOREST, B0 = BIOMES[biomeFrom] || B;
+  /* BEHIND THE END OF THE PLACE YOU LEFT, IT IS THAT PLACE'S GROUND (RLG-306).
+     Only the mirror ever asks about a segment that far back - every slice the
+     windscreen draws is ahead of `growFrom` - and it was being told the new
+     place's colour, so a mountain in the glass stood on desert sand. */
+  if(biomeFrom === biomeTo && growLeft && idx < growFrom && BIOMES[growLeft]) B = B0 = BIOMES[growLeft];
   const lo = t <= 0 ? B0.grassLo : t >= 1 ? B.grassLo : mixRGB(B0.grassLo, t, hexRGB(B.grassLo));
   const hi = t <= 0 ? B0.grassHi : t >= 1 ? B.grassHi : mixRGB(B0.grassHi, t, hexRGB(B.grassHi));
   const raw = dark ? lo : hi;
@@ -15622,6 +15660,254 @@ function wallRiseAt(seg, B, near){
   const rough    = ridgeNoise(seg, BREAK_RUN, 911) - 0.5;
   return tall * (1 + k * res * (shoulder * WALL_RIDGE + rough * WALL_BREAK));
 }
+/* ==== A MOUNTAIN IS A SURFACE, NOT A SHEET (owner, 2026-09-21, RLG-306) ====
+   "The mountain face as you approach a mountain biome is completely missing...
+   We need to essentially build a (low) polygonal mountain side for that whole
+   side of the biome. We also need to see it correctly in the mirror as we
+   leave."
+
+   WHAT THE PICTURE SHOWED. The wall beside the road is a plane standing at the
+   road's edge, and RLG-303 made it grow out of the ground over `GROW_BAND`. From
+   the approach you look along that plane almost edge-on, so a mountain two
+   hundred segments ahead is nothing at all, and twenty ahead it is a single dark
+   needle; once beside it, it is a cliff. There was never a surface that FACES
+   you. That is the missing mountain.
+
+   SO THE MOUNTAIN IS A HEIGHTFIELD running along its side of the road and out
+   away from it: a foot at the road's edge, a cliff, then slopes and peaks. It
+   grows out of the ground at the boundary exactly as RLG-303 asked - every
+   height is multiplied by `bioGrow` - so arriving is still the land going up,
+   and now the land has a face you can see while it goes up. The front, the side
+   and the ridge are ONE surface, which is the answer to 'disconnected'.
+
+   LOW-POLYGON IS HOW IT IS SHADED, NOT HOW IT IS CUT. It is drawn one road slice
+   at a time, like the wall it replaces, because that is what keeps two things
+   right for free: the foot follows every bend of the road exactly, and every
+   nearer crest and slice of ground occludes it in the right order. But its
+   HEIGHTS are straight lines across runs of `MASS_RUN` segments, and each run of
+   each column takes ONE flat shade from its own facet's angle to the light - so
+   what the eye reads is large flat planes meeting at hard edges.
+
+   `MASS_L` is where each column stands, in road half-widths beyond the foot;
+   `MASS_H` is its height as a fraction of the place's own wall. The last column
+   is far enough out to reach the edge of the screen at the far end of the draw,
+   so no sky shows beside the mountain. Tunables with committed defaults;
+   `API.massModel` reads and writes them. */
+let MASS_RUN  = 6;
+let MASS_MERGE = 0.40;  /* past this fraction of the draw, one quad a run */
+let MASS_L    = [0, 0.10, 1.4, 4.0, 10.0, 40.0];
+let MASS_H    = [0, 0.50, 0.80, 1.20, 1.00, 0.75];
+let MASS_JAG  = 0.40;   /* how far one vertex may stand from its column's height */
+let MASS_SHADE = 0.55;  /* how dark a facet turned fully away from the light gets */
+let massOff = false;    /* debug: the old wall, so a check can compare the two */
+/* the light, as a direction: up, toward the road, and toward the camera */
+const MASS_LIGHT = [0.5, 1.0, -0.6];
+/* ---- EACH PLACE STATES ITS OWN PROFILE --------------------------------
+   `mass: 1` takes the tables above, which are a mountain's: a cliff at the road
+   and peaks further out. A place that is a different landform states its own
+   `massH` and `massJag` - a canyon's walls are near-vertical and near-uniform,
+   which is what the owner accepted of them, so its profile is a cliff to a flat
+   rim rather than a range. The columns stand where `MASS_L` says for both. */
+function massH(B){ return (B && B.massH) || MASS_H; }
+function massJag(B){ return (B && B.massJag !== undefined) ? B.massJag : MASS_JAG; }
+/* a vertex's height, before growth - fixed to the road, not the frame */
+function massVertex(run, j, B){
+  if(j === 0) return 0;
+  return massH(B)[j] * (1 + (sceneRand(run * 37 + j, 971) - 0.5) * 2 * massJag(B));
+}
+/* the height at a segment, in camera heights: straight lines between runs, so
+   the facets are flat, times the place's own growth out of the ground */
+function massHeight(seg, j, B){
+  const run = Math.floor(seg / MASS_RUN), t = (seg - run * MASS_RUN) / MASS_RUN;
+  const a = massVertex(run, j, B), b = massVertex(run + 1, j, B);
+  return wallPlain(B) * (a + (b - a) * t) * bioGrow(seg, B);
+}
+/* how lit a facet is: its normal against `MASS_LIGHT`, in world units, taken
+   at the middle of its run. Cached per frame, because six slices share one. */
+let massShadeCache = new Map();
+function massFacet(run, j, B, side){
+  const key = (run * 16 + j * 2 + (side > 0 ? 1 : 0)) * 64 + (B && B.massId || 0);
+  const hit = massShadeCache.get(key);
+  if(hit !== undefined) return hit;
+  const z0 = run * MASS_RUN, z1 = z0 + MASS_RUN, mid = z0 + MASS_RUN * 0.5;
+  const g = bioGrow(mid, B), tall = wallPlain(B) * CAM_H;
+  const L0 = (MASS_L[j]) * ROAD, L1 = (MASS_L[j + 1]) * ROAD;
+  const ax = L0, ay = massVertex(run, j, B) * tall * g, az = z0 * SEG;
+  const bx = L1, by = massVertex(run, j + 1, B) * tall * g, bz = z0 * SEG;
+  const cx = L0, cy = massVertex(run + 1, j, B) * tall * g, cz = z1 * SEG;
+  /* (b - a) x (c - a), with x pointing AWAY from the road on either side */
+  let nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+  let ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+  let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  if(ny < 0){ nx = -nx; ny = -ny; nz = -nz; }
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  const Ll = Math.hypot(MASS_LIGHT[0], MASS_LIGHT[1], MASS_LIGHT[2]);
+  /* x is away from the road, so light FROM the road is negative x */
+  const lit = (-nx * MASS_LIGHT[0] + ny * MASS_LIGHT[1] + nz * MASS_LIGHT[2]) / (nl * Ll);
+  const bright = clamp(0.30 + 0.75 * Math.max(0, lit), 0, 1);
+  massShadeCache.set(key, bright);
+  return bright;
+}
+/* ---- ONE ROAD SLICE OF THE MASS, VISIBLE OR BEHIND A CREST (RLG-306) ----
+   Called for every slice the walk reaches, not only the ones whose ROAD shows.
+   The wall this replaces was drawn inside the crest test, so a slice whose road
+   was hidden behind a hill drew no wall at all - and a mountain is tall enough
+   to rise above the hill in front of it. Measured: at 63 segments out, one road
+   painted 1,195 quads of mountain and another NONE, because the whole mountain
+   stood behind a crest on the second. The nearer crest's ground is painted after
+   this and covers what really is hidden, so the occlusion is still the walk's. */
+function massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide){
+  const sides = wallSides(dB);
+  if(!sides || dB.overWater || massOff || !dB.mass) return;
+  /* ---- ONE QUAD A RUN IN THE FAR PART OF THE DRAW (RLG-306) ------------
+     Measured against the old wall in one page, the canyon ran at 31.5-34.7 fps
+     to the wall's 50.7-60.7 - about three thousand quads a frame across two
+     walls. Past `MASS_MERGE` of the draw a slice is under a pixel tall, and the
+     heights are straight lines across a run anyway, so one quad from the run's
+     start to its end is the same surface; only the road's bend is taken as a
+     chord, and at that distance the chord is under a pixel too. */
+  let step = 1, q2 = p2, yy2 = y2;
+  if(n > DRAW * MASS_MERGE){
+    step = MASS_RUN;
+    if(idx % step !== 0) return;          /* covered by the run's own quad */
+    q2 = proj(0, (idx + step) * SEG);
+    if(!q2.ok) return;
+    yy2 = q2.y;
+  }
+  const tipN = n + step > DRAW;          /* the far edge reaches the horizon */
+  for(const ws of sides){
+    if(ws === dropSide) continue;
+      const far = clamp(1 - fade * 0.55, 0, 1);
+      const rock = hexRGB(groundTone(idx, false));
+      const sky  = hexRGB(dB.sky || '#2a3550');
+      const kH1 = p1.scale * CAM_H * H / 2, kH2 = q2.scale * CAM_H * H / 2;
+      const base = railX();
+      const run = Math.floor(idx / MASS_RUN);
+      let top = H;
+      for(let j = MASS_L.length - 2; j >= 0; j--){
+        const La = base + MASS_L[j], Lb = base + MASS_L[j + 1];
+        const hNa = massHeight(idx, j, dB),     hNb = massHeight(idx, j + 1, dB);
+        const hFa = massHeight(idx + step, j, dB), hFb = massHeight(idx + step, j + 1, dB);
+        if(hNa + hNb + hFa + hFb < 0.02) continue;   /* flat on the ground: nothing to draw */
+        const x1a = p1.x + ws * p1.w * La, x1b = p1.x + ws * p1.w * Lb;
+        const x2a = q2.x + ws * q2.w * La, x2b = q2.x + ws * q2.w * Lb;
+        const y1a = y1 - kH1 * hNa, y1b = y1 - kH1 * hNb;
+        const y2a = (tipN ? horizon : yy2 - kH2 * hFa);
+        const y2b = (tipN ? horizon : yy2 - kH2 * hFb);
+        /* ---- AND NOTHING THAT IS ENTIRELY OFF THE FRAME ------------------
+           Beside the car a canyon's rim and plateau stand far above the top of
+           the screen, and every one of those quads was filled and clipped away
+           for nothing. The top is what `top` reports, so it is still counted. */
+        if((y1a < 0 && y1b < 0 && y2a < 0 && y2b < 0) ||
+           (x1a < 0 && x1b < 0 && x2a < 0 && x2b < 0) ||
+           (x1a > W && x1b > W && x2a > W && x2b > W)){
+          if(y1a < top) top = y1a;
+          if(y1b < top) top = y1b;
+          continue;
+        }
+        /* a facet's shade, then the haze for how far away it is - the same
+           two stages the wall and the drop use, so the three agree */
+        const lit = massFacet(run, j, dB, ws);
+        const sh = WALL_SHADE + (1 - lit) * MASS_SHADE;
+        const r0 = rock[0] + (DROP_DARK[0] - rock[0]) * sh;
+        const g0 = rock[1] + (DROP_DARK[1] - rock[1]) * sh;
+        const b0 = rock[2] + (DROP_DARK[2] - rock[2]) * sh;
+        const hz = WALL_HAZE * far;
+        ctx.fillStyle = 'rgb(' + Math.round(r0 + (sky[0] - r0) * hz) + ','
+                               + Math.round(g0 + (sky[1] - g0) * hz) + ','
+                               + Math.round(b0 + (sky[2] - b0) * hz) + ')';
+        /* ---- LAPPED ALONG THE ROAD, NOT UP THE SCREEN ------------------
+           Neighbouring slices share an edge and each antialiases against
+           it on its own, so the sky shows through as a hairline - the
+           fault the owner reported of the wall as 'see through' (RLG-297).
+           The first build nudged the far edge UP by a pixel, which closes a
+           horizontal seam and does nothing for a cliff, whose seams are
+           nearly VERTICAL on screen: the canyon came out striped. So each
+           far corner is pushed a little further along its own edge, away
+           from the viewer, into the slice beyond - which was painted first
+           and is covered, so nothing moves but the gap. */
+        const lap = 0.9;
+        const ea = Math.hypot(x2a - x1a, y2a - y1a) || 1;
+        const eb = Math.hypot(x2b - x1b, y2b - y1b) || 1;
+        ctx.beginPath();
+        ctx.moveTo(x1a, y1a); ctx.lineTo(x1b, y1b);
+        ctx.lineTo(x2b + (x2b - x1b) / eb * lap, y2b + (y2b - y1b) / eb * lap);
+        ctx.lineTo(x2a + (x2a - x1a) / ea * lap, y2a + (y2a - y1a) / ea * lap);
+        ctx.closePath(); ctx.fill();
+        massTrace.quads++;
+        if(y1a < top) top = y1a;
+        if(y1b < top) top = y1b;
+      }
+      /* ---- AND ITS FRONT, WHERE THE PLACE BEGINS (RLG-307) --------
+         A place that grows out of the ground presents its FRONT as the
+         rising surface above. One that does not - a canyon - stands at
+         full height from its first slice, so its front is a vertical
+         cross-section at the boundary that the top surface never draws.
+         It is drawn here from the SAME heights, at the same slice, so the
+         face and the walls are one surface and cannot disagree about how
+         tall the rock is where they meet. That disagreement is RLG-307.
+
+         The nearest slice of the place is the one whose nearer neighbour
+         belongs to somewhere else. It is painted after this slice's own
+         quads, which are behind it, and before every nearer slice. */
+      /* the front is NOT drawn here - see `massFront` below */
+      massFront = { B: dB, idx: idx, sides: massFront && massFront.B === dB
+                      ? Array.from(new Set(massFront.sides.concat([ws]))) : [ws] };
+      massTrace.slices += step;           /* slices COVERED, merged or not */
+      massTrace.top[n] = +top.toFixed(1);
+      /* AND THROUGH THE WALL'S OWN TRACE: the mass is the wall now, so what a
+         check wrote about the wall - it runs the length of the draw, it leaves
+         the top of the frame beside the car, it comes down to the horizon far
+         off - is asked of the mass in the same words (wall-plane-test) */
+      wallTrace.push([n, ws, +Math.max(0, top).toFixed(1)]);
+  }
+}
+/* ---- THE FRONT WAITS FOR THE NEXT NEARER SLICE (RLG-307) ----------------
+   A place that does not grow presents a vertical front at its boundary. The
+   first build drew it at the nearest slice of the place - and when THAT slice
+   was skipped, behind a crest or inverted by less than a pixel, the whole front
+   was missing for the frame: the proof caught 0 front quads on one road where
+   another had 10. So each drawn mass slice records itself here, and the front is
+   drawn at the TRUE boundary from its own projection the moment the walk reaches
+   a drawn slice that is somewhere else - before that slice's ground, so the
+   nearer ground still lands in front of it. */
+let massFront = null;
+function drawMassFront(){
+  const F = massFront; massFront = null;
+  /* the face's own switch and counter: the front IS the face now, so a check
+     written for the face (canyon-mouth-test) measures it unchanged */
+  if(!F || endWallOff || !F.B.face) return;
+  let e = F.idx;                          /* walk to the place's true nearest segment */
+  while(e > 0 && bioAt(e - 1) === F.B) e--;
+  const p = proj(0, e * SEG);
+  if(!p.ok) return;
+  const B = F.B, base = railX(), kH = p.scale * CAM_H * H / 2;
+  const rock = hexRGB(groundTone(e, false)), sky = hexRGB(B.sky || '#2a3550');
+  const far = clamp(1 - clamp(1 - (e - Math.floor(pos/SEG)) / DRAW, 0, 1) * 0.55, 0, 1);
+  const sh = WALL_SHADE + (1 - clamp(0.30 + 0.75 * 0.55, 0, 1)) * MASS_SHADE;
+  const r0 = rock[0] + (DROP_DARK[0] - rock[0]) * sh;
+  const g0 = rock[1] + (DROP_DARK[1] - rock[1]) * sh;
+  const b0 = rock[2] + (DROP_DARK[2] - rock[2]) * sh;
+  const hz = WALL_HAZE * far;
+  ctx.fillStyle = 'rgb(' + Math.round(r0 + (sky[0] - r0) * hz) + ','
+                         + Math.round(g0 + (sky[1] - g0) * hz) + ','
+                         + Math.round(b0 + (sky[2] - b0) * hz) + ')';
+  for(const ws of F.sides){
+    for(let j = MASS_L.length - 2; j >= 0; j--){
+      const ha = massHeight(e, j, B), hb = massHeight(e, j + 1, B);
+      if(ha + hb < 0.02) continue;
+      const xa = p.x + ws * p.w * (base + MASS_L[j]), xb = p.x + ws * p.w * (base + MASS_L[j + 1]);
+      ctx.beginPath();
+      ctx.moveTo(xa, p.y); ctx.lineTo(xa, p.y - kH * ha);
+      ctx.lineTo(xb, p.y - kH * hb); ctx.lineTo(xb, p.y);
+      ctx.closePath(); ctx.fill();
+      massTrace.front = (massTrace.front || 0) + 1;
+    }
+  }
+  if(massTrace.front && !endWallDrawn){ endWallDrawn = 1; endWallN++; }
+}
+/* what the mass painted this frame, for a check (RLG-306) */
+let massTrace = { quads: 0, slices: 0, top: {} };
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
@@ -16134,6 +16420,11 @@ function drawEndWall(g, B, p, seg, groundY, fadeAt, pane){
      says whether it has a face, and only the canyon does. How a mountain should
      arrive is RLG-303 and it is not this. */
   if(!B || !B.face || wallOff || endWallOff) return 0;
+  /* ---- AND NOT WHERE A MASS DRAWS THE FRONT (RLG-307) -------------------
+     The mass paints its own front from the same heights as its sides, which is
+     what makes the two meet. Drawing this as well would stand a second face,
+     with different heights, in front of the one that fits. */
+  if(B.mass && !massOff) return 0;
   /* `pane` is the glass: its own left edge, width and bottom. Absent, the
      windscreen, which is the whole frame. The face is the same drawing either
      way - a massif seen from in front and a massif seen from behind are the
@@ -16383,7 +16674,7 @@ function openBiome(){
   climFrom = climTo = rollClimate(biome);
   wxFrom = wxTo = biome;
   biomeFrom = biomeTo = biome;
-  biomePrev = biome; leftAt = -1e9; growFrom = -1e9;
+  biomePrev = biome; leftAt = -1e9; growFrom = -1e9; growLeft = null;
   biomeEdge = -1e9;
   /* and no place is planned yet - a fresh run is not carrying the last run's
      next place, and the road ahead of it is generated into THIS one (RLG-150) */
@@ -16540,7 +16831,7 @@ function stepBiome(dt){
     if(cross >= 1){
       /* the place being left is the one the pair is dropping (RLG-252) */
       if(biomeFrom !== biomeTo){
-        biomePrev = biomeFrom; leftAt = biomeEdge; growFrom = biomeEdge;
+        biomePrev = biomeFrom; leftAt = biomeEdge; growFrom = biomeEdge; growLeft = biomeFrom;
         leftFrom = clamp(1 - (biomeEdge - Math.floor(pos/SEG)) / SKY_NEAR, 0, 1);
       }
       biomeFrom = biomeTo;
@@ -26374,6 +26665,9 @@ let rampOff = false;
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
+  massTrace = { quads: 0, slices: 0, top: {} };
+  massShadeCache.clear();
+  massFront = null;
   wallSeam = [null, null];
   rangeDrawn = 0;
   endWallDrawn = 0;
@@ -26424,7 +26718,16 @@ function drawRoad(){
     const dark = ((idx/RUMBLE)|0) % 2 === 0;
     const fade = clamp(1 - n/DRAW, 0, 1);
     const y1 = p1.y, y2 = p2.y;
-    if(y1 < y2){ if(drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]); skipSlice(n, idx, p1); continue; }
+    if(y1 < y2){
+      if(drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]);
+      /* a road inverted by under a pixel still has a mountain beside it, and it
+         is the whole far half of a hilly draw - see `massSlice` (RLG-306) */
+      const iB = bioAt(idx);
+      massSlice(n, idx, p1, p2, y1, y2, fade, iB, (iB.hazard === 'roll' && !dropOff) ? hazardSide(iB) : 0);
+      skipSlice(n, idx, p1); continue;
+    }
+    /* a mass place's front, the moment the walk has left it (RLG-307) */
+    if(massFront && bioAt(idx) !== massFront.B) drawMassFront();
 
     /* ---- THE GROUND, not just the verge ---------------------------------
        The strip either side of the tarmac was being drawn only as tall as the
@@ -26770,6 +27073,7 @@ function drawRoad(){
       /* NOT DRAWN AT ALL WHERE THE LAND HAS NOT RISEN (RLG-303). A band of zero
          height is not nothing: it reaches half a road width below its own top
          edge, which paints rock over the ground beside the road. */
+      massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide);
       const wSides = bGrow > 0 ? wallSides(dB) : null;
       if(wSides && !dB.overWater){
         /* THE HEIGHT IS THIS SEGMENT'S, NOT THE PLACE'S, so the top edge has
@@ -26807,6 +27111,13 @@ function drawRoad(){
                                WALL_HAZE * wFar, hexRGB(dB.sky || '#2a3550'));
         for(const ws of wSides){
           if(ws === dropSide) continue;      /* a drop and a wall never share a side */
+          /* ---- A PLACE WITH A MASS DRAWS IT HERE INSTEAD (RLG-306) --------
+             One road slice of the low-polygon surface: a quad per column,
+             outer first so the cliff at the road's edge is painted last and
+             stands in front of the slopes behind it. The two ends of each quad
+             are this slice's projection and the next one out, which is what
+             keeps the foot on the road through every bend. */
+          if(dB.mass && !massOff) continue;   /* drawn by `massSlice` */
           const wx1 = wallFootX(p1, ws);
           const wk = ws < 0 ? 0 : 1;
           /* ---- THE TOP OF A WALL IS A LINE, NOT A STEP ------------------
@@ -27003,6 +27314,11 @@ function drawRoad(){
       }
       groundMax = y2;
       roadY[n] = y1;
+    } else {
+      /* behind a crest: the road is hidden, and a mountain may not be (RLG-306) */
+      const hB = bioAt(idx);
+      massSlice(n, idx, p1, p2, y1, y2, clamp(1 - n/DRAW, 0, 1), hB,
+                (hB.hazard === 'roll' && !dropOff) ? hazardSide(hB) : 0);
     }
     /* ---- THE SPRITES COME OUT WHETHER OR NOT THE GROUND WAS PAINTED -------
        This used to sit INSIDE the fill above, so a slice skipped as being
@@ -30013,7 +30329,11 @@ function drawMirrorFull(mx, my, mw, mh){
        to agree with the road ahead - the biome, the sea's side, the placement
        hash - asks for the world's index. */
     const widx = Math.floor(wz/SEG);
-    const mB = bioAt(widx);
+    /* the place BEHIND the car, which after a crossing is the one you left -
+       see `bioBehind` (RLG-306). Every layer of this step reads it, so the
+       glass shows that place's ground, drop and walls together rather than a
+       mountain wall standing on the next place's grass. */
+    const mB = bioBehind(widx);
     /* ---- AND THE WATER IS BEHIND YOU TOO (RLG-059) -------------------
        The glass showed a coast with no coast in it: the mirror's ground is one
        flat fill, so the sea simply was not there, and after the scenery pass
@@ -30104,7 +30424,91 @@ function drawMirrorFull(mx, my, mw, mh){
         mEndDrawn = 1; endWallN++;
       }
     }
-    if(!mB.truss && !mB.overWater){
+    /* ---- THE MASS, BEHIND YOU (owner, 2026-09-21, RLG-306) -------------
+       "We also need to see it correctly in the mirror as we leave." The same
+       surface the windscreen draws, from the same heights and the same facet
+       shades, projected by the glass's own rule and walked far to near with
+       everything else in it. Where the place ENDED - the step whose nearer end
+       belongs somewhere else - its back is closed with the cross-section at
+       that end, which is the face you drove out of. */
+    if(mB.mass && !massOff && !mB.overWater){
+      const mWalls = wallSides(mB);
+      const mDropS = mB.hazard === 'roll' ? hazardSide(mB) : 0;
+      const widxN = Math.floor((wz + MSEG) / SEG);
+      const nearB = bioBehind(widxN);
+      /* ONLY A PLACE WITH A FACE IS CLOSED OFF (RLG-303): a mountain grows out of
+         the ground and has no front, and the glass's 900-unit step landing a few
+         per cent up its ramp would otherwise stand a sliver of face there */
+      const closes = mB.face && nearB !== mB && !nearB.mass;
+      /* AND THE MOUTH YOU CAME THROUGH, from inside (RLG-301's "the face you came
+         through, behind you"): the first step of the place, whose FARTHER
+         neighbour is somewhere else, is closed at its far end. Painted before
+         this step's own quads, which stand in front of it. */
+      const farB = bioBehind(Math.floor((wz - MSEG) / SEG));
+      const opens = mB.face && farB !== mB && !farB.mass;
+      const kF = a.scale * CAM_H_M * H_M / 2, kN = b2.scale * CAM_H_M * H_M / 2;
+      const mrock = hexRGB(groundTone(widx, false));
+      const msky = hexRGB(mB.sky || '#2a3550');
+      const mhz = WALL_HAZE * clamp((pos - wz) / MIRROR_BACK, 0, 1);
+      const mbase = railX();
+      const mrun = Math.floor(widx / MASS_RUN);
+      const tone = (lit) => {
+        const sh = WALL_SHADE + (1 - lit) * MASS_SHADE;
+        const r0 = mrock[0] + (DROP_DARK[0] - mrock[0]) * sh;
+        const g0 = mrock[1] + (DROP_DARK[1] - mrock[1]) * sh;
+        const b0 = mrock[2] + (DROP_DARK[2] - mrock[2]) * sh;
+        return 'rgb(' + Math.round(r0 + (msky[0] - r0) * mhz) + ','
+                      + Math.round(g0 + (msky[1] - g0) * mhz) + ','
+                      + Math.round(b0 + (msky[2] - b0) * mhz) + ')';
+      };
+      for(const ws of (mWalls || [])){
+        if(ws === mDropS) continue;
+        if(opens && !endWallOff){
+          ctx.fillStyle = tone(clamp(0.30 + 0.75 * 0.55, 0, 1));
+          for(let j = MASS_L.length - 2; j >= 0; j--){
+            const ha = massHeight(widx, j, mB), hb = massHeight(widx, j + 1, mB);
+            if(ha + hb < 0.02) continue;
+            const xa = a.x + ws * a.w * (mbase + MASS_L[j]), xb = a.x + ws * a.w * (mbase + MASS_L[j + 1]);
+            ctx.beginPath();
+            ctx.moveTo(xa, a.y); ctx.lineTo(xa, a.y - kF * ha);
+            ctx.lineTo(xb, a.y - kF * hb); ctx.lineTo(xb, a.y);
+            ctx.closePath(); ctx.fill();
+            massTrace.mirrorBack = (massTrace.mirrorBack || 0) + 1;
+            if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
+          }
+        }
+        for(let j = MASS_L.length - 2; j >= 0; j--){
+          const La = mbase + MASS_L[j], Lb = mbase + MASS_L[j + 1];
+          const hFa = massHeight(widx, j, mB),  hFb = massHeight(widx, j + 1, mB);
+          const hNa = massHeight(widxN, j, mB), hNb = massHeight(widxN, j + 1, mB);
+          if(hFa + hFb + hNa + hNb < 0.02) continue;
+          const xFa = a.x + ws * a.w * La,   xFb = a.x + ws * a.w * Lb;
+          const xNa = b2.x + ws * b2.w * La, xNb = b2.x + ws * b2.w * Lb;
+          const yFa = wz === mFar ? vpy : a.y - kF * hFa;
+          const yFb = wz === mFar ? vpy : a.y - kF * hFb;
+          const yNa = b2.y - kN * hNa, yNb = b2.y - kN * hNb;
+          ctx.fillStyle = tone(massFacet(mrun, j, mB, ws));
+          /* lapped along the road for the reason the windscreen's is */
+          const ea = Math.hypot(xFa - xNa, yFa - yNa) || 1, eb = Math.hypot(xFb - xNb, yFb - yNb) || 1;
+          ctx.beginPath();
+          ctx.moveTo(xNa, yNa); ctx.lineTo(xNb, yNb);
+          ctx.lineTo(xFb + (xFb - xNb) / eb * 0.6, yFb + (yFb - yNb) / eb * 0.6);
+          ctx.lineTo(xFa + (xFa - xNa) / ea * 0.6, yFa + (yFa - yNa) / ea * 0.6);
+          ctx.closePath(); ctx.fill();
+          massTrace.mirror = (massTrace.mirror || 0) + 1;
+          if(closes && !endWallOff){
+            ctx.fillStyle = tone(clamp(0.30 + 0.75 * 0.55, 0, 1));
+            ctx.beginPath();
+            ctx.moveTo(xNa, b2.y); ctx.lineTo(xNa, yNa);
+            ctx.lineTo(xNb, yNb); ctx.lineTo(xNb, b2.y);
+            ctx.closePath(); ctx.fill();
+            massTrace.mirrorBack = (massTrace.mirrorBack || 0) + 1;
+            if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
+          }
+        }
+      }
+    }
+    if(!mB.truss && !mB.overWater && !(mB.mass && !massOff)){
       const mWalls = wallSides(mB);
       if(mWalls){
         const mDropS = mB.hazard === 'roll' ? hazardSide(mB) : 0;
@@ -34378,7 +34782,7 @@ requestAnimationFrame(frameLoop);
     /* ONE PLACE EVERYWHERE MEANS ITS LAND IS FULL HEIGHT (RLG-303). Without
        this a check that pins a pair after driving across a boundary measures a
        hillside still growing out of the last one. */
-    if(biomeFrom === biomeTo){ biome = biomeFrom; biomeEdge = -1e9; growFrom = -1e9; }
+    if(biomeFrom === biomeTo){ biome = biomeFrom; biomeEdge = -1e9; growFrom = -1e9; growLeft = null; }
     /* a plan waiting at the generator's frontier would arrive on top of the
        pair this just pinned, seconds later. Pinning a pair means pinning it
        (RLG-150) - and see `startBiomeChange` on what that costs a check. */
@@ -34783,6 +35187,27 @@ requestAnimationFrame(frameLoop);
              cap:WALL_CAP, capH:WALL_CAP_H, lap:WALL_LAP, grow:GROW_BAND };
   };
   /* which sides this place is walled on, and what the wall pass actually painted */
+  /* ---- THE LOW-POLYGON MASS (RLG-306) ------------------------------------
+     Its tunables, what it painted in the last frame, and a switch back to the
+     old wall so a check can put the two side by side on one road. */
+  API.massModel = function(o){
+    if(o){
+      if(o.run > 0)            MASS_RUN = Math.round(o.run);
+      if(Array.isArray(o.L))   MASS_L = o.L.slice();
+      if(Array.isArray(o.H))   MASS_H = o.H.slice();
+      if(o.jag >= 0)           MASS_JAG = o.jag;
+      if(o.shade >= 0)         MASS_SHADE = o.shade;
+      if(o.off !== undefined)  massOff = !!o.off;
+      /* 1 is no merging at all: a check about something else - growth - reads every
+         slice rather than one a run in the far part of the draw */
+      if(o.merge > 0)          MASS_MERGE = o.merge;
+    }
+    return { run:MASS_RUN, merge:MASS_MERGE, L:MASS_L.slice(), H:MASS_H.slice(), jag:MASS_JAG,
+             shade:MASS_SHADE, off:massOff,
+             quads:massTrace.quads, slices:massTrace.slices, top:Object.assign({}, massTrace.top),
+             front:massTrace.front || 0, mirror:massTrace.mirror || 0,
+             mirrorBack:massTrace.mirrorBack || 0 };
+  };
   API.wallSidesOf = function(k){ const v = wallSides(BIOMES[k] || BIOMES[biome]); return v || []; };
   API.rangeOff = function(on){ rangeOff = !!on; return rangeOff; };
   /* the face at a walled place's boundary: whether it painted this frame, and on

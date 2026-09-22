@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-118"></a>
+## [0.14.118] - 2026-09-21
+- Changed: **a mountain is a low-polygon mountainside you can drive at.** The wall beside the road
+  was a sheet, and growing it out of the ground meant you looked along it edge-on - nothing to see
+  until a needle appeared twenty segments out. It is one faceted surface now, cliff to peaks,
+  rising out of the ground as you arrive and standing above any hill in front of it.
+  [RLG-306](../fragments/RLG-306.md)
+- Changed: **a canyon is the same surface, and its mouth meets its walls.** The front is drawn from
+  the walls' own heights, so there is no corner where two drawings disagree.
+  [RLG-307](../fragments/RLG-307.md)
+- Fixed: **the mirror shows the place you just left.** Once you crossed a boundary the glass
+  behind you showed the new place; it shows the mountain or canyon you drove out of now.
+
 <a id="v0-14-117"></a>
 ## [0.14.117] - 2026-09-21
 - Fixed: **a coast keeps its sea on one side for as long as you are driving along it.** The side
