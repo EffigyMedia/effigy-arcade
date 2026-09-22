@@ -18,8 +18,15 @@ this reads the alpha the glass drew it at (`API.glassTrace`) and asks:
   3. IT LETS GO: in the last quarter of the reach it is drawn part-way, and less the farther.
   4. AND THE RAMP ONLY EVER GOES ONE WAY at each end, so it is a fade and not a flicker.
 
-Run with `--falsify` to serve the engine with every item drawn solid. 1 and 3 must fail for both
-objects; 2 must still pass, because it is the check that says the thing is there at all.
+  5. AND A CAR'S HEADLIGHTS GO WITH IT. At night a car held at the back of the glass is faded, and
+     its lamps are painted at the car's own fade, not whole over a car that is vanishing - the
+     review of UNT-414 found `lampsInto` SETS the alpha it is handed, and the glass handed it 1.
+
+The alphas are read back from the canvas after they are set, so a lost assignment shows.
+
+Run with `--falsify` to serve the engine with every item drawn solid: 1 and 3 must fail for both
+objects, and 2 must still pass, because it is the check that says the thing is there at all.
+Run with `--falsify lamps` to hand the lamps a literal 1 again: only 5 must fail.
 
 Exit code 0 if every check passed, 1 otherwise.
 """
@@ -45,7 +52,8 @@ LETGO = (29000, 32000, 33500)
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--falsify', action='store_true', help='serve the engine with no glass fade')
+    ap.add_argument('--falsify', nargs='?', const='fade', choices=('fade', 'lamps'),
+                    help='fade: no glass fade at all; lamps: lamps handed a literal 1')
     args = ap.parse_args()
     console_utf8()
 
@@ -69,7 +77,7 @@ def main():
 
     print('glass-fade-test  .  nothing pops into or out of the mirror')
     if args.falsify:
-        print('  FALSIFY: every item is drawn solid. 1 and 3 must fail; 2 must not.')
+        print('  FALSIFY %s' % args.falsify)
     try:
         with sync_playwright() as p:
             b = launch_chromium(p, headless=True, args=['--mute-audio'])
@@ -77,10 +85,14 @@ def main():
             ctx.add_init_script(dt.INIT)
             if args.falsify:
                 src = (ROOT / 'road.js').read_text(encoding='utf-8')
-                need = "    const gA = Math.min(glassFade(it.o.z), gBig ? glassArrive(it.o.z) : 1);"
+                need, cut = {
+                    'fade': ("    const gA = Math.min(glassFade(it.o.z), gBig ? glassArrive(it.o.z) : 1);",
+                             "    const gA = 1;"),
+                    'lamps': ("['head'], ctx.globalAlpha, 2)", "['head'], 1, 2)"),
+                }[args.falsify]
                 if src.count(need) != 1:
                     raise SystemExit('[glass-fade-test] --falsify cannot find its line')
-                src = src.replace(need, "    const gA = 1;", 1)
+                src = src.replace(need, cut, 1)
                 ctx.route('**/road.js', lambda route: route.fulfill(
                     status=200, content_type='application/javascript', body=src))
             pg = ctx.new_page()
@@ -147,6 +159,31 @@ def main():
                    and all(a >= b - 1e-6 for a, b in zip(down, down[1:])),
                    '4. and each ramp runs one way', 'up %s, down %s'
                    % ([round(v, 3) for v in up], [round(v, 3) for v in down]))
+
+            # ---- 5. a car's headlights, at night -------------------------------------
+            print()
+            print('  A CAR AT NIGHT, HELD BEHIND THE CAR')
+            pg.evaluate("() => { const R = window.__probe.road; R.parkFinish(60000); R.setPhase(0.25); }")
+            pg.wait_for_timeout(1500)
+            heads = {}
+            for dz in (8000, 33000):
+                pg.evaluate("(d) => { const R = window.__probe.road;"
+                            " R.parkTraffic(0, -d - R.PLAYER_Z, 'sedan'); }", dz)
+                pg.wait_for_timeout(250)
+                pg.evaluate("() => window.__probe.road.glassTrace(true)")
+                pg.wait_for_timeout(300)
+                t = pg.evaluate("() => window.__probe.road.glassTrace(false)")
+                body = [e['a'] for e in t if e['kind'] == 't']
+                lamp = [e['a'] for e in t if e['kind'] == 'head']
+                heads[dz] = (max(body) if body else None, max(lamp) if lamp else None)
+                print('      %6d units back   car drawn at %s, its headlights at %s' % (dz, *heads[dz]))
+            near, far = heads[8000], heads[33000]
+            ok(near[1] is not None and far[1] is not None,
+               'the headlights are lit in the glass at both distances')
+            if near[1] is not None and far[1] is not None and far[0] is not None:
+                ok(far[1] <= far[0] + 1e-3 and far[1] < 0.5 and near[1] > 0.97,
+                   '5. and they fade with the car rather than staying whole',
+                   'far: car %.3f, lamps %.3f; near lamps %.3f' % (far[0], far[1], near[1]))
 
             if errs:
                 ok(False, 'page errors', errs[0][:140])

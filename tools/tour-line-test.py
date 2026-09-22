@@ -45,7 +45,7 @@ from playwright.sync_api import sync_playwright            # noqa: E402
 GAME = 'games/sw/interstate.html'
 VEIL = '#veil:not(.hidden) '
 FALSIFY = {
-    'clock': [("state === 'driving' && !finished){", "state === 'driving'){")],
+    'clock': [("state === 'driving' && !raceEnded()){", "state === 'driving'){")],
     'save': [("        tourDone = true;\n        tourClear(tourClass || classOf(optBody));\n"
               "        setTimeout(() => { const total = tourT;",
               "        setTimeout(() => { const total = tourT;")],
@@ -147,7 +147,7 @@ def main():
             pg.wait_for_timeout(1800)
             st = pg.evaluate("() => window.__road.tourState()")
             last = st['round'] == st['rounds'] - 1
-            ok(last and bool(saved), '1. the saved ladder resumed at its last round',
+            ok(last and st['cls'] in saved, '1. the saved ladder resumed at its last round',
                'round %d of %d, saved rows %s' % (st['round'] + 1, st['rounds'], sorted(saved)))
             cls = st['cls']
 
@@ -169,6 +169,10 @@ def main():
                     done_at_line = pg.evaluate("() => window.__road.tourState()")
             for t in seen:
                 print('      screen: %s' % t)
+            # the ending this guards against needs the car AT REST; a window that closed
+            # while it still rolled would pass without asking anything (RVW, UNT-415)
+            rest = pg.evaluate("() => window.__road.motion().spd < window.__road.MAX_SPD * 0.004")
+            ok(rest, 'the car came to rest after the line, so the clock ending was due')
             ok(seen and not any('OUT OF TIME' in t for t in seen),
                '2. one ending: OUT OF TIME never opens after the line',
                '%d screen(s) seen' % len(seen))

@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.122';
+window.ROAD_BUILD = '0.14.123';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -4051,6 +4051,8 @@ function lampsHere(spr, x, y, w, h, ids, alpha, lvl){
    guessed coordinates over a sprite that already knew where its lamps were.
    One argument, and the declaration reaches every surface that draws a car.
    ------------------------------------------------------------------------ */
+/* the alpha the last lamps were actually painted at, for a check (RLG-313) */
+let lampAlphaLast = 1;
 function lampsInto(into, spr, x, y, w, h, ids, alpha, lvl){
   if(!into || !spr || !spr.lamps) return false;
   let any = false;
@@ -4063,6 +4065,7 @@ function lampsInto(into, spr, x, y, w, h, ids, alpha, lvl){
      lens opaquely, so adding the whole thing to what is underneath is what
      turned a bright red brake light white. */
   if(alpha !== undefined) into.globalAlpha = alpha;
+  lampAlphaLast = into.globalAlpha;
   for(const id of ids){ const f = spr.lamps[id]; if(f) f(into, lvl === undefined ? 2 : lvl); }
   into.restore();
   return true;
@@ -13228,10 +13231,17 @@ function start(){
    ---------------------------------------------------------------------- */
 let lastWreck = '';
 
+/* ---- THE RACE WAS DECIDED AND ITS ENDING HAS RUN (RLG-322) ---------------
+   Not `finished` alone. Motorsport sets `finished` from its own page on the
+   qualifying lap and on the last lap, and keeps racing: it has no ending of its
+   own, so a crash after qualifying still costs the wreck penalty, and a clock
+   that runs out still ends the run. Every path that plays an ending - the line,
+   a drag finish, a police shift - also sets `coasting`, so the pair is what
+   says a second ending must not run. Asked by the reviewer of UNT-415. */
+function raceEnded(){ return finished && coasting; }
 function wreck(reason){
-  /* a finished race has had its ending; nothing after the line may end it
-     again (RLG-322) - see OUT OF TIME in `step` */
-  if(finished) return;
+  /* a race that has had its ending is not ended again (RLG-322) */
+  if(raceEnded()) return;
   lastWreck = reason || '';
   /* ---- A WRECK COSTS TWO SECONDS, NOT THE RUN -------------------------
      The clock is what ends a run now, so crashing is a penalty against it
@@ -21349,9 +21359,9 @@ function step(dt){
      moving - and this test read `state` as "the run is still on". A car that
      crossed the line on an empty clock coasted to a stop and ran OUT OF TIME
      over its own win, and in a tournament that went to the failed-round card,
-     whose QUIT & SAVE saved the finished ladder as unfinished. `finished` is
-     the name for "the race is decided", so it is asked here by name. */
-  if(clockRuns() && clock <= 0 && spd < MAX_SPD*0.004 && state === 'driving' && !finished){
+     whose QUIT & SAVE saved the finished ladder as unfinished. So it asks
+     `raceEnded`, which is "the race was decided and its ending has run". */
+  if(clockRuns() && clock <= 0 && spd < MAX_SPD*0.004 && state === 'driving' && !raceEnded()){
     state = 'wrecked';
     bestScore = Math.max(bestScore, Math.round(dist*10)/10);
     bestDist  = Math.max(bestDist, dist);
@@ -31231,9 +31241,12 @@ function drawMirrorFull(mx, my, mw, mh){
        a spawned car below multiplies onto it. */
     const gBig = it.gantry || it.finish || it.tower || it.block;
     const gA = Math.min(glassFade(it.o.z), gBig ? glassArrive(it.o.z) : 1);
-    if(drawWatch && glassTrace.length < 20000) glassTrace.push({ kind: it.kind, dz: Math.round(pos - it.o.z), a: +gA.toFixed(3) });
     if(gA <= 0.02) continue;
     ctx.globalAlpha = gA;
+    /* read back from the canvas rather than from `gA`, so a lost assignment
+       shows in the trace instead of being reported as done (RVW, UNT-414) */
+    if(drawWatch && glassTrace.length < 20000)
+      glassTrace.push({ kind: it.kind, dz: Math.round(pos - it.o.z), a: +ctx.globalAlpha.toFixed(3) });
     if(it.crate){
       /* the same box on the shoulder, at its own lateral offset */
       const cw = p1.scale * 0.22 * CAR_UNIT * mw;
@@ -31276,7 +31289,7 @@ function drawMirrorFull(mx, my, mw, mh){
                and the small lenses in the headlights flash with it. */
             const on3 = Math.floor(sirenPhase*1.4) % 2;
             lampsLit({ x: pp.x, y: pp.y, w: cw, h: ch }, cs,
-                     emOf([on3 ? 'bar.fl' : 'bar.fr']), 1);
+                     emOf([on3 ? 'bar.fl' : 'bar.fr']), ctx.globalAlpha);
           }
           continue;
         }
@@ -31358,7 +31371,14 @@ function drawMirrorFull(mx, my, mw, mh){
          Same clock as the street lamps and the player's own tail, so a mirror
          at dusk lights up when the road does.
          ---------------------------------------------------------------- */
-      if(lampsOn() > 0.30 && lampsHere(fs, x0, p1.y - fh, sw, fh, ['head'], 1, 2)) headsLit++;
+      /* AT THE CAR'S OWN FADE, not at 1 (RLG-313): `lampsInto` SETS the alpha it
+         is given, so a literal 1 lit a car's headlights whole while its body
+         faded away at the back of the glass, and then both vanished at once */
+      if(lampsOn() > 0.30 && lampsHere(fs, x0, p1.y - fh, sw, fh, ['head'], ctx.globalAlpha, 2)){
+        headsLit++;
+        if(drawWatch && glassTrace.length < 20000)
+          glassTrace.push({ kind: 'head', dz: Math.round(pos - it.o.z), a: +lampAlphaLast.toFixed(3) });
+      }
       /* ---- THE WIPERS ARE DRAWN, NOT BAKED (RLG-053) --------------------
          The sprite no longer carries them, because a part that moves cannot be
          part of a still picture - anything sweeping them painted a second pair
@@ -31416,7 +31436,7 @@ function drawMirrorFull(mx, my, mw, mh){
         const on2 = Math.floor(sirenPhase*1.4) % 2;
         if(copBarLit(it.o))
           lampsLit({ x: x0 + sw/2, y: p1.y, w: sw, h: fh },
-                   fs, emOf([on2 ? 'bar.fl' : 'bar.fr']), 1);
+                   fs, emOf([on2 ? 'bar.fl' : 'bar.fr']), ctx.globalAlpha);
         /* WHERE THE GLASS PUT THIS CRUISER, for a check to read (RLG-177). The
            rule is that nothing belonging to a police car may be painted ABOVE
            its own sprite, and a check cannot say that without knowing where the
@@ -37996,7 +38016,7 @@ requestAnimationFrame(frameLoop);
   /* what the glass drew each thing on the road at since the last reset, with its
      distance behind the car (RLG-313); and the arrival band's tunable */
   API.glassTrace = function(reset){ const t = glassTrace.slice(); if(reset) glassTrace = []; return t; };
-  API.glassArrive = function(v){ if(v !== undefined) GLASS_ARRIVE = v; return GLASS_ARRIVE; };
+  API.glassArrive = function(v){ if(v !== undefined) GLASS_ARRIVE = Math.max(1, +v || 1); return GLASS_ARRIVE; };
   API.viewLayers = function(reset){
     const out = { front: Object.assign({}, viewLayers.front), glass: Object.assign({}, viewLayers.glass) };
     if(reset) viewLayers = { front:{}, glass:{} };

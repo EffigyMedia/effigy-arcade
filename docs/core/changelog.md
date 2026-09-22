@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-123"></a>
+## [0.14.123] - 2026-09-22
+- Fixed: **headlights and light bars in the mirror fade with their car.** They were painted whole
+  while the car behind them faded, so at the back of the glass a pair of lights hung over nothing
+  and then vanished. [RLG-313](../fragments/RLG-313.md)
+- Fixed: **Motorsport keeps its endings.** 0.14.122's guard against a second ending also caught
+  Motorsport, which marks its qualifying lap and last lap finished and races on. It now applies only
+  once a race has actually played its ending. [RLG-322](../fragments/RLG-322.md)
+
 <a id="v0-14-122"></a>
 ## [0.14.122] - 2026-09-22
 - Fixed: **a race won on the last of the clock has one ending.** Crossing the line with the clock at
