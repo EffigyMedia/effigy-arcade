@@ -124,6 +124,17 @@ def main():
             def wait_screen(ms=8000):
                 step, spent = 120, 0
                 while spent < ms:
+                    # A TIME THAT MAKES THE BOARD ASKS FOR INITIALS FIRST (RLG-292), and the
+                    # trophy follows ENTER. This harness predates the board, so it waited for
+                    # a trophy that was behind a screen it never answered (found RLG-322).
+                    if pg.locator(VEIL + '.bname').count():
+                        pg.click(VEIL + '[data-act="ok"]')
+                        pg.wait_for_timeout(300)
+                    # and ENTER shows the board, whose BACK is what opens the trophy
+                    if (pg.locator(VEIL + '[data-act="back"]').count()
+                            and not pg.locator(VEIL + '[data-act="next"]').count()):
+                        pg.click(VEIL + '[data-act="back"]')
+                        pg.wait_for_timeout(300)
                     if pg.locator(VEIL + '[data-act="again"]').count():
                         return 'trophy'
                     if pg.locator(VEIL + '[data-act="next"]').count():

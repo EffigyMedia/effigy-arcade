@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.121';
+window.ROAD_BUILD = '0.14.122';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -13229,6 +13229,9 @@ function start(){
 let lastWreck = '';
 
 function wreck(reason){
+  /* a finished race has had its ending; nothing after the line may end it
+     again (RLG-322) - see OUT OF TIME in `step` */
+  if(finished) return;
   lastWreck = reason || '';
   /* ---- A WRECK COSTS TWO SECONDS, NOT THE RUN -------------------------
      The clock is what ends a run now, so crashing is a penalty against it
@@ -18881,6 +18884,9 @@ function endShift(won){
       const had  = !!(pays && unlocked(pays));
       if(pays && !had && AR && AR.save)
         AR.save.merge((GAME_ID + '-opts'), { [pays]: true });
+      /* retired at the line, for the reason the racing ladder is (RLG-322) */
+      tourDone = true;
+      tourClear(tourClass || classOf(optBody));
       setTimeout(() => showShiftTrophy(had ? '' : pays), 700);
     } else {
       tourRound++;
@@ -19470,6 +19476,14 @@ function stepRacers(dt){
              ------------------------------------------------------------- */
         }
         /* the ladder is over, so its total time goes to the board (RLG-292) */
+        /* ---- AND THE LADDER IS DONE HERE, NOT ON THE TROPHY (RLG-322) ----
+           The prizes above are written at the line so that a player who
+           leaves before the trophy has still won. The ladder's own save was
+           not: it was retired only by `tourDone`, which the trophy screen
+           sets, so leaving from the initials entry - or from anything laid
+           over it - left the finished tournament on disk to be resumed. */
+        tourDone = true;
+        tourClear(tourClass || classOf(optBody));
         setTimeout(() => { const total = tourT;
                            boardOffer('tour', total, () => showTrophy(st)); }, 700);
       } else {
@@ -21327,7 +21341,17 @@ function step(dt){
      is `showEnd(reason)`, reached through `wreck()`. So the clock ran out,
      the car coasted to a stop, and then nothing happened at all. The run
      simply sat there. */
-  if(clockRuns() && clock <= 0 && spd < MAX_SPD*0.004 && state === 'driving'){
+  /* ---- BUT NOT AFTER THE LINE (owner, 2026-09-21, RLG-322) -----------
+     "I just finished a tournament while coasting out of time. I got the
+     initials entry screen, which was quickly covered up by the victory screen,
+     which was quickly covered up by the you lost out of time screen."
+     RLG-305 KEPT `state` AT 'driving' AFTER A FINISH, so the world goes on
+     moving - and this test read `state` as "the run is still on". A car that
+     crossed the line on an empty clock coasted to a stop and ran OUT OF TIME
+     over its own win, and in a tournament that went to the failed-round card,
+     whose QUIT & SAVE saved the finished ladder as unfinished. `finished` is
+     the name for "the race is decided", so it is asked here by name. */
+  if(clockRuns() && clock <= 0 && spd < MAX_SPD*0.004 && state === 'driving' && !finished){
     state = 'wrecked';
     bestScore = Math.max(bestScore, Math.round(dist*10)/10);
     bestDist  = Math.max(bestDist, dist);

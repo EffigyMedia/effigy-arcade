@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-122"></a>
+## [0.14.122] - 2026-09-22
+- Fixed: **a race won on the last of the clock has one ending.** Crossing the line with the clock at
+  zero let the car coast to a stop and then run OUT OF TIME over the win, on top of the initials
+  entry. The clock's ending, and a wreck, no longer run once the race is finished.
+  [RLG-322](../fragments/RLG-322.md)
+- Fixed: **a won tournament stays won.** The ladder is retired at the line, where its prizes are
+  already written, so leaving from the initials entry or closing the app no longer keeps a finished
+  tournament as unfinished.
+
 <a id="v0-14-121"></a>
 ## [0.14.121] - 2026-09-21
 - Changed: **nothing pops in or out of the mirror.** A checkpoint board, the finish line, a bridge
