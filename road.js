@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.125';
+window.ROAD_BUILD = '0.14.126';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1202,6 +1202,17 @@ const COP_PAINT = {
 /* how often a race opponent wears stripes. A chance rather than a rule: at 1.0
    every grid is a team, and at 0 the signal does not exist (RLG-117). */
 let RACER_STRIPES = 0.35;
+/* ---- AND THE REST OF THE LIVERY (owner, 2026-09-21, RLG-323) --------------
+   "I want to make sure all the stripe versions, random colors, and underglows
+   are being used by the racers." They were not: a striped rival wore the plain
+   pair and nothing else, so four of the five patterns, every stripe colour,
+   two-tone and the underglow existed only on the player's car. A rival is not
+   a lesser car (the fleet rule) and it should not be a plainer one. Each of
+   these is a chance per racer, rolled once at the grid; tunables with
+   committed defaults, read and written through `API.racerLivery`. */
+let RACER_STRIPE_COL = 0.5;   /* a striped rival's stripes in their own colour */
+let RACER_TWOTONE    = 0.25;  /* a rival in two tones                          */
+let RACER_GLOW       = 0.25;  /* a rival with an underglow                     */
 /* ---- AND NOW THE PRODUCTION CARS TOO (owner, 2026-09-19, RLG-071) -------
    The bronze liveries go on all nine racing cars, stripes included, and the
    owner ruled it knowing it reverses the 2026-08-29 rule above for the three
@@ -8360,6 +8371,44 @@ let TRAFFIC_SP = {}, FRONT_SP = {};
    not be retried sixty times a second.
    ------------------------------------------------------------------------- */
 const RACER_FRONT_SP = {};
+/* A RIVAL'S WHOLE LIVERY, rolled once at the grid (RLG-323): a pattern from
+   all five when it is striped, sometimes a stripe colour, sometimes a second
+   tone, sometimes an underglow - each from the whole table the garage offers.
+   Null for a body that takes no livery, which is the player's own rule. */
+function racerLivery(body, paint, striped){
+  if(!stripesOn(body)) return null;
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const others = BASE_PAINT_KEYS.filter(k => k !== paint);
+  const pats = PATTERNS.filter(p => p.stripes);
+  const L = { stripes: striped ? pick(pats).stripes : false, stripeCol: null, stripeKey: null,
+              twotone: Math.random() < RACER_TWOTONE, tone: null, toneKey: null,
+              glow: null, glowKey: null };
+  if(L.stripes && Math.random() < RACER_STRIPE_COL){
+    L.stripeKey = pick(others); L.stripeCol = PAINT[L.stripeKey].body;
+  }
+  if(L.twotone){ L.toneKey = pick(others); L.tone = PAINT[L.toneKey]; }
+  if(Math.random() < RACER_GLOW){ L.glowKey = pick(GLOW_KEYS); L.glow = GLOW[L.glowKey]; }
+  return L;
+}
+/* its sprites, rear and front, from the garage's own painter and keyed by
+   everything the livery says - so a rival and the player wearing the same
+   livery are the same picture */
+/* ONE GRID'S WORTH, emptied at every new grid - at about 300 KB a livery an
+   unbounded cache would pass a phone's canvas memory within a few dozen races
+   (review of UNT-419). A rival with no stripes and no second tone needs none of
+   it: the prebuilt RACER_SP already paints that car. */
+let RACER_LIVERY_SP = {};
+let liveryDrawn = { rear: 0, glow: 0 };
+function racerLiverySp(r){
+  const L = r.livery;
+  if(!L || (!L.stripes && !L.twotone)) return null;
+  const k = [r.body, r.paint, L.stripes, L.stripeKey, L.toneKey].join('|');
+  if(!RACER_LIVERY_SP[k]){
+    const pt = PAINT[r.paint] || PAINT.WHITE;
+    RACER_LIVERY_SP[k] = carSprites(r.body, pt, L);
+  }
+  return RACER_LIVERY_SP[k];
+}
 function racerFront(bodyKey, paintKey, striped){
   /* A CAR STRIPED FROM BEHIND AND PLAIN FROM THE FRONT IS TWO CARS. This cache
      is lazy where the rear one is eager, so the flag joins the key rather than
@@ -18348,6 +18397,7 @@ function dragSprite(body, paint){
 }
 function buildField(){
   racers = [];
+  RACER_LIVERY_SP = {};
   /* ---- THE LINE IS BUILT AROUND THE PLAYER (RLG-274) --------------------
      The grid is twelve slots and the player holds one of them, so a rival's
      place in the line is its own index stepped PAST the player's slot. Laid
@@ -18466,6 +18516,9 @@ function buildField(){
        paint; a striped car is unambiguously an opponent, which makes the muted
        one unambiguously not. */
     r.striped = stripesOn(deck[i]) && Math.random() < RACER_STRIPES;
+    r.livery  = racerLivery(r.body, r.paint, r.striped);
+    /* painted now, before the count-in, not in the first frames after GO */
+    racerLiverySp(r);
     const B = BODY[r.body];
     r.vmax  = MAX_SPD * B.vmax;
     r.pull  = accelOf(r.body);
@@ -28464,9 +28517,22 @@ function paintBucket(list, onRoad){
          Interstate made into a circuit racer. That was the whole idea, and the
          angled views were solving a problem the design did not have to have.
          ------------------------------------------------------------- */
-      const box = drawSprite(RACER_SP[(r.body||'MATADOR')+'|'+r.paint+(r.striped?'|S':'')]
+      /* in its own livery, with its underglow under it (RLG-323) */
+      const rLiv = racerLiverySp(r);
+      const rFx = damageFxOn(r);
+      /* the glow takes the car's own fade - drawSprite calls this BEFORE it sets
+         the car's alpha, so a glow left at full strength stood out ahead of a
+         car still arriving at the horizon (review of UNT-419) */
+      const rUnder = (r.livery && r.livery.glow)
+        ? (bx) => { paintGlow(bx.x, bx.y, bx.w, r.livery.glow,
+                              (r.wreck > 0 ? 0.85 : 1) * arriveFade(r) * clamp(bx.w / 24, 0, 1));
+                    liveryDrawn.glow++; if(rFx) rFx(bx); }
+        : rFx;
+      if(rLiv) liveryDrawn.rear++;
+      const box = drawSprite((rLiv && rLiv.rear)
+                          || RACER_SP[(r.body||'MATADOR')+'|'+r.paint+(r.striped?'|S':'')]
                           || RACER_SP[(r.body||'MATADOR')+'|'+r.paint] || SP.player,
-                             r.x, r.z, r.w, r.wreck>0?0.85:1, false, damageFxOn(r));
+                             r.x, r.z, r.w, r.wreck>0?0.85:1, false, rUnder);
       noteSprite(r);
       /* a boosting rival wears the same flame the player does, drawn additively
          over its sprite. Small cars far up the road are skipped: below about
@@ -28788,6 +28854,23 @@ function damageFx(cx, cy, w, h, dmg, lean){
     ctx.restore();
   }
 }
+/* ---- AN UNDERGLOW, FOR ANY CAR (RLG-323) -----------------------------------
+   Light on the road under the car, ADDED rather than painted, drawn before the
+   car so the body stands in it. `x`,`y` is the car's foot and `w` its width. It
+   was inline in drawPlayer; the rivals wear it now too. */
+function paintGlow(x, y, w, c, a){
+  ctx.save();
+  if(a !== undefined) ctx.globalAlpha *= a;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(x, y);
+  ctx.scale(1, 0.16);
+  const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, w*0.62);
+  gr.addColorStop(0, c + Math.round(GLOW_ALPHA*255).toString(16).padStart(2, '0'));
+  gr.addColorStop(1, c + '00');
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(0, 0, w*0.62, 0, 6.2832); ctx.fill();
+  ctx.restore();
+}
 function drawPlayer(){
   /* THE CAR HAD A MIND OF ITS OWN. `proj()` adds the road's screen-space sweep
      at that z — but the player IS the camera reference, and PLAYER_Z sits a
@@ -28859,19 +28942,7 @@ function drawPlayer(){
      the car. */
   const glowC = livery().glow;
   glowDrawn = glowC || null;
-  if(glowC){
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.translate(p.x, p.y + bump);
-    ctx.scale(1, 0.16);
-    const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, w*0.62);
-    gr.addColorStop(0, glowC + Math.round(GLOW_ALPHA*255).toString(16).padStart(2, '0'));
-    gr.addColorStop(1, glowC + '00');
-    ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(0, 0, w*0.62, 0, 6.2832); ctx.fill();
-    ctx.restore();
-  }
-  /* the car goes on top of its own smoke */
+  if(glowC) paintGlow(p.x, p.y + bump, w, glowC);
   ctx.save();
   ctx.translate(p.x, p.y + bump);
   ctx.rotate(lean*0.12);
@@ -31345,7 +31416,8 @@ function drawMirrorFull(mx, my, mw, mh){
         ? (it.o.superc ? (SP.superCopFront || null) : (FRONT_SP.cop || [])[0] || null)
       : (it.o.type && FRONT_SP[it.o.type])
         ? FRONT_SP[it.o.type][(it.o.paintN|0) % FRONT_SP[it.o.type].length]
-      : it.o.body ? racerFront(it.o.body, it.o.paint, it.o.striped)
+      : it.o.body ? ((racerLiverySp(it.o) || {}).front
+                     || racerFront(it.o.body, it.o.paint, it.o.striped))
       : null;
 
     /* a car that has just been dropped in behind you is faded up over its first
@@ -31356,6 +31428,7 @@ function drawMirrorFull(mx, my, mw, mh){
     if(arrive < 1) ctx.globalAlpha = arriveWas * arrive;
     if(fs){
       const fh = sw * fs.height / fs.width;
+      if(it.kind === 'g' && it.o.livery && it.o.livery.glow) paintGlow(x0 + sw/2, p1.y, sw, it.o.livery.glow);
       ctx.drawImage(fs, x0, p1.y - fh, sw, fh);
       /* ---- AND THEIR HEADLIGHTS ARE ON AFTER DARK (RLG-053) ------------
          Every front sprite declared a `head` lamp and NOTHING ever asked for
@@ -38373,6 +38446,30 @@ requestAnimationFrame(frameLoop);
     return out;
   };
   /* the roll itself, so rarity can be sampled without running a hundred races */
+  /* every rival's livery on the current grid, by name (RLG-323) */
+  API.gridLiveries = function(){
+    return racers.map(r => ({ body: r.body, paint: r.paint, striped: !!r.striped,
+      pattern: r.livery ? r.livery.stripes : null, stripe: r.livery ? r.livery.stripeKey : null,
+      tone: r.livery ? r.livery.toneKey : null, glow: r.livery ? r.livery.glowKey : null,
+      takes: stripesOn(r.body) }));
+  };
+  /* how many rivals were DRAWN in a livery sprite, and with a glow, since reset */
+  API.liveryDrawn = function(reset){ const o = Object.assign({}, liveryDrawn);
+    if(reset) liveryDrawn = { rear: 0, glow: 0 }; return o; };
+  API.liveryTables = function(){
+    return { patterns: PATTERNS.filter(p => p.stripes).map(p => p.stripes),
+             paints: PAINT_KEYS.slice(), base: BASE_PAINT_KEYS.slice(), glows: GLOW_KEYS.slice() };
+  };
+  API.racerLivery = function(o){
+    if(o){
+      const num = (v) => typeof v === 'number' && v >= 0;
+      if(num(o.stripes)) RACER_STRIPES = o.stripes;
+      if(num(o.stripeCol)) RACER_STRIPE_COL = o.stripeCol;
+      if(num(o.twotone)) RACER_TWOTONE = o.twotone;
+      if(num(o.glow)) RACER_GLOW = o.glow;
+    }
+    return { stripes: RACER_STRIPES, stripeCol: RACER_STRIPE_COL, twotone: RACER_TWOTONE, glow: RACER_GLOW };
+  };
   API.stripeChance = function(v){
     if(typeof v === 'number') RACER_STRIPES = v;
     return RACER_STRIPES;

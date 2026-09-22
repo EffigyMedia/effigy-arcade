@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-126"></a>
+## [0.14.126] - 2026-09-22
+- Added: **the rivals wear the whole livery.** A striped rival used to wear only the plain pair.
+  Each rival now rolls its own livery at the grid: any of the five stripe patterns, sometimes a
+  stripe colour of its own, sometimes a second tone, sometimes an underglow in any glow colour.
+  The garage's own painter draws them, and the mirror shows them from the front.
+  [RLG-323](../fragments/RLG-323.md)
+
 <a id="v0-14-125"></a>
 ## [0.14.125] - 2026-09-22
 - Fixed: **a busted run says BUSTED on the first screen.** A test drive that made the leaderboard
