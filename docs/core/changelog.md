@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-125"></a>
+## [0.14.125] - 2026-09-22
+- Fixed: **a busted run says BUSTED on the first screen.** A test drive that made the leaderboard
+  opened on the initials entry, whose heading named the board and not how the run ended. The
+  initials entry now leads with the reason (BUSTED, WRECKED, OUT OF TIME), and the end card is
+  unchanged. [RLG-314](../fragments/RLG-314.md)
+
 <a id="v0-14-124"></a>
 ## [0.14.124] - 2026-09-22
 - Changed: **the mountains across the valley are peaks standing in the world.** The range was one

@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.124';
+window.ROAD_BUILD = '0.14.125';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1063,13 +1063,15 @@ function boardPut(key, entry, high){
    A run that would not make the ten asks for nothing, which is why an ordinary
    run ends exactly as it did before. `then` is what happens afterwards - the
    run's own end card - so the initials come first and the card follows. */
-function boardOffer(mode, v, then){
+/* `why` is how the run ended, when it ended on something other than the line -
+   BUSTED, WRECKED, OUT OF TIME - so the first screen after it says so (RLG-314) */
+function boardOffer(mode, v, then, why){
   const M = boardMode(mode), key = boardKey(mode);
   /* practice keeps no board, so it asks for nothing (owner, 2026-09-20) */
   if(!boardKeeps(mode)){ if(then) then(); return -1; }
   const at = (typeof v === 'number' && isFinite(v) && v > 0) ? boardWouldRank(key, v, M.high) : -1;
   if(at < 0){ if(then) then(); return -1; }
-  showInitials(M, key, { car: optBody, v: +v.toFixed(3) }, at, then);
+  showInitials(M, key, { car: optBody, v: +v.toFixed(3) }, at, then, why);
   return at;
 }
 /* the initials a player taps in, and the three letters they start from */
@@ -1078,7 +1080,7 @@ const BOARD_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ';
 /* ---- THREE LETTERS, TAPPED IN (owner, 2026-09-20) ------------------------
    An arcade cabinet's own way, and no keyboard: this product is touch only
    (RLG-002), and a text field would open the phone's keyboard over the game. */
-function showInitials(M, key, entry, at, then){
+function showInitials(M, key, entry, at, then, why){
   const done = () => {
     entry.n = boardName.join('');
     boardPut(key, entry, M.high);
@@ -1090,8 +1092,8 @@ function showInitials(M, key, entry, at, then){
   const acts = { ok: done };
   let slots = '';
   for(let i = 0; i < 3; i++){
-    acts['up' + i]   = () => { boardStep(i, 1); showInitials(M, key, entry, at, then); };
-    acts['down' + i] = () => { boardStep(i, -1); showInitials(M, key, entry, at, then); };
+    acts['up' + i]   = () => { boardStep(i, 1); showInitials(M, key, entry, at, then, why); };
+    acts['down' + i] = () => { boardStep(i, -1); showInitials(M, key, entry, at, then, why); };
     slots += '<div class="bslot">' +
       '<button class="go ghost" data-act="up' + i + '">\u25B2</button>' +
       '<b>' + (boardName[i] === ' ' ? '_' : boardName[i]) + '</b>' +
@@ -1099,7 +1101,13 @@ function showInitials(M, key, entry, at, then){
       '</div>';
   }
   openVeil(
-    '<div class="eyebrow">' + M.name + (M.states ? ' \u00B7 ' + boardStateName(boardState()) : '') + '</div>' +
+    /* ---- AND IT SAYS WHY THE RUN ENDED (RLG-314) ------------------------
+       A busted run that made the board opened on this screen, and its eyebrow
+       was the board's own name - so the player was told they were on the board
+       and not that they had been caught. The end card said BUSTED, one ENTER
+       later. The reason now leads, and the board follows it. */
+    '<div class="eyebrow">' + (why ? why + ' \u00B7 ' : '') + M.name
+      + (M.states ? ' \u00B7 ' + boardStateName(boardState()) : '') + '</div>' +
     '<h1>' + (at + 1) + ordinal(at + 1) + '<u>ON THE BOARD</u></h1>' +
     '<div class="gnote">' + entry.car + ' \u00B7 ' + boardScore(M, entry.v) + '</div>' +
     '<div class="bname">' + slots + '</div>' +
@@ -34744,7 +34752,7 @@ function showEnd(reason){
      only if the run made the ten, and the end card follows either way. */
   if(mode !== 'race' && !boardAsked){
     boardAsked = true;
-    return boardOffer('drive', dist, () => showEnd(reason));
+    return boardOffer('drive', dist, () => showEnd(reason), reason);
   }
   boardAsked = false;
   openVeil(
