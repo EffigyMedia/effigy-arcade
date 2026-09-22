@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-121"></a>
+## [0.14.121] - 2026-09-21
+- Changed: **nothing pops in or out of the mirror.** A checkpoint board, the finish line, a bridge
+  tower or a roadblock you pass eases into the glass over its first 600 units behind you, where it
+  used to arrive whole, and everything on the road lets go over the last quarter of the glass's
+  reach, where it used to vanish. A canyon's face and a mountainside's end fade the same way. A car
+  you overtake does not fade in, because it is the car you just saw ahead.
+  [RLG-313](../fragments/RLG-313.md)
+
 <a id="v0-14-120"></a>
 ## [0.14.120] - 2026-09-21
 - Added: **the mirror shows five things it never showed.** A survey of every layer the windscreen

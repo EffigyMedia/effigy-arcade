@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.120';
+window.ROAD_BUILD = '0.14.121';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2532,6 +2532,20 @@ let MIRROR_MIN = 2.2;
    so every layer the glass adds lets go the same way. `z` is the world
    position of the thing. */
 function glassFade(z){ return Math.min(1, clamp(1 - (pos - z) / MIRROR_BACK, 0, 1) * 4); }
+/* ---- AND HOW IT TAKES ONE UP (RLG-313) ------------------------------------
+   Owner, 2026-09-21: "Things shouldn't pop in or out in the mirror. I'd rather
+   they faded in." A board, a finish line, a bridge tower or a roadblock you
+   pass is wider than the pane the moment it is behind you, so it arrived in the
+   glass whole. It eases in over `GLASS_ARRIVE` units behind the car instead -
+   about a tenth of a second at the speed the interstate is driven, which is an
+   arrival and not a see-through object (RLG-218). A car is not given this: a
+   car you overtake is the same car the windscreen just showed, and a ghost of
+   it right behind you is the fault RLG-218 removed. A tunable with a committed
+   default. */
+let GLASS_ARRIVE = 600;
+function glassArrive(z){ return clamp((pos - z - 200) / GLASS_ARRIVE, 0, 1); }
+/* what the glass drew each thing on the road at, while `drawWatch` is on */
+let glassTrace = [];
 /* ---- AND GRIP DECIDES HOW SHARPLY THE CAR ANSWERS (RLG-119) -------------
    Owner, 2026-08-31: "should grip not only affect being pushed on the corner,
    but also your steering rate? A formula should handle extremely well and a
@@ -30639,12 +30653,16 @@ function drawMirrorFull(mx, my, mw, mh){
     if(!mEndDrawn && biomeEdge < Math.floor(pos/SEG)
        && biomeEdge * SEG > pos - MIRROR_BACK && widx >= biomeEdge){
       const xB = bioAt(biomeEdge - 2);
+      /* and it lets go as the boundary leaves the glass (RLG-313) */
+      ctx.save();
+      ctx.globalAlpha = glassFade(biomeEdge * SEG);
       if(drawEndWall(ctx, xB, a, biomeEdge - 1, a.y,
                      clamp((pos - wz) / MIRROR_BACK, 0, 1),
                      { x:mx, w:mw, y:my, h:mh })){
         mEndDrawn = 1; endWallN++;
         if(drawWatch) layerSaw('glass', 'face');
       }
+      ctx.restore();
     }
     /* ---- THE MASS, BEHIND YOU (owner, 2026-09-21, RLG-306) -------------
        "We also need to see it correctly in the mirror as we leave." The same
@@ -30687,6 +30705,7 @@ function drawMirrorFull(mx, my, mw, mh){
         if(ws === mDropS) continue;
         if(opens && !endWallOff){
           ctx.fillStyle = tone(clamp(0.30 + 0.75 * 0.55, 0, 1));
+          ctx.globalAlpha = glassFade(wz);
           for(let j = MASS_L.length - 2; j >= 0; j--){
             const ha = massHeight(widx, j, mB), hb = massHeight(widx, j + 1, mB);
             if(ha + hb < 0.02) continue;
@@ -30699,6 +30718,7 @@ function drawMirrorFull(mx, my, mw, mh){
             if(drawWatch) layerSaw('glass', 'face');
             if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
           }
+          ctx.globalAlpha = 1;
         }
         for(let j = MASS_L.length - 2; j >= 0; j--){
           const La = mbase + MASS_L[j], Lb = mbase + MASS_L[j + 1];
@@ -30722,10 +30742,12 @@ function drawMirrorFull(mx, my, mw, mh){
           if(drawWatch) layerSaw('glass', 'mass');
           if(closes && !endWallOff){
             ctx.fillStyle = tone(clamp(0.30 + 0.75 * 0.55, 0, 1));
+            ctx.globalAlpha = glassFade(wz + MSEG);
             ctx.beginPath();
             ctx.moveTo(xNa, b2.y); ctx.lineTo(xNa, yNa);
             ctx.lineTo(xNb, yNb); ctx.lineTo(xNb, b2.y);
             ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1;
             massTrace.mirrorBack = (massTrace.mirrorBack || 0) + 1;
             if(drawWatch) layerSaw('glass', 'face');
             if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
@@ -31178,6 +31200,16 @@ function drawMirrorFull(mx, my, mw, mh){
     /* what the glass was OFFERED this frame, for the sweep - see `viewKinds` */
     if(drawWatch && it.kind) viewKinds.glass[it.kind] = 1;
     if(!p1) continue;
+    /* ---- NOTHING POPS AT EITHER END (RLG-313) ---------------------------
+       Every item lets go at the back on the glass's one ramp, and the ones
+       that span the road take up at the front on `glassArrive`. The alpha is
+       set per item, so the next item starts from its own; the arrival ramp for
+       a spawned car below multiplies onto it. */
+    const gBig = it.gantry || it.finish || it.tower || it.block;
+    const gA = Math.min(glassFade(it.o.z), gBig ? glassArrive(it.o.z) : 1);
+    if(drawWatch && glassTrace.length < 20000) glassTrace.push({ kind: it.kind, dz: Math.round(pos - it.o.z), a: +gA.toFixed(3) });
+    if(gA <= 0.02) continue;
+    ctx.globalAlpha = gA;
     if(it.crate){
       /* the same box on the shoulder, at its own lateral offset */
       const cw = p1.scale * 0.22 * CAR_UNIT * mw;
@@ -31237,7 +31269,7 @@ function drawMirrorFull(mx, my, mw, mh){
          the mirror passes its own and gets the identical shape. Nothing
          about a tower is re-derived here.
          --------------------------------------------------------- */
-      drawTowerAt(p1, p1.y, H_M, 1);
+      drawTowerAt(p1, p1.y, H_M, gA);
       continue;
     }
     if(it.gantry){
@@ -31395,6 +31427,8 @@ function drawMirrorFull(mx, my, mw, mh){
     ctx.fill();
     ctx.globalAlpha = arriveWas;
   }
+  /* each item set its own fade; the weather starts from none (RLG-313) */
+  ctx.globalAlpha = 1;
   /* ---- AND THE WEATHER FALLS IN HERE TOO (RLG-092) --------------------
      Last, and inside the clip, because precipitation is in the air BETWEEN the
      glass and everything the glass shows - so it goes over the cars, the road
@@ -37935,6 +37969,10 @@ requestAnimationFrame(frameLoop);
                                        glass:Object.keys(viewKinds.glass).sort() }; };
   /* which layers each view PAINTED since the last reset, and how often - see
      `viewLayers` (RLG-312). Recorded only while `watchDraw` is on. */
+  /* what the glass drew each thing on the road at since the last reset, with its
+     distance behind the car (RLG-313); and the arrival band's tunable */
+  API.glassTrace = function(reset){ const t = glassTrace.slice(); if(reset) glassTrace = []; return t; };
+  API.glassArrive = function(v){ if(v !== undefined) GLASS_ARRIVE = v; return GLASS_ARRIVE; };
   API.viewLayers = function(reset){
     const out = { front: Object.assign({}, viewLayers.front), glass: Object.assign({}, viewLayers.glass) };
     if(reset) viewLayers = { front:{}, glass:{} };
