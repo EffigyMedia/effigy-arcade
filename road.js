@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.119';
+window.ROAD_BUILD = '0.14.120';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2525,6 +2525,13 @@ let MIRROR_NEAR = 0.20;
    an object under two pixels in a pane 44 tall is a smudge that still costs a
    full drawImage (RLG-130). */
 let MIRROR_MIN = 2.2;
+/* ---- HOW THE GLASS LETS GO OF A THING (RLG-312) -------------------------
+   Solid behind you, easing away over the last quarter of `MIRROR_BACK`. It is
+   the shape RLG-128 gave the glass's roadside - the windscreen's own ramp, read
+   backwards, because in a mirror everything recedes - and it is one expression
+   so every layer the glass adds lets go the same way. `z` is the world
+   position of the thing. */
+function glassFade(z){ return Math.min(1, clamp(1 - (pos - z) / MIRROR_BACK, 0, 1) * 4); }
 /* ---- AND GRIP DECIDES HOW SHARPLY THE CAR ANSWERS (RLG-119) -------------
    Owner, 2026-08-31: "should grip not only affect being pushed on the corner,
    but also your steering rate? A formula should handle extremely well and a
@@ -10265,6 +10272,7 @@ function drawScenery(idx, p1, y1, z1, fade){
                                        z:z1, pos:+pos.toFixed(2),
                                        a:+ctx.globalAlpha.toFixed(3) });
       ctx.drawImage(art, x - w2/2, y1 - h2, w2, h2);
+      if(drawWatch) layerSaw('front', 'scenery');
       /* the windows, on the same schedule as the street lamps */
       /* the lit variant follows the spec that was actually drawn, so a barn
          lights its windows and a stand of corn does not (RLG-102) */
@@ -10386,6 +10394,7 @@ function drawTreeWall(B, idx, p, y, z, alpha, wid, x0, x1, view, cap){
       ctx.globalAlpha = was;
       if(clip !== null) ctx.restore();
       treeWallTrace[view]++;
+      if(drawWatch) layerSaw(view === 'ahead' ? 'front' : 'glass', 'treeWall');
       if(sceneTrace) sceneTrace.push({ view: view, wall: 1, idx: idx, side: side, row: -1,
                                        x: +x.toFixed(4), y: +y.toFixed(4),
                                        w: +w2.toFixed(4), h: +h2.toFixed(4),
@@ -15947,6 +15956,7 @@ function massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide){
         ctx.lineTo(x2a + (x2a - x1a) / ea * lap, y2a + (y2a - y1a) / ea * lap);
         ctx.closePath(); ctx.fill();
         massTrace.quads++;
+        if(drawWatch) layerSaw('front', 'mass');
         if(y1a < top) top = y1a;
         if(y1b < top) top = y1b;
       }
@@ -16014,6 +16024,7 @@ function drawMassFront(){
       ctx.lineTo(xb, p.y - kH * hb); ctx.lineTo(xb, p.y);
       ctx.closePath(); ctx.fill();
       massTrace.front = (massTrace.front || 0) + 1;
+      if(drawWatch) layerSaw('front', 'face');
     }
   }
   if(massTrace.front && !endWallDrawn){ endWallDrawn = 1; endWallN++; }
@@ -24654,6 +24665,7 @@ function drawBoats(B, opt){
     /* under two pixels it is a speck that shimmers rather than a boat */
     if(w < 2 || x < -w || x > cx * 2 + w) continue;
     paintBoat(kind, x, y, w, dir);
+    if(drawWatch) layerSaw(back ? 'glass' : 'front', 'boats');
   }
 }
 
@@ -25225,7 +25237,7 @@ function drawSky(){
     if(!rec) rec = skyBandDrawn[key] = { h:0, top:0, alpha:0 };
     rec.h = h2; rec.top = y2; rec.alpha = alpha;
     ctx.globalAlpha = alpha;
-    for(let x=o2; x<W+w2; x+=w2) ctx.drawImage(art, x, y2, w2, h2);
+    for(let x=o2; x<W+w2; x+=w2) ctx.drawImage(art, x, y2, w2, h2); if(drawWatch) layerSaw('front', 'skyline');
     /* windows on: full at night, out by day */
     if(lit && n > 0.04){
       ctx.save();
@@ -25844,6 +25856,7 @@ function drawBore(){
   const pts = borePoints();
   if(pts.length < 3) return;
   borePts = pts;
+  if(drawWatch) layerSaw('front', 'bore');
   /* THE SHADING KEEPS THE ANCHOR IT HAD (RLG-237). The tube now begins just
      ahead of the camera, where a cross-section projects thousands of pixels off
      the glass, and a gradient laid between two points up there paints the whole
@@ -26173,12 +26186,6 @@ function drawPortal(){
      close on it because it sits at a fixed z, and it stops existing when you
      pass it. All of that falls out of projecting it like anything else.
      ------------------------------------------------------------------ */
-  const mass = half * BORE.mass;               /* how far the hill spreads */
-  /* OFF THE BORE'S WIDTH, NOT ITS HEIGHT. The opening's height is now measured
-     from a ceiling PLANE, so it grows without bound as the mouth nears - and a
-     crown taken off it put a hillside over the entire sky. The width is the
-     stable dimension and it is what a hill should be proportioned against. */
-  const crown = half * BORE.crown;             /* and how far it rises */
   ctx.save();
   /* ---- AND A NEARER WALL HIDES THE MOUTH (RLG-238) ------------------------
      Leaving a tunnel, the exit stands at the far end of the tube and is painted
@@ -26186,6 +26193,24 @@ function drawPortal(){
      the nearer wall that stands in front of it. Every wall span nearer than the
      portal is cut out of the clip first. */
   if(borePts) for(let i = 1; i < borePts.length && borePts[i].z < z; i++) boreClipOut(borePts, i);
+  paintPortal(p, top, hgt, half, entering, skyStops()[3]);
+  if(drawWatch) layerSaw('front', 'portal');
+  ctx.restore();
+}
+/* ---- THE MOUTH OF A TUNNEL, FOR EITHER VIEW (RLG-312) ---------------------
+   `p` is the boundary projected into the surface being drawn, `top` the roof's
+   height there and `half` the half-width of the bore. `lookIn` is true when the
+   tunnel is on the far side of the boundary from the eye - a stone face with a
+   dark mouth - and false when the eye is inside it, looking out at daylight
+   through a dark face. The windscreen looks in as it arrives; the glass looks in
+   as it leaves. The caller owns the save, the restore and any clip. */
+function paintPortal(p, top, hgt, half, lookIn, skyFill){
+  const mass = half * BORE.mass;               /* how far the hill spreads */
+  /* OFF THE BORE'S WIDTH, NOT ITS HEIGHT. The opening's height is now measured
+     from a ceiling PLANE, so it grows without bound as the mouth nears - and a
+     crown taken off it put a hillside over the entire sky. The width is the
+     stable dimension and it is what a hill should be proportioned against. */
+  const crown = half * BORE.crown;             /* and how far it rises */
   ctx.beginPath();
   /* the hill: a broad mound sitting on the road's own ground line */
   ctx.moveTo(p.x - mass, p.y + hgt * 0.10);
@@ -26201,7 +26226,7 @@ function drawPortal(){
   ctx.lineTo(p.x - half, p.y + hgt * 0.10);
   ctx.closePath();
   const face = ctx.createLinearGradient(0, p.y - crown, 0, p.y + hgt * 0.10);
-  if(entering){
+  if(lookIn){
     /* a hillside in daylight, so the hole in it reads as dark */
     face.addColorStop(0, '#6a6152');
     face.addColorStop(0.55, '#544d40');
@@ -26225,20 +26250,19 @@ function drawPortal(){
   ctx.quadraticCurveTo(p.x, top - hgt * 0.06, p.x + half, top + hgt * 0.26);
   ctx.lineTo(p.x + half, p.y + hgt * 0.10);
   ctx.closePath();
-  if(entering){
+  if(lookIn){
     const mouth = ctx.createLinearGradient(0, top, 0, p.y + hgt * 0.10);
     mouth.addColorStop(0, '#05070a');
     mouth.addColorStop(1, '#0d1116');
     ctx.fillStyle = mouth;
   } else {
-    ctx.fillStyle = skyStops()[3];
+    ctx.fillStyle = skyFill;
   }
   ctx.fill();
   /* the lip, which is what gives the mouth an edge rather than a silhouette */
-  ctx.strokeStyle = entering ? 'rgba(30,26,20,.85)' : 'rgba(180,190,200,.35)';
+  ctx.strokeStyle = lookIn ? 'rgba(30,26,20,.85)' : 'rgba(180,190,200,.35)';
   ctx.lineWidth = Math.max(1, half * 0.06);
   ctx.stroke();
-  ctx.restore();
 }
 
 function drawHaze(){
@@ -26774,6 +26798,89 @@ let rampSeen = {};
    render the SAME thing at the SAME distance with it and without it (RLG-302).
    Comparing two distances instead measures the projection, not the ramp. */
 let rampOff = false;
+/* ---- ONE STREET LAMP, FOR EITHER VIEW (RLG-312) --------------------------
+   The windscreen painted its lamps inline and the glass had none: driving out
+   of a city, the posts you had just passed were not behind you. So the lamp is
+   one painter now. `sc` is the lamp's own scale in the surface it is drawn
+   into, `alpha` the post's fade and `glow` the light's, and `vw`/`vh` the
+   surface's size, which caps the pool of light. `k` scales the minimum sizes,
+   which are pixels and would stand a four-pixel post in a pane a tenth of the
+   screen's height. The windscreen passes 1, so its lamps are unchanged. */
+function lampPoleH(sc, k){ return Math.max(4 * k, sc * 1.05); }
+function paintStreetLamp(lx, y1, sc, side, alpha, lamp, glow, vw, vh, k){
+  const poleH = lampPoleH(sc, k);
+  const poleW = Math.max(k, sc * 0.045);
+  const armL  = Math.max(2 * k, sc * 0.30) * -side;
+  const topY  = y1 - poleH;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#2b3038';
+  ctx.fillRect(lx - poleW/2, topY, poleW, poleH);
+  ctx.fillStyle = 'rgba(255,255,255,.16)';
+  ctx.fillRect(lx - poleW/2, topY, Math.max(0.6 * k, poleW*0.35), poleH);
+  /* the arm out over the carriageway, and the head on the end of it */
+  ctx.strokeStyle = '#2b3038';
+  ctx.lineWidth = Math.max(k, poleW*0.85);
+  ctx.beginPath();
+  ctx.moveTo(lx, topY + poleW*0.5);
+  ctx.quadraticCurveTo(lx + armL*0.6, topY - poleH*0.06, lx + armL, topY + poleH*0.03);
+  ctx.stroke();
+  const hx = lx + armL, hy = topY + poleH*0.03;
+  const hw = Math.max(1.6*k, sc*0.13), hh = Math.max(k, sc*0.05);
+  ctx.fillStyle = '#3a4048';
+  ctx.beginPath();
+  ctx.moveTo(hx - hw, hy); ctx.lineTo(hx + hw, hy);
+  ctx.lineTo(hx + hw*0.7, hy + hh); ctx.lineTo(hx - hw*0.7, hy + hh);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  /* the emissive bulb and the pool it throws — night only, whitish blue */
+  if(lamp > 0.01){
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    /* the bulb itself, on the underside of the head */
+    const bg = ctx.createRadialGradient(hx, hy+hh*0.6, 0, hx, hy+hh*0.6, Math.max(2*k, sc*0.22));
+    bg.addColorStop(0,   'rgba(236,246,255,' + (0.85*lamp*glow) + ')');
+    bg.addColorStop(0.4, 'rgba(176,214,255,' + (0.40*lamp*glow) + ')');
+    bg.addColorStop(1,   'rgba(140,190,255,0)');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(hx, hy+hh*0.6, Math.max(2*k, sc*0.22), 0, 6.2832);
+    ctx.fill();
+    /* ---- THE INTERMITTENT HAZE ---------------------------------------
+       The pool's HEIGHT was `(y1 - y2) * 5.5` — 5.5 times the thickness of
+       the road slice it sits on. Slice thickness changes with distance and
+       with every hill, so the pool grew and shrank frame to frame and
+       bloomed into a wash across the screen: the intermittent haze.
+
+       A pool of light on tarmac is an ellipse whose size follows the LAMP,
+       not the geometry it happens to be drawn on. Both axes come from `sc`
+       now, so it is the same shape at every distance and simply gets
+       smaller as it recedes.
+       ---------------------------------------------------------------- */
+    /* ---- STILL WRONG, AND WORSE ---------------------------------------
+       `sc` is `scale * ROAD * W`, which is HUGE near the camera — so
+       `sc * 0.55` made the pool taller than the slice-based version it
+       replaced, not shorter. The haze got stronger.
+
+       A pool of light on tarmac is a FLAT ellipse: wide across the road,
+       shallow up it, because you are looking at the ground almost edge on.
+       And it must be capped, or the nearest lamp on a crest paints half
+       the screen.
+       ---------------------------------------------------------------- */
+    const rw = Math.min(vw * 0.55, Math.max(6*k, sc * 2.2));
+    const rh = Math.min(vh * 0.06, Math.max(2*k, sc * 0.17));
+    const g2 = ctx.createRadialGradient(hx, y1, 0, hx, y1, rw);
+    g2.addColorStop(0,   'rgba(226,240,255,' + (0.13 * lamp * glow) + ')');
+    g2.addColorStop(0.5, 'rgba(168,204,255,' + (0.045 * lamp * glow) + ')');
+    g2.addColorStop(1,   'rgba(140,185,255,0)');
+    ctx.fillStyle = g2;
+    ctx.beginPath();
+    ctx.ellipse(hx, y1, rw, rh, 0, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+  }
+}
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
@@ -26980,6 +27087,7 @@ function drawRoad(){
          ---------------------------------------------------------- */
       if(!bioAt(idx).overWater){
         const gB = bioAt(idx);
+        if(drawWatch) layerSaw('front', 'ground');
         const gDrop = (gB.hazard === 'roll' && !dropOff) ? hazardSide(gB) : 0;
         if(!gDrop) ctx.fillRect(0, y2, W, H - y2);
         else {
@@ -27111,6 +27219,7 @@ function drawRoad(){
           ctx.closePath();
           ctx.fill();
           dropTrace.floor.push([n, fy2, H]);
+          if(drawWatch) layerSaw('front', 'drop');
         }
         /* ---- THE FARTHEST SLICE THAT ACTUALLY DRAWS, NOT SLICE `DRAW` -----
            Once, and after its floor, so everything nearer is painted later in
@@ -27136,6 +27245,7 @@ function drawRoad(){
         if(!rangeDrawn && n <= DRAW * RANGE_AT
            && drawValleyRange(ctx, dB, dropSide, fy1, idx, bGrow)){
           rangeDrawn = 1; rangeN++;
+          if(drawWatch) layerSaw('front', 'range');
         }
         dropTrace.rim[n] = y1;
         /* THE LIP, which is the part that makes it read. A dark band alone is a
@@ -27148,6 +27258,7 @@ function drawRoad(){
         ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52 * bGrow, RIM_LIT);
         quad(dx1, y1, dx1 + dropSide * lipW, y1,
              dx2 + dropSide * lipW, y2, dx2, y2);
+        if(drawWatch) layerSaw('front', 'rim');
       }
 
       /* ---- AND THE WALL IS THE SAME PLANE TURNED OVER (RLG-297) ----------
@@ -27345,6 +27456,7 @@ function drawRoad(){
             ctx.fillStyle = base;
           }
           wallTrace.push([n, ws, +Math.max(0, wy2).toFixed(1)]);
+          if(drawWatch) layerSaw('front', 'wall');
         }
       }
 
@@ -27357,6 +27469,7 @@ function drawRoad(){
         const eB = BIOMES[biomeTo];
         if(drawEndWall(ctx, eB, p2, idx + 1, y2, clamp(1 - n/DRAW, 0, 1))){
           endWallDrawn = 1; endWallN++;
+          if(drawWatch) layerSaw('front', 'face');
         }
       }
 
@@ -27421,6 +27534,7 @@ function drawRoad(){
           ctx.lineTo(edge, H);
           ctx.closePath();
           ctx.fill();
+          if(drawWatch) layerSaw('front', 'sea');
         }
         ctx.fillStyle = groundCol;   /* the next slice expects the ground colour */
       }
@@ -27514,10 +27628,7 @@ function drawRoad(){
          must not walk its own street lighting away from the kerb */
       const lx = p1.x + side * roadsideAt(p1, 1.30);
       const sc = p1.scale * SCENE_UNIT * W;
-      const poleH = Math.max(4, sc * 1.05);
-      const poleW = Math.max(1, sc * 0.045);
-      const armL  = Math.max(2, sc * 0.30) * -side;
-      const topY  = y1 - poleH;
+      const topY  = y1 - lampPoleH(sc, 1);
       /* ---- THE SAME GATE THE CARS GO THROUGH (RLG-073) -----------------
          The test here was `!overBrow(z1, p1.y)`, and `overBrow` returns false
          on its first line - it has been dead since `crestY` was re-enabled.
@@ -27538,6 +27649,7 @@ function drawRoad(){
         crestDid('lamp', 'clipped');
         ctx.beginPath(); ctx.rect(0, 0, W, gate.clip); ctx.clip();
       } else crestDid('lamp', 'drawn');
+      if(drawWatch) layerSaw('front', 'lamp');
 
       /* ---- SOLID -------------------------------------------------------
          `globalAlpha = fade` made the whole post see-through for most of its
@@ -27549,74 +27661,7 @@ function drawRoad(){
          says "the far edge" and `fade * 4` is the far QUARTER - the note was
          right about the principle and the number did not match it. Sixteen is
          the same band the trees and the mirror use: the last 6% of the draw. */
-      ctx.save();
-      ctx.globalAlpha = edgeFade(fade);
-      ctx.fillStyle = '#2b3038';
-      ctx.fillRect(lx - poleW/2, topY, poleW, poleH);
-      ctx.fillStyle = 'rgba(255,255,255,.16)';
-      ctx.fillRect(lx - poleW/2, topY, Math.max(0.6, poleW*0.35), poleH);
-      /* the arm out over the carriageway, and the head on the end of it */
-      ctx.strokeStyle = '#2b3038';
-      ctx.lineWidth = Math.max(1, poleW*0.85);
-      ctx.beginPath();
-      ctx.moveTo(lx, topY + poleW*0.5);
-      ctx.quadraticCurveTo(lx + armL*0.6, topY - poleH*0.06, lx + armL, topY + poleH*0.03);
-      ctx.stroke();
-      const hx = lx + armL, hy = topY + poleH*0.03;
-      const hw = Math.max(1.6, sc*0.13), hh = Math.max(1, sc*0.05);
-      ctx.fillStyle = '#3a4048';
-      ctx.beginPath();
-      ctx.moveTo(hx - hw, hy); ctx.lineTo(hx + hw, hy);
-      ctx.lineTo(hx + hw*0.7, hy + hh); ctx.lineTo(hx - hw*0.7, hy + hh);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-
-      /* the emissive bulb and the pool it throws — night only, whitish blue */
-      if(lamp > 0.01){
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        /* the bulb itself, on the underside of the head */
-        const bg = ctx.createRadialGradient(hx, hy+hh*0.6, 0, hx, hy+hh*0.6, Math.max(2, sc*0.22));
-        bg.addColorStop(0,   'rgba(236,246,255,' + (0.85*lamp*fade) + ')');
-        bg.addColorStop(0.4, 'rgba(176,214,255,' + (0.40*lamp*fade) + ')');
-        bg.addColorStop(1,   'rgba(140,190,255,0)');
-        ctx.fillStyle = bg;
-        ctx.beginPath();
-        ctx.arc(hx, hy+hh*0.6, Math.max(2, sc*0.22), 0, 6.2832);
-        ctx.fill();
-        /* ---- THE INTERMITTENT HAZE ---------------------------------------
-           The pool's HEIGHT was `(y1 - y2) * 5.5` — 5.5 times the thickness of
-           the road slice it sits on. Slice thickness changes with distance and
-           with every hill, so the pool grew and shrank frame to frame and
-           bloomed into a wash across the screen: the intermittent haze.
-
-           A pool of light on tarmac is an ellipse whose size follows the LAMP,
-           not the geometry it happens to be drawn on. Both axes come from `sc`
-           now, so it is the same shape at every distance and simply gets
-           smaller as it recedes.
-           ---------------------------------------------------------------- */
-        /* ---- STILL WRONG, AND WORSE ---------------------------------------
-           `sc` is `scale * ROAD * W`, which is HUGE near the camera — so
-           `sc * 0.55` made the pool taller than the slice-based version it
-           replaced, not shorter. The haze got stronger.
-
-           A pool of light on tarmac is a FLAT ellipse: wide across the road,
-           shallow up it, because you are looking at the ground almost edge on.
-           And it must be capped, or the nearest lamp on a crest paints half
-           the screen.
-           ---------------------------------------------------------------- */
-        const rw = Math.min(W * 0.55, Math.max(6, sc * 2.2));
-        const rh = Math.min(H * 0.06, Math.max(2, sc * 0.17));
-        const g2 = ctx.createRadialGradient(hx, y1, 0, hx, y1, rw);
-        g2.addColorStop(0,   'rgba(226,240,255,' + (0.13 * lamp * fade) + ')');
-        g2.addColorStop(0.5, 'rgba(168,204,255,' + (0.045 * lamp * fade) + ')');
-        g2.addColorStop(1,   'rgba(140,185,255,0)');
-        ctx.fillStyle = g2;
-        ctx.beginPath();
-        ctx.ellipse(hx, y1, rw, rh, 0, 0, 6.2832);
-        ctx.fill();
-        ctx.restore();
-      }
+      paintStreetLamp(lx, y1, sc, side, edgeFade(fade), lamp, fade, W, H, 1);
       ctx.restore();   /* the crest clip */
       }
     }
@@ -27696,6 +27741,7 @@ function drawRoad(){
                              rainDark * 0.20, WET_DARK);
       quad(p1.x-r1, y1, p1.x-p1.w, y1, p2.x-p2.w, y2, p2.x-r2, y2);
       quad(p1.x+p1.w, y1, p1.x+r1, y1, p2.x+r2, y2, p2.x+p2.w, y2);
+      if(drawWatch) layerSaw('front', 'kerb');
     }
 
     // asphalt
@@ -27712,6 +27758,7 @@ function drawRoad(){
     const onDeck = !!bioAt(idx).overWater;
     ctx.fillStyle = tarmacTone(dark, fade, onDeck);
     quad(p1.x-p1.w, y1, p1.x+p1.w, y1, p2.x+p2.w, y2, p2.x-p2.w, y2);
+    if(drawWatch) layerSaw('front', 'road');
 
     /* ---- AND AN EXPANSION JOINT ACROSS IT (RLG-112) ------------------
        The third of the three things RLG-112 says make a span read as a bridge.
@@ -27729,6 +27776,7 @@ function drawRoad(){
       const jh = Math.max(0.8, (y1 - y2) * 0.34);
       ctx.fillStyle = 'rgba(22,22,28,0.85)';
       quad(p1.x-p1.w, y1, p1.x+p1.w, y1, p1.x+p1.w, y1-jh, p1.x-p1.w, y1-jh);
+      if(drawWatch) layerSaw('front', 'joint');
       if(jh > 1.6){
         ctx.fillStyle = 'rgba(178,182,192,' + (0.34 + 0.30 * fade) + ')';
         const lip = Math.max(0.6, jh * 0.30);
@@ -27749,16 +27797,18 @@ function drawRoad(){
         quad(p1.x+o*p1.w-lw1, y1, p1.x+o*p1.w+lw1, y1,
              p2.x+o*p2.w+lw2, y2, p2.x+o*p2.w-lw2, y2);
       }
+      if(drawWatch) layerSaw('front', 'lanes');
     }
     // solid edge lines
     ctx.fillStyle = 'rgba(240,235,220,'+((0.22+0.35*fade)*paint)+')';
     const e1=p1.w*0.022, e2=p2.w*0.022;
     quad(p1.x-p1.w*0.965-e1,y1,p1.x-p1.w*0.965+e1,y1,p2.x-p2.w*0.965+e2,y2,p2.x-p2.w*0.965-e2,y2);
     quad(p1.x+p1.w*0.965-e1,y1,p1.x+p1.w*0.965+e1,y1,p2.x+p2.w*0.965+e2,y2,p2.x+p2.w*0.965-e2,y2);
+    if(drawWatch) layerSaw('front', 'edges');
 
     /* the deck's ironwork, over its own slice's markings and under everything
        the sprite pass draws (RLG-112) */
-    if(deckB.truss) drawTruss(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, H);
+    if(deckB.truss){ drawTruss(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, H); if(drawWatch) layerSaw('front', 'truss'); }
     /* ---- AND THE LIMIT OF TRAVEL, WHERE THE PLACE PUTS ONE (RLG-265) ----
        After the truss, so a deck's own railing is never doubled by one of
        these - a bridge stops the car at its parapet and declares no hazard
@@ -27766,7 +27816,7 @@ function drawRoad(){
     if(!deckB.truss && !railsOff){
       for(const rs of [-1, 1]){
         const kind = edgeAt(deckB, rs);
-        if(kind) drawRail(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, rs, kind, H);
+        if(kind){ drawRail(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, rs, kind, H); if(drawWatch) layerSaw('front', 'rail'); }
       }
     }
 
@@ -27851,6 +27901,22 @@ let walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
    that point was working perfectly.
    ---------------------------------------------------------------------- */
 let viewKinds = { front:{}, glass:{} };
+/* ---- AND WHAT EACH VIEW DREW BESIDE THE ROAD (RLG-312) -------------------
+   Owner, 2026-09-21: "We need to verify everything can be seen in the mirror."
+   `viewKinds` answers that for the things on the road. Nothing answered it for
+   the LAYERS - the ground, the drop, the walls, the rails, the lamps - and the
+   glass has been found short of one of those six times, each time from a
+   device: the rail, the drop twice, the wall, the weather and the boards.
+
+   So each layer counts itself at the point where it paints, in each view, and
+   `glass-survey-test` asserts that every layer the windscreen painted during a
+   tour of the places, the glass painted too. It counts what was PAINTED, not
+   what was offered, because a layer has no list to be left out of: the fault is
+   always a missing painter. Cumulative until a check resets it, and only while
+   `drawWatch` is on, so it costs nothing in play.
+   ------------------------------------------------------------------------ */
+let viewLayers = { front:{}, glass:{} };
+function layerSaw(view, what){ const L = viewLayers[view]; L[what] = (L[what] || 0) + 1; }
 /* BY HOW MUCH a slice missed being painted, per segment, this frame. A slice is
    skipped when its top has gone back UP relative to the nearest ground already
    painted - it is behind a crest - and its sprites go with it. A slice that
@@ -29108,6 +29174,7 @@ let mirrorDrops = null;
 function paintMirrorPrecip(mx, my, mw, mh){
   if(wet < 0.02) return;
   mirrorDrops = precipField(mirrorDrops, MIRROR_RAIN_N);
+  if(drawWatch) layerSaw('glass', 'weather');
   ctx.save();
   paintPrecip(mirrorDrops, mx, my, mw, mh, MIRROR_RAIN_FALL, MIRROR_RAIN_LEN, true);
   ctx.restore();
@@ -29117,6 +29184,7 @@ let rainDrops = null;
 function drawRain(){
   if(wet < 0.02) return;
   rainDrops = precipField(rainDrops, 90);
+  if(drawWatch) layerSaw('front', 'weather');
   ctx.save();
   /* ---- THE WEATHER IS ON THE SURFACES, NOT OVER THE FRAME (RLG-057) -----
      Two screen-wide rectangles used to be painted here, one per weather, both
@@ -30311,6 +30379,7 @@ function drawMirrorFull(mx, my, mw, mh){
   ctx.fillStyle = mBfar.overWater ? waterFill(mBfar, vpy, my + mh, H_M, vpy)
                                   : groundBase(0.30, bhd);
   ctx.fillRect(mx, vpy, mw, mh - (vpy - my));
+  if(drawWatch) layerSaw('glass', 'ground');
   /* and the boats behind you, on the same water, through the same painter with
      the glass's own scale and horizon (RLG-112) */
   if(mBfar.overWater || mBfar.sea)
@@ -30376,6 +30445,7 @@ function drawMirrorFull(mx, my, mw, mh){
     if(sox > 0) sox -= sw2;
     for(let x = sox; x < mw + sw2; x += sw2)
       ctx.drawImage(mSky.body, mx + x, vpy - sh2, sw2, sh2);
+    if(drawWatch) layerSaw('glass', 'skyline');
     /* and its windows, on the same clock as everything else that lights up */
     const litNow = lampsOn();
     if(mSky.lit && litNow > 0.04){
@@ -30431,6 +30501,7 @@ function drawMirrorFull(mx, my, mw, mh){
      ---------------------------------------------------------------- */
   const mFar = Math.floor((pos - MIRROR_BACK) / MSEG) * MSEG;
   let mEndDrawn = 0;
+  let mRangeDrawn = 0;
   for(let wz = mFar; wz < pos - 200; wz += MSEG){
     const a = rproj(0, wz), b2 = rproj(0, wz + MSEG);
     if(!a || !b2) continue;
@@ -30490,11 +30561,49 @@ function drawMirrorFull(mx, my, mw, mh){
                                  DROP_HAZE * mfar, hexRGB(mB.sky || '#2a3550'));
           if(mDrop < 0){ if(mdx > mx) ctx.fillRect(mx, mfy1, mdx - mx, Math.max(0.5, mfy2 - mfy1)); }
           else { if(mdx < mx + mw) ctx.fillRect(mdx, mfy1, mx + mw - mdx, Math.max(0.5, mfy2 - mfy1)); }
+          if(drawWatch) layerSaw('glass', 'drop');
+          /* ---- AND THE RANGE ACROSS THE VALLEY (RLG-312) ---------------
+             The windscreen stands the place's own skyline art in the valley
+             at `RANGE_AT` of its draw; the glass had the floor and nothing
+             across it. The same art at the glass's own skyline scale, at the
+             same fraction of the glass's reach, standing on the glass's own
+             floor and clipped to the drop side of the road. It slides the
+             other way with travel, because the glass looks the other way; with
+             the lane it moves as `rproj` moves everything in the pane, so it
+             stays on the floor it stands on. */
+          if(!mRangeDrawn && mB.range && !rangeOff && pos - wz <= RANGE_AT * MIRROR_BACK){
+            const rArt = skylineFor(mB.name);
+            if(rArt && rArt.body && rArt.body.height && rArt.body.width){
+              const hT = (vpy - my) * 0.38 * skyRiseOf(mB.name) * RANGE_SCALE;
+              const rw2 = hT * rArt.body.width / rArt.body.height;
+              const rh2 = hT * bioGrow(widx, mB);
+              if(rw2 >= 1 && rh2 >= 1){
+                const feet = Math.min(my + mh, mfy1 + rh2 * RANGE_SINK);
+                const top = Math.max(my, feet - rh2);
+                const rZ = RANGE_AT * MIRROR_BACK;
+                let ro = (-camX * mw * 0.030
+                          + pos * (CAM_D * (RANGE_OUT * ROAD) * (mw / 2) / (rZ * rZ))) % rw2;
+                if(ro > 0) ro -= rw2;
+                ctx.save();
+                ctx.beginPath();
+                if(mDrop < 0) ctx.rect(mx, top, Math.max(0, a.x - mx), feet - top);
+                else          ctx.rect(a.x, top, Math.max(0, mx + mw - a.x), feet - top);
+                ctx.clip();
+                ctx.globalAlpha = RANGE_ALPHA;
+                for(let x = mx + ro; x < mx + mw + rw2; x += rw2)
+                  ctx.drawImage(rArt.body, x, feet - rh2, rw2, rh2);
+                ctx.restore();
+                mRangeDrawn = 1;
+                if(drawWatch) layerSaw('glass', 'range');
+              }
+            }
+          }
         }
         /* the lit lip, which is what makes it an edge rather than a shadow */
         const mlip = Math.max(0.8, a.w * 0.042);
         ctx.fillStyle = mixRGB(groundTone(widx, false), 0.52 * bioGrow(widx, mB), RIM_LIT);
         ctx.fillRect(mDrop < 0 ? mdx - mlip : mdx, a.y, mlip, Math.max(1, b2.y - a.y));
+        if(drawWatch) layerSaw('glass', 'rim');
       }
     }
     /* ---- AND THE WALL IS BEHIND YOU TOO (RLG-297) -------------------
@@ -30534,6 +30643,7 @@ function drawMirrorFull(mx, my, mw, mh){
                      clamp((pos - wz) / MIRROR_BACK, 0, 1),
                      { x:mx, w:mw, y:my, h:mh })){
         mEndDrawn = 1; endWallN++;
+        if(drawWatch) layerSaw('glass', 'face');
       }
     }
     /* ---- THE MASS, BEHIND YOU (owner, 2026-09-21, RLG-306) -------------
@@ -30586,6 +30696,7 @@ function drawMirrorFull(mx, my, mw, mh){
             ctx.lineTo(xb, a.y - kF * hb); ctx.lineTo(xb, a.y);
             ctx.closePath(); ctx.fill();
             massTrace.mirrorBack = (massTrace.mirrorBack || 0) + 1;
+            if(drawWatch) layerSaw('glass', 'face');
             if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
           }
         }
@@ -30608,6 +30719,7 @@ function drawMirrorFull(mx, my, mw, mh){
           ctx.lineTo(xFa + (xFa - xNa) / ea * 0.6, yFa + (yFa - yNa) / ea * 0.6);
           ctx.closePath(); ctx.fill();
           massTrace.mirror = (massTrace.mirror || 0) + 1;
+          if(drawWatch) layerSaw('glass', 'mass');
           if(closes && !endWallOff){
             ctx.fillStyle = tone(clamp(0.30 + 0.75 * 0.55, 0, 1));
             ctx.beginPath();
@@ -30615,6 +30727,7 @@ function drawMirrorFull(mx, my, mw, mh){
             ctx.lineTo(xNb, yNb); ctx.lineTo(xNb, b2.y);
             ctx.closePath(); ctx.fill();
             massTrace.mirrorBack = (massTrace.mirrorBack || 0) + 1;
+            if(drawWatch) layerSaw('glass', 'face');
             if(!mEndDrawn){ mEndDrawn = 1; endWallN++; }
           }
         }
@@ -30638,6 +30751,7 @@ function drawMirrorFull(mx, my, mw, mh){
           const mwx = wallFootX(a, ws);
           if(ws < 0){ if(mwx > mx) ctx.fillRect(mx, mwy, mwx - mx, Math.max(0.5, my + mh - mwy)); }
           else { if(mwx < mx + mw) ctx.fillRect(mwx, mwy, mx + mw - mwx, Math.max(0.5, my + mh - mwy)); }
+          if(drawWatch) layerSaw('glass', 'wall');
         }
       }
     }
@@ -30646,6 +30760,7 @@ function drawMirrorFull(mx, my, mw, mh){
       ctx.fillStyle = seaTone(mB);
       if(sideFor(mB) < 0){ if(msh > mx) ctx.fillRect(mx, a.y, msh - mx, my + mh - a.y); }
       else { if(msh < mx + mw) ctx.fillRect(msh, a.y, mx + mw - msh, my + mh - a.y); }
+      if(drawWatch) layerSaw('glass', 'sea');
     }
     /* ---- AND THE GLASS SHOWS THE SAME DECK (RLG-112) ----------------
        The mirror keeps its own tone expression - it is a 44-pixel pane and its
@@ -30663,6 +30778,35 @@ function drawMirrorFull(mx, my, mw, mh){
     ctx.moveTo(a.x - a.w, a.y); ctx.lineTo(a.x + a.w, a.y);
     ctx.lineTo(b2.x + b2.w, b2.y); ctx.lineTo(b2.x - b2.w, b2.y);
     ctx.closePath(); ctx.fill();
+    if(drawWatch) layerSaw('glass', 'road');
+    /* ---- AND THE KERB, AND THE DECK'S JOINTS (RLG-312) ---------------
+       The survey found both missing from the glass: a circuit's kerb runs
+       every metre of every lap in Motorsport and was absent from every mirror
+       in that game, and a bridge's expansion joints crossed the deck ahead and
+       not behind. The windscreen's own colours and rules, at the glass's own
+       step. The joints are placed by WORLD POSITION, as the rail's posts are,
+       so the two views agree on where each one is. */
+    if(mB.truss || CFG.circuitOnly){
+      const mr1 = a.w * 1.13, mr2 = b2.w * 1.13;
+      ctx.fillStyle = mixRGB(mixRGB(mB.truss ? (dark ? '#8e8a80' : '#6f6b62')
+                                             : (dark ? '#c9c3b4' : '#8c3346'),
+                                    settle * 0.45, mLight),
+                             mRain * 0.20, WET_DARK);
+      quad(a.x - mr1, a.y, a.x - a.w, a.y, b2.x - b2.w, b2.y, b2.x - mr2, b2.y);
+      quad(a.x + a.w, a.y, a.x + mr1, a.y, b2.x + mr2, b2.y, b2.x + b2.w, b2.y);
+      if(drawWatch) layerSaw('glass', 'kerb');
+    }
+    if(mDeck && b2.w > 2){
+      const js = SEG * TRUSS.joint;
+      const jh = Math.max(0.6, (b2.y - a.y) * 0.34 * SEG / MSEG);
+      ctx.fillStyle = 'rgba(22,22,28,0.85)';
+      for(let zj = Math.ceil(wz / js) * js; zj < wz + MSEG; zj += js){
+        const jp = rproj(0, zj);
+        if(!jp || jp.w <= 2) continue;
+        quad(jp.x - jp.w, jp.y, jp.x + jp.w, jp.y, jp.x + jp.w, jp.y - jh, jp.x - jp.w, jp.y - jh);
+        if(drawWatch) layerSaw('glass', 'joint');
+      }
+    }
     /* lane markings, dashed on the same cycle as the road ahead */
     if(dark && mPaint > 0.02){
       ctx.strokeStyle = 'rgba(226,214,168,' + (0.55 * mPaint) + ')';
@@ -30674,6 +30818,7 @@ function drawMirrorFull(mx, my, mw, mh){
         ctx.lineTo(b2.x + f*b2.w*2, b2.y);
         ctx.stroke();
       }
+      if(drawWatch) layerSaw('glass', 'lanes');
     }
     /* the hard shoulder either side */
     if(mPaint > 0.02){
@@ -30681,6 +30826,7 @@ function drawMirrorFull(mx, my, mw, mh){
       ctx.lineWidth = Math.max(0.5, a.w*0.03);
       ctx.beginPath(); ctx.moveTo(a.x-a.w, a.y); ctx.lineTo(b2.x-b2.w, b2.y); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(a.x+a.w, a.y); ctx.lineTo(b2.x+b2.w, b2.y); ctx.stroke();
+      if(drawWatch) layerSaw('glass', 'edges');
     }
     /* ---- AND THE IRONWORK IS BEHIND YOU TOO (RLG-112) ----------------
        Owner, 2026-09-01: all of it "needs to be properly visible in the
@@ -30695,6 +30841,7 @@ function drawMirrorFull(mx, my, mw, mh){
        pitch in each view.
        ------------------------------------------------------------- */
     if(mB.truss) drawTruss(a, b2, a.y, b2.y, wz, wz + MSEG, H_M);
+    if(mB.truss && drawWatch) layerSaw('glass', 'truss');
     /* ---- AND THE LIMIT OF TRAVEL IS BEHIND YOU TOO (RLG-280) ---------
        Owner, 2026-09-16: "all the new boundaries items you just added, are
        invisible in the mirror." They were. [[RLG-265]] drew the rail, the
@@ -30712,6 +30859,7 @@ function drawMirrorFull(mx, my, mw, mh){
       for(const rs of [-1, 1]){
         const mk = edgeAt(mB, rs);
         if(mk) drawRail(a, b2, a.y, b2.y, wz, wz + MSEG, rs, mk, H_M);
+        if(mk && drawWatch) layerSaw('glass', 'rail');
       }
     }
     /* ---- AND WHAT STOOD BESIDE IT (RLG-079) --------------------------
@@ -30878,9 +31026,32 @@ function drawMirrorFull(mx, my, mw, mh){
             const mWas = ctx.globalAlpha;
             ctx.globalAlpha = mWas * mFade;
             ctx.drawImage(mart, mxx - mw2/2, a.y - mh2, mw2, mh2);
+            if(drawWatch) layerSaw('glass', 'scenery');
             ctx.globalAlpha = mWas;
           }
         }
+      }
+    }
+    /* ---- AND THE STREET LAMPS (RLG-312) -------------------------------
+       The windscreen puts a post on every eighth segment of a city, sides
+       alternating; the glass had none, so the city you had just driven out of
+       was unlit behind you. The same segments, the same sides and the same
+       painter - `paintStreetLamp` - at each lamp's own distance, with the
+       glass's fade at the back and its near limit at the front, so a post
+       beside the car does not fill the pane. */
+    {
+      const lCap = mw * MIRROR_NEAR, lLit = lampsOn();
+      for(let li = Math.ceil(wz / SEG); li * SEG < wz + MSEG; li++){
+        if(li % 8 !== 0 || bioBehind(li).name !== 'CITY') continue;
+        const lp = rproj(0, li * SEG);
+        if(!lp) continue;
+        const side = ((li / 8) | 0) % 2 ? 1 : -1;
+        const lsc = lp.scale * SCENE_UNIT * mw;
+        const lA = Math.min(glassFade(li * SEG), clamp((lCap - lsc * 0.6) / (lCap * 0.06), 0, 1));
+        if(lA <= 0.02) continue;
+        paintStreetLamp(lp.x + side * roadsideAt(lp, 1.30, mw), lp.y, lsc, side, lA,
+                        lLit, lA, mw, mh, mh / H);
+        if(drawWatch) layerSaw('glass', 'lamp');
       }
     }
     /* ---- AND THE FACE OF THE WOOD YOU DROVE OUT OF (RLG-312) -----------
@@ -30896,13 +31067,41 @@ function drawMirrorFull(mx, my, mw, mh){
         while(e < widxN && bioBehind(e + 1) === mB) e++;
         const rp = rproj(0, e * SEG);
         if(rp){
-          const tAway = clamp((pos - e * SEG) / MIRROR_BACK, 0, 1);
-          drawTreeWall(mB, e, rp, rp.y, e * SEG, Math.min(1, (1 - tAway) * 4),
+          drawTreeWall(mB, e, rp, rp.y, e * SEG, glassFade(e * SEG),
                        mw, mx, mx + mw, 'mirror', mw * MIRROR_NEAR);
         }
       }
     }
     prev = b2;
+  }
+  /* ---- AND THE MOUTH OF THE TUNNEL BEHIND YOU (RLG-312) -----------------
+     The windscreen draws a portal at a tunnel's boundary as it arrives; the
+     glass drew none, so a tunnel you had just left was a darkening with no
+     mouth, and the daylight behind you from inside one had no frame. The
+     boundary is the crossing's while it is in flight and the place you left's
+     once it is done, and the painter is the windscreen's, `paintPortal`, at the
+     glass's own projection and with the glass's fade. Painted after the walk,
+     as the windscreen's is after its road, and before the cars, which stand in
+     front of it. */
+  {
+    const eIdx = (biomeFrom !== biomeTo && biomeEdge > -1e8) ? biomeEdge
+               : (growLeft && growFrom > -1e8) ? growFrom : null;
+    if(eIdx !== null){
+      const bB = bioBehind(eIdx - 1), aB = bioBehind(eIdx);
+      const zE = eIdx * SEG;
+      if(!!bB.bore !== !!aB.bore && zE < pos - 200 && zE > pos - MIRROR_BACK){
+        const pp = rproj(0, zE);
+        if(pp){
+          const half = roadsideAt(pp, BORE.out, mw);
+          const top = vpy + pp.scale * (CAM_H_M - BORE.h) * H_M / 2;
+          ctx.save();
+          ctx.globalAlpha = glassFade(zE);
+          paintPortal(pp, top, Math.max(4 * mh / H, pp.y - top), half, !!bB.bore, skyStops()[3]);
+          ctx.restore();
+          if(drawWatch) layerSaw('glass', 'portal');
+        }
+      }
+    }
   }
 
   /* ---- what you see is the FRONT of the car ------------------------------
@@ -31220,6 +31419,7 @@ function drawMirrorFull(mx, my, mw, mh){
      ------------------------------------------------------------------- */
   const mDark = placeDark();
   if(mDark > 0.01){
+    if(drawWatch) layerSaw('glass', 'bore');
     const mvp = my + mh * MIRROR_HORIZON;
     ctx.save();
     ctx.globalAlpha = Math.min(1, mDark);
@@ -37733,6 +37933,13 @@ requestAnimationFrame(frameLoop);
   /* which kinds each view was handed this frame - see `viewKinds` */
   API.viewKinds = function(){ return { front:Object.keys(viewKinds.front).sort(),
                                        glass:Object.keys(viewKinds.glass).sort() }; };
+  /* which layers each view PAINTED since the last reset, and how often - see
+     `viewLayers` (RLG-312). Recorded only while `watchDraw` is on. */
+  API.viewLayers = function(reset){
+    const out = { front: Object.assign({}, viewLayers.front), glass: Object.assign({}, viewLayers.glass) };
+    if(reset) viewLayers = { front:{}, glass:{} };
+    return out;
+  };
   API.scattered = function(){ return scattered; };
   /* the personality constants, so a check names them the way the engine does
      rather than carrying a copy of four numbers that could drift (RLG-206) */

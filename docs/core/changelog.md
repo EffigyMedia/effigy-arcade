@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-120"></a>
+## [0.14.120] - 2026-09-21
+- Added: **the mirror shows five things it never showed.** A survey of every layer the windscreen
+  paints beside the road found the glass without the city's street lamps, the valley range, the
+  kerb (on a bridge deck, and on every circuit in Motorsport), the deck's expansion joints, and the
+  tunnel's portal. All five are in the glass now, drawn by the windscreen's own painters.
+  [RLG-312](../fragments/RLG-312.md)
+- Added: **a harness that keeps it that way.** Each layer counts itself where it paints, in each
+  view, and `glass-survey-test` tours every place, every boundary both ways, a bridge, the coast,
+  rain and a circuit, and fails if the windscreen painted anything the glass did not.
+
 <a id="v0-14-119"></a>
 ## [0.14.119] - 2026-09-21
 - Added: **a wood has a face of trees.** Driving at a forest, a jungle or a swamp, its first segment
