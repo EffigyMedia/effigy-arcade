@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.118';
+window.ROAD_BUILD = '0.14.119';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10278,6 +10278,118 @@ function drawScenery(idx, p1, y1, z1, fade){
       }
       ctx.globalAlpha = 1;
       ctx.restore();
+    }
+  }
+  /* the face you drive at, if this is the first segment of a wooded place */
+  if(!treeWallOff && treeWallOf(B) && bioAt(idx - 1) !== B)
+    drawTreeWall(B, idx, p1, y1, z1, edgeFade(fade), W, 0, W, 'ahead');
+}
+
+/* ---- A WOODED PLACE HAS A FACE, AND IT IS MADE OF TREES (RLG-312) -------
+   Owner, 2026-09-21: "The biomes with trees should have a wall of trees running
+   along side the approaching face and leaving face (mirror)."
+
+   A FOREST USED TO ARRIVE ONE RANK AT A TIME. Its scenery starts at its first
+   segment and walks out five ranks to `outFar`, so from a mile away the front of
+   a forest was a scatter of a dozen trees beside the road and open ground past
+   them. A canyon has a face at its boundary (RLG-301) and a mountain grows out of
+   the ground (RLG-303); a wooded place had nothing to drive at.
+
+   SO ITS FIRST SEGMENT CARRIES A RANK ACROSS THE VIEW: the place's own trees,
+   from the kerb out past the edge of the frame, close enough that their crowns
+   overlap into one line. The glass draws the same rank at the place's LAST
+   segment, which is the face you drove out of.
+
+   IT FALLS OUT OF THE TABLE, NOT OUT OF A NAME. A place is wooded when its own
+   `trees` is at least `TREE_WALL_MIN` and it has no rock face or mass of its
+   own - a canyon and a mountain close their boundaries with stone, and a place
+   that has both would stand trees in front of its own cliff. The trees drawn are
+   the place's own scenery sprites, so the wall is made of whatever the place is
+   made of: conifers in a forest, fronds in a jungle, cypress in a swamp. Today
+   that is FOREST, JUNGLE and SWAMP, and nothing below names any of them.
+
+   THE SIDES ARE THE SCENERY'S OWN. Nothing stands in the sea, on the drop or in
+   front of a sheer face in the rest of the roadside, and the wall reads the same
+   three rules, so it cannot put a tree where the place itself would not.
+   ------------------------------------------------------------------------ */
+let TREE_WALL_MIN = 0.60;   /* how wooded a place must be for its faces to be trees */
+let TREE_WALL_GAP = 0.55;   /* the spacing along the rank, as a fraction of one tree's width */
+let TREE_WALL_MAX = 64;     /* the most trees one side of one face may place */
+/* debug: no tree wall, so a check can diff the two frames */
+let treeWallOff = false;
+/* how many trees the wall drew, per view, cumulative until a check resets it */
+let treeWallTrace = { ahead: 0, mirror: 0 };
+function treeWallOf(B){
+  if(!B || B.face || B.mass || !(B.trees >= TREE_WALL_MIN)) return null;
+  const S = SCENERY[B.name];
+  return S && (S.rows || 1) > 1 && !S.lattice ? S : null;
+}
+function treeWallSides(B){
+  const water = B.sea ? sideFor(B) : 0;
+  const drop = B.hazard === 'roll' ? hazardSide(B) : 0;
+  const faced = wallSides(B);
+  const out = [];
+  for(const side of [-1, 1]){
+    if(water && side === water) continue;
+    if(drop && side === drop) continue;
+    if(faced && faced.indexOf(side) >= 0) continue;
+    if(B.crop && side === sideFor(B)) continue;
+    out.push(side);
+  }
+  return out;
+}
+/* One rank of the place's own trees across the boundary at segment `idx`, drawn
+   into a surface `wid` pixels wide whose visible span is `x0` to `x1`. `alpha`
+   is the caller's fade, already shaped for its view; `cap` is the widest tree
+   that view allows, or 0 for none. The windscreen and the glass both call it, so
+   the two faces cannot be built from different rules. */
+function drawTreeWall(B, idx, p, y, z, alpha, wid, x0, x1, view, cap){
+  const S = treeWallOf(B);
+  if(!S || alpha <= 0.02) return;
+  const sc = p.scale * SCENE_UNIT * wid / 2;
+  if(sc * S.w < 0.8) return;
+  const step = S.w * TREE_WALL_GAP;
+  for(const side of treeWallSides(B)){
+    /* walk out to the edge of the view first, then draw outside in, so a tree
+       nearer the road stands over the one beyond it as the ranks do */
+    let n = 0;
+    while(n < TREE_WALL_MAX){
+      const xi = p.x + side * roadsideAt(p, S.out + n * step, wid);
+      if(side > 0 ? xi > x1 : xi < x0) break;
+      n++;
+    }
+    for(let k = n - 1; k >= 0; k--){
+      const salt = 700 + k * 7 + (side < 0 ? 0 : 3);
+      const r1 = sceneRand(idx, salt), r2 = sceneRand(idx, salt + 1);
+      const art = sceneryArt(B.name, Math.floor(r1 * S.kinds) % S.kinds);
+      if(!art) continue;
+      const w2 = sc * S.w * (SCENE_GROW_LO + r2 * SCENE_GROW_SPAN);
+      /* a view with a cap eases a tree out as it grows toward it, as the glass's
+         own roadside does (RLG-128), so nothing in the wall pops at the near end */
+      const a2 = cap ? Math.min(alpha, clamp((cap - w2) / (cap * 0.06), 0, 1)) : alpha;
+      if(a2 <= 0.02) continue;
+      const h2 = w2 * (art.height / art.width);
+      const off = S.out + (k + (r1 - 0.5) * 0.4) * step;
+      const x = p.x + side * roadsideAt(p, Math.max(S.out, off), wid) + side * w2 / 2;
+      if(x + w2 < x0 || x - w2 > x1) continue;
+      let clip = null;
+      if(view === 'ahead'){
+        const gate = crestGate(z, y, y - h2, 'treeWall');
+        if(gate.hide){ crestDid('treeWall', 'hidden'); continue; }
+        clip = gate.clip;
+        crestDid('treeWall', clip !== null ? 'clipped' : 'drawn');
+      }
+      if(clip !== null){ ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, clip); ctx.clip(); }
+      const was = ctx.globalAlpha;
+      ctx.globalAlpha = was * a2;
+      ctx.drawImage(art, x - w2 / 2, y - h2, w2, h2);
+      ctx.globalAlpha = was;
+      if(clip !== null) ctx.restore();
+      treeWallTrace[view]++;
+      if(sceneTrace) sceneTrace.push({ view: view, wall: 1, idx: idx, side: side, row: -1,
+                                       x: +x.toFixed(4), y: +y.toFixed(4),
+                                       w: +w2.toFixed(4), h: +h2.toFixed(4),
+                                       z: z, pos: +pos.toFixed(2), a: +a2.toFixed(3) });
     }
   }
 }
@@ -30771,6 +30883,25 @@ function drawMirrorFull(mx, my, mw, mh){
         }
       }
     }
+    /* ---- AND THE FACE OF THE WOOD YOU DROVE OUT OF (RLG-312) -----------
+       The step whose nearer end belongs to another place holds the wooded
+       place's last segment. Its rank is drawn at that segment's own distance,
+       not at the step's, because the step is 900 units and a face a step out of
+       place walks in jumps. The fade is the glass's own: solid behind you and
+       easing away over the last quarter of the reach. */
+    if(!treeWallOff && treeWallOf(mB)){
+      const widxN = Math.floor((wz + MSEG) / SEG);
+      if(bioBehind(widxN) !== mB){
+        let e = widx;
+        while(e < widxN && bioBehind(e + 1) === mB) e++;
+        const rp = rproj(0, e * SEG);
+        if(rp){
+          const tAway = clamp((pos - e * SEG) / MIRROR_BACK, 0, 1);
+          drawTreeWall(mB, e, rp, rp.y, e * SEG, Math.min(1, (1 - tAway) * 4),
+                       mw, mx, mx + mw, 'mirror', mw * MIRROR_NEAR);
+        }
+      }
+    }
     prev = b2;
   }
 
@@ -35743,6 +35874,15 @@ requestAnimationFrame(frameLoop);
      fraction of the pane. Both live, because the trade between them is a frame
      rate against a legible mirror and only a device settles it (RLG-130). */
   API.mirrorRows = function(v){ if(v !== undefined) MIRROR_ROWS = v; return MIRROR_ROWS; };
+  /* the wooded face (RLG-312): how many trees it drew per view since the last reset,
+     its off switch, and its three tunables */
+  API.treeWall = function(reset){ const t = { ahead: treeWallTrace.ahead, mirror: treeWallTrace.mirror };
+    if(reset) treeWallTrace = { ahead: 0, mirror: 0 }; return t; };
+  API.treeWallOff = function(v){ if(v !== undefined) treeWallOff = !!v; return treeWallOff; };
+  API.treeWallTune = function(o){ if(o){ if(o.min !== undefined) TREE_WALL_MIN = o.min;
+    if(o.gap !== undefined) TREE_WALL_GAP = o.gap; if(o.max !== undefined) TREE_WALL_MAX = o.max; }
+    return { min: TREE_WALL_MIN, gap: TREE_WALL_GAP, max: TREE_WALL_MAX }; };
+  API.treeWalled = function(k){ return !!treeWallOf(BIOMES[k]); };
   API.mirrorNear = function(v){ if(v !== undefined) MIRROR_NEAR = v; return MIRROR_NEAR; };
   API.mirrorMin  = function(v){ if(v !== undefined) MIRROR_MIN = v; return MIRROR_MIN; };
   /* where a transient message lands, in canvas pixels (RLG-134). The CANVAS

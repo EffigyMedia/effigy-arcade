@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-119"></a>
+## [0.14.119] - 2026-09-21
+- Added: **a wood has a face of trees.** Driving at a forest, a jungle or a swamp, its first segment
+  carries a rank of its own trees from the kerb out past the edge of the frame, so you drive at the
+  edge of a wood and not at a scatter of trees. The mirror draws the same rank at the place's last
+  segment, which is the face you drove out of. Which places get one comes from the table: a place
+  whose `trees` is at least `TREE_WALL_MIN` and that has no rock face or mass of its own.
+  [RLG-312](../fragments/RLG-312.md)
+
 <a id="v0-14-118"></a>
 ## [0.14.118] - 2026-09-21
 - Changed: **a mountain is a low-polygon mountainside you can drive at.** The wall beside the road
