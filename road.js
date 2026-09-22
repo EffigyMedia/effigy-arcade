@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.126';
+window.ROAD_BUILD = '0.14.127';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9755,7 +9755,9 @@ const SCENERY = {
      in ranks. Four rows so it closes in, and it starts almost at the tarmac -
      a swamp road has no verge to speak of.
      ------------------------------------------------------------------ */
-  SWAMP:  { density:0.88, rowDensity:0.58, rows:4, out:0.08, outFar:6.0,
+  /* out past the rail and into the water since RLG-319 - it was 0.08, which put
+     the nearest rank on the road side of the guard rail */
+  SWAMP:  { density:0.88, rowDensity:0.58, rows:4, out:0.40, outFar:6.0,
             w:0.72, h:1.70, spread:1.10, kinds:3,
             build:(g,W2,H2,i)=>{
               /* the trunk, wide at the base the way a cypress is. Thicker than
@@ -10791,10 +10793,15 @@ function skylinePlanFor(B, w, h, BANDS){
         bw = rint(40, 150); bh = Math.round(rint(8, 30) * band.tall);
         x += Math.round(rint(120, 420) * band.gap);
       } else if(form === 'tree' || form === 'wetTree'){
-        kind = 'tree';
+        /* ---- A SWAMP'S TREES ARE NOT A FOREST'S (owner, 2026-09-21, RLG-318)
+           "the skyline in the swamp needs to look more like swamp trees, not
+           like the triangles you have." The swamp shared the forest's conifer
+           and only spaced it wider. It has its own kind now, the cypress - the
+           same tree its scenery already draws beside the road. */
         const swamp = form === 'wetTree';
-        bw = rint(12, swamp ? 46 : 30);
-        bh = Math.round(rint(swamp ? 24 : 38, swamp ? 62 : 96) * band.tall);
+        kind = swamp ? 'cypress' : 'tree';
+        bw = rint(swamp ? 20 : 12, swamp ? 52 : 30);
+        bh = Math.round(rint(swamp ? 30 : 38, swamp ? 72 : 96) * band.tall);
         x -= Math.round(rint(2, 9) / band.gap);
         /* a treeline has holes in it. Without them it is a comb. A swamp has
            more of them, because a swamp is half water. */
@@ -11047,6 +11054,35 @@ function paintSkylineShape(g, h, b, face, flank, band){
     g.lineTo(b.x + b.bw*0.62, h);
     g.closePath(); g.fill();
     g.restore();
+  } else if(b.kind === 'cypress'){
+    /* ---- A CYPRESS, AT A DISTANCE (RLG-318) ---------------------------
+       What reads as a swamp tree at a few pixels tall: a bare trunk flared at
+       the foot, a flat and ragged crown in tiers - wider than it is deep, which
+       is the whole difference from a conifer - and moss hanging off the lowest
+       tier. The raggedness comes from the object's own position, so a tree is
+       the same shape every time the skyline is repainted. */
+    const cx = b.x + b.bw * 0.5, top = h - b.bh;
+    const tw = Math.max(1, b.bw * 0.12);
+    const jit = (n) => ((Math.round(b.x) * 7 + n * 13) % 10) / 10;
+    g.beginPath();
+    g.moveTo(cx - tw * 1.9, h);
+    g.lineTo(cx - tw * 0.5, h - b.bh * 0.34);
+    g.lineTo(cx - tw * 0.5, top + b.bh * 0.24);
+    g.lineTo(cx + tw * 0.5, top + b.bh * 0.24);
+    g.lineTo(cx + tw * 0.5, h - b.bh * 0.34);
+    g.lineTo(cx + tw * 1.9, h);
+    g.closePath(); g.fill();
+    for(let t = 0; t < 3; t++){
+      const rw = b.bw * (0.52 - t * 0.09) * (0.82 + 0.32 * jit(t));
+      g.beginPath();
+      g.ellipse(cx + (jit(t + 3) - 0.5) * b.bw * 0.22, top + b.bh * (0.07 + t * 0.08),
+                rw, Math.max(1, b.bh * 0.055), 0, 0, 6.2832);
+      g.fill();
+    }
+    g.fillStyle = flank;
+    for(let m = 0; m < 4; m++)
+      g.fillRect(cx - b.bw * 0.36 + m * b.bw * 0.24, top + b.bh * 0.25,
+                 Math.max(1, b.bw * 0.035), b.bh * (0.08 + jit(m + 6) * 0.14));
   } else if(b.kind === 'ridge'){
     /* ---- A SEGMENT OF A CONTINUOUS CREST (RLG-104) ------------------
        A quad from this sample's crest to the next one. Because the next
@@ -14749,9 +14785,21 @@ const BIOMES = {
   SWAMP:    { name:'SWAMP',    temp:0.80, vary:0.10, precip:0.64, bias:1.10,
               hill:0.10, bend:0.70,
               grassLo:'#22301f', grassHi:'#33422a',
-              /* the standing water is the hazard, and it is drawn on `sideRoll` -
-                 so the rail reads the same coin or it fences the wrong side */
-              hazard:'water',
+              /* ---- WATER ON BOTH SIDES, RAILED ON BOTH (owner, 2026-09-21, RLG-319)
+                 "For some reason, swamp only has the barriers on one side... It
+                 would also be nice if the swamp was green brackish water beyond
+                 the guard rails with the swamp trees growing out of that water."
+
+                 IT WAS `hazard:'water'`, which is one rolled side with a rail on
+                 it - and nothing ever painted the water: the swamp has no `sea`,
+                 so beyond the rail was swamp ground. `edge` rails both sides the
+                 way the city is railed, which overrules RLG-265's "a hazard place
+                 railed on both sides would be a corridor" for this place, by the
+                 owner's own words. `marsh` is the water's colour and `marshAt` how
+                 far past the road edge it begins, in scenery units - just beyond
+                 the rail, which stands at about 0.25. Green-brown, and it hazes
+                 with the swamp's own air through `seaTone`. */
+              edge:'rail', marsh:'#56683f', marshAt:0.32,
               sky:'#2c3a2e', city:0.06, trees:0.70, skyForm:'wetTree' },
   /* ---- THE JUNGLE, WHICH SHARES A CLIMATE AND NOTHING ELSE (RLG-113) --
      Owner, 2026-08-31: "let's add a jungle biome."
@@ -26977,6 +27025,32 @@ function peakSlice(idx, p1, fade){
     if(drawWatch) layerSaw('front', 'range');
   }
 }
+/* ---- ONE SLICE OF WATER, FROM A SHORELINE OUT TO THE EDGE OF THE FRAME -----
+   The sea's fill in drawRoad, given a side and a shoreline, for the swamp's
+   water on both sides (RLG-319). `at` is the shoreline in scenery units past the
+   road edge. The sea's block keeps its own copy and its notes - why the shore is
+   a line, why a slope under half a pixel is not one, why the top row overlaps -
+   and every one of them holds here. Returns whether it painted. */
+function shoreFill(p1, p2, y1, y2, side, at, style){
+  const shF = p2.x + side * roadsideAt(p2, at);
+  const shN = p1.x + side * roadsideAt(p1, at);
+  const dyS = y1 - y2;
+  const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((H - y1) / dyS), -4*W, 5*W)
+                      : shN;
+  if(!(side < 0 ? (shF > 0 || shN > 0) : (shF < W || shN < W))) return false;
+  const edge = side < 0 ? 0 : W;
+  ctx.fillStyle = style;
+  const top = y2 - 1;
+  ctx.beginPath();
+  ctx.moveTo(edge, top);
+  ctx.lineTo(shF, top);
+  ctx.lineTo(shN, y1);
+  ctx.lineTo(shB, H);
+  ctx.lineTo(edge, H);
+  ctx.closePath();
+  ctx.fill();
+  return true;
+}
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
@@ -27554,6 +27628,13 @@ function drawRoad(){
       }
 
       const sB = bioAt(idx);
+      /* the marsh on both sides (RLG-319), with the sea's own shoreline */
+      if(sB.marsh){
+        const mTone = seaTone({ sea: sB.marsh }, 1 - fade);
+        for(const ms of [-1, 1])
+          if(shoreFill(p1, p2, y1, y2, ms, sB.marshAt, mTone) && drawWatch) layerSaw('front', 'marsh');
+        ctx.fillStyle = groundCol;
+      }
       if(sB.sea){
         /* ---- AND THE WATER'S EDGE IS A LINE (RLG-059) ---------------
            This was a rectangle at the NEAR shore, filled for the whole height
@@ -30876,6 +30957,16 @@ function drawMirrorFull(mx, my, mw, mh){
           if(drawWatch) layerSaw('glass', 'wall');
         }
       }
+    }
+    /* the marsh behind you, both sides, as the sea is (RLG-319) */
+    if(mB.marsh){
+      ctx.fillStyle = seaTone({ sea: mB.marsh });
+      for(const ms of [-1, 1]){
+        const mmx = a.x + ms * roadsideAt(a, mB.marshAt, mw);
+        if(ms < 0){ if(mmx > mx) ctx.fillRect(mx, a.y, mmx - mx, my + mh - a.y); }
+        else { if(mmx < mx + mw) ctx.fillRect(mmx, a.y, mx + mw - mmx, my + mh - a.y); }
+      }
+      if(drawWatch) layerSaw('glass', 'marsh');
     }
     if(mB.sea && !mB.overWater){
       const msh = a.x + sideFor(mB) * roadsideAt(a, mB.beach, mw);

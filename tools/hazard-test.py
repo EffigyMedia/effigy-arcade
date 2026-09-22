@@ -72,7 +72,11 @@ window.addEventListener('error', function(e){ window.__probe.errors.push(String(
 # the code what it does and then agrees with the answer proves nothing.
 WANT = {
     'COASTAL':  'water',     # the sea
-    'SWAMP':    'water',     # the standing water
+    # RAILED BOTH SIDES since RLG-319 (owner, 2026-09-21): "swamp only has the barriers on one
+    # side ... green brackish water beyond the guard rails". It overrules RLG-265's one-side rule
+    # for this place, in the owner's words, so it has a row of its own rather than the corridor
+    # check below being loosened for every hazard place.
+    'SWAMP':    'rail-both', # brackish water, both sides
     'MOUNTAIN': 'roll',      # the cliff, either side, per stretch
     'CITY':     'barrier',   # concrete, both sides
     'FARMLAND': None, 'DESERT': None, 'TUNDRA': None, 'FOREST': None,
@@ -177,6 +181,9 @@ def main():
             if want == 'barrier':
                 check(left == 'barrier' and right == 'barrier',
                       '%s has a drawn limit on both sides' % k)
+            elif want == 'rail-both':
+                check(left == 'rail' and right == 'rail',
+                      '%s is railed on both sides' % k)
             elif want is None:
                 check(left is None and right is None,
                       '%s is solid on both sides - nothing drawn' % k)

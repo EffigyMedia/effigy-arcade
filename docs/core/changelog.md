@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-127"></a>
+## [0.14.127] - 2026-09-22
+- Changed: **the swamp is brackish water on both sides, railed on both.** It was railed on one
+  side with swamp ground past the rail, and no water was ever painted. Olive water now lies past a
+  guard rail on each side, the swamp's trees stand in it, and the mirror shows it too.
+  [RLG-319](../fragments/RLG-319.md)
+- Changed: **the swamp's skyline is cypress, not triangles.** It shared the forest's conifers; it
+  has its own tree now - a flared trunk, a flat ragged crown and hanging moss. The jungle's canopy
+  is untouched. [RLG-318](../fragments/RLG-318.md)
+- Added: a table of which places are railed on which sides, for the owner to mark.
+  [RLG-320](../fragments/RLG-320.md)
+
 <a id="v0-14-126"></a>
 ## [0.14.126] - 2026-09-22
 - Added: **the rivals wear the whole livery.** A striped rival used to wear only the plain pair.
