@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-131"></a>
+## [0.14.131] - 2026-09-23
+- Changed: **the water beside the road is tiled too.** The sea and the swamp's marsh ran their
+  shoreline down to the bottom of the frame from every slice; each now closes on the band it owns.
+  Worth 11.2 fps in a SWAMP and up to 14.3 on a COASTAL road that runs along the water, with the
+  three places that have no water reading zero as the control. The picture is pixel-identical,
+  and the check was watched failing with holes opened under every band.
+  [RLG-299](../fragments/RLG-299.md)
+
 <a id="v0-14-130"></a>
 ## [0.14.130] - 2026-09-23
 - Changed: **the ground is tiled instead of painted to the bottom of the screen.** Every slice used

@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.130';
+window.ROAD_BUILD = '0.14.131';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16204,6 +16204,13 @@ let massTrace = { quads: 0, slices: 0, top: {} };
    leave an antialiased hairline between the two (RLG-299, and RLG-297 before
    it, where the same hairline read as a see-through mountain face) */
 const GROUND_LAP = 1;
+/* the same, for the water beside the road. One number each rather than one
+   shared, because the two are tuned against different edges and a shared
+   constant would tie them together for no reason (RLG-299) */
+const WATER_LAP = 1;
+/* debug: the water painted to the bottom of the frame, as it was before
+   RLG-299 tiled it, so a check can put the two frames on ONE road */
+let waterFull = false;
 /* debug: paint the ground to the bottom of the screen, as it was before
    RLG-299 tiled it - so a check can put the two frames side by side on ONE
    road and call whatever differs. The same shape as `dropOff` and `railsOff`,
@@ -26984,22 +26991,38 @@ function peakSlice(idx, p1, fade){
    road edge. The sea's block keeps its own copy and its notes - why the shore is
    a line, why a slope under half a pixel is not one, why the top row overlaps -
    and every one of them holds here. Returns whether it painted. */
-function shoreFill(p1, p2, y1, y2, side, at, style){
+function shoreFill(p1, p2, y1, y2, side, at, style, bandTop, bandBot){
   const shF = p2.x + side * roadsideAt(p2, at);
   const shN = p1.x + side * roadsideAt(p1, at);
   const dyS = y1 - y2;
-  const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((H - y1) / dyS), -4*W, 5*W)
+  /* ---- THE SHORELINE, CARRIED TO THE BAND'S BOTTOM (RLG-299) ---------
+     This used to run to the BOTTOM OF THE SCREEN from every slice, far to
+     near, each nearer slice painting over the last - the same overdraw the
+     ground had, on one side of the frame.
+
+     Only the part BELOW the slice's own near edge was ever overdraw: from
+     `shF` to `shN` the shoreline is exact, because those are the two edges
+     projected. So the polygon closes at the band instead, and the x it closes
+     at is the same line walked to a nearer y.
+
+     AND THE NEAREST SLICE IS UNCHANGED BY IT. Its near edge projects BELOW the
+     frame, so its band bottom clamps to H and this answers exactly what the
+     old extrapolation did - the bottom of the screen is still the bottom of
+     the water.
+     ---------------------------------------------------------------- */
+  const bot = bandBot === undefined ? H : bandBot;
+  const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((bot - y1) / dyS), -4*W, 5*W)
                       : shN;
   if(!(side < 0 ? (shF > 0 || shN > 0) : (shF < W || shN < W))) return false;
   const edge = side < 0 ? 0 : W;
   ctx.fillStyle = style;
-  const top = y2 - 1;
+  const top = bandTop === undefined ? y2 - 1 : bandTop;
   ctx.beginPath();
   ctx.moveTo(edge, top);
   ctx.lineTo(shF, top);
   ctx.lineTo(shN, y1);
-  ctx.lineTo(shB, H);
-  ctx.lineTo(edge, H);
+  ctx.lineTo(shB, bot);
+  ctx.lineTo(edge, bot);
   ctx.closePath();
   ctx.fill();
   return true;
@@ -27043,6 +27066,9 @@ function drawRoad(){
      is higher up the screen, and the run stays unbroken however the road folds.
      ------------------------------------------------------------------- */
   let groundBot = null;
+  /* the same for the water, which is painted over the ground on one side and
+     has to close the same gaps a crest opens (RLG-299) */
+  let waterBot = null;
   const lamp = lampsOn();
   const base = Math.floor(pos/SEG);
   let maxy = H;
@@ -27648,8 +27674,12 @@ function drawRoad(){
       /* the marsh on both sides (RLG-319), with the sea's own shoreline */
       if(sB.marsh && !lOff('marsh')){
         const mTone = seaTone({ sea: sB.marsh }, 1 - fade);
+        const mTop = waterFull || waterBot === null ? y2 - 1 : Math.min(y2 - 1, waterBot);
+        const mBot = waterFull ? H : Math.min(H, y1 + WATER_LAP);
         for(const ms of [-1, 1])
-          if(shoreFill(p1, p2, y1, y2, ms, sB.marshAt, mTone) && drawWatch) layerSaw('front', 'marsh');
+          if(shoreFill(p1, p2, y1, y2, ms, sB.marshAt, mTone, mTop, mBot) && drawWatch)
+            layerSaw('front', 'marsh');
+        if(waterBot === null || mBot > waterBot) waterBot = mBot;
         ctx.fillStyle = groundCol;
       }
       if(sB.sea && !lOff('sea')){
@@ -27687,7 +27717,11 @@ function drawRoad(){
            nearest slice's tail that survives, and that slice is always tall.
            -------------------------------------------------------- */
         const dyS = y1 - y2;
-        const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((H - y1) / dyS), -4*W, 5*W)
+        /* the band this slice owns, and the shoreline walked to its bottom
+           rather than to the bottom of the screen (RLG-299) */
+        const wTop = waterFull || waterBot === null ? y2 - 1 : Math.min(y2 - 1, waterBot);
+        const wBot = waterFull ? H : Math.min(H, y1 + WATER_LAP);
+        const shB = dyS > 2 ? clamp(shN + (shN - shF) * ((wBot - y1) / dyS), -4*W, 5*W)
                             : shN;
         if(sideFor(sB) < 0 ? (shF > 0 || shN > 0) : (shF < W || shN < W)){
           const edge = sideFor(sB) < 0 ? 0 : W;
@@ -27703,17 +27737,17 @@ function drawRoad(){
              artefact. Starting a pixel higher puts that row under the fill in
              front of it.
              -------------------------------------------------------- */
-          const top = y2 - 1;
           ctx.beginPath();
-          ctx.moveTo(edge, top);
-          ctx.lineTo(shF, top);
+          ctx.moveTo(edge, wTop);
+          ctx.lineTo(shF, wTop);
           ctx.lineTo(shN, y1);
-          ctx.lineTo(shB, H);
-          ctx.lineTo(edge, H);
+          ctx.lineTo(shB, wBot);
+          ctx.lineTo(edge, wBot);
           ctx.closePath();
           ctx.fill();
           if(drawWatch) layerSaw('front', 'sea');
         }
+        if(waterBot === null || wBot > waterBot) waterBot = wBot;
         ctx.fillStyle = groundCol;   /* the next slice expects the ground colour */
       }
       groundMax = y2;
@@ -35760,6 +35794,8 @@ requestAnimationFrame(frameLoop);
   API.wallOff = function(on){ wallOff = !!on; return wallOff; };
   /* debug: the ground painted to the bottom of the frame, as before RLG-299 */
   API.groundFull = function(on){ groundFull = !!on; return groundFull; };
+  /* debug: the water painted to the bottom of the frame, as before RLG-299 */
+  API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* ---- ONE DOOR ONTO EVERY LAYER (RLG-299) ---------------------------
      `API.layerOff({ground:1, sea:1})` takes those layers away and puts every
      other one back, so an alternating harness sets the WHOLE state in one call

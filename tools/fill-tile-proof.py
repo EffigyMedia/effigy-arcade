@@ -36,6 +36,7 @@ WHAT THIS PROOF DOES NOT CHECK. It does not measure the saving; `layer-cost.py`
 does that. It does not judge the picture - only that the picture did not change.
 It runs at one viewport with the GPU off.
 """
+import argparse
 import functools
 import http.server
 import socketserver
@@ -107,14 +108,23 @@ DIFF = """([k1, k2, tol]) => {
 # stays because it is what CLEARS the frame below the horizon, and without it
 # the canvas keeps the last frame's pixels and the comparison reads a ghost.
 # Whatever differs between the two arms is now a ground pixel by construction.
-STILL = {k: 1 for k in (
-    'sky', 'haze', 'glass', 'sea', 'marsh', 'drop', 'rim', 'wall', 'face',
-    'range', 'scenery', 'lamp', 'road', 'kerb', 'lanes', 'edges', 'rail',
-    'truss', 'joint', 'sprites', 'beams', 'wash', 'player', 'rain', 'lens',
-    'speed', 'fx', 'vignette')}
+ALL_OFF = ('sky', 'haze', 'glass', 'sea', 'marsh', 'drop', 'rim', 'wall',
+           'face', 'range', 'scenery', 'lamp', 'road', 'kerb', 'lanes',
+           'edges', 'rail', 'truss', 'joint', 'sprites', 'beams', 'wash',
+           'player', 'rain', 'lens', 'speed', 'fx', 'vignette')
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    # ---- ONE PROOF, TWO FILLS ------------------------------------------
+    # The ground, the water and the cliff floor are the same fault written
+    # three times, so they get one check rather than three copies of it. The
+    # switch under test is named here; everything else is identical.
+    ap.add_argument('--fill', default='ground', choices=('ground', 'water'),
+                    help='which fill to put back: groundFull or waterFull')
+    args = ap.parse_args()
+    switch = {'ground': 'groundFull', 'water': 'waterFull'}[args.fill]
+    keep = {'ground': 'ground', 'water': 'sea'}[args.fill]
     console_utf8()
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
     srv = socketserver.TCPServer(('127.0.0.1', 0), h)
@@ -139,6 +149,7 @@ def main():
         pg.add_init_script(init)
 
         print()
+        print('  putting back: %s' % switch)
         print('  %-10s %6s %17s %17s %7s   %s'
               % ('place', 'road', 'control  any/seen', 'changed  any/seen',
                  'excess', 'of the frame'))
@@ -150,7 +161,12 @@ def main():
             pg.wait_for_selector('#veil:not(.hidden) [data-act="drive"]', timeout=8000)
             pg.click('[data-act="drive"]')
             pg.wait_for_timeout(2200)
-            pg.evaluate("(o) => window.__probe.road.layerOff(o)", STILL)
+            # the water sits ON the ground, so the ground stays drawn when the
+            # water is under test - lifting it would leave the water floating
+            # over the far field rather than over the verge it meets
+            off = {k: 1 for k in ALL_OFF if k != keep and not (
+                args.fill == 'water' and k in ('marsh',))}
+            pg.evaluate("(o) => window.__probe.road.layerOff(o)", off)
 
             for place in PLACES:
                 pg.evaluate("(k) => window.__probe.road.setBiomePair(k,k)", place)
@@ -175,7 +191,7 @@ def main():
                 pg.wait_for_timeout(700)
 
                 def shot(key, full):
-                    pg.evaluate("(v) => window.__probe.road.groundFull(v)", full)
+                    pg.evaluate("([s, v]) => window.__probe.road[s](v)", [switch, full])
                     pg.wait_for_timeout(130)
                     return pg.evaluate(SNAP, key)
 
@@ -186,7 +202,7 @@ def main():
                 shot('t2', False)
                 floor = pg.evaluate(DIFF, ['t1', 't2', TOL])
                 shot('full', True)
-                pg.evaluate("() => window.__probe.road.groundFull(false)")
+                pg.evaluate("(s) => window.__probe.road[s](false)", switch)
                 changed = pg.evaluate(DIFF, ['t1', 'full', TOL])
                 floors.append(floor[1])
                 # ---- READ AGAINST ITS OWN CONTROL, ROW BY ROW -------------
