@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.129';
+window.ROAD_BUILD = '0.14.130';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16200,6 +16200,16 @@ function drawMassFront(){
 }
 /* what the mass painted this frame, for a check (RLG-306) */
 let massTrace = { quads: 0, slices: 0, top: {} };
+/* how far each ground band runs into the one below it, so the canvas cannot
+   leave an antialiased hairline between the two (RLG-299, and RLG-297 before
+   it, where the same hairline read as a see-through mountain face) */
+const GROUND_LAP = 1;
+/* debug: paint the ground to the bottom of the screen, as it was before
+   RLG-299 tiled it - so a check can put the two frames side by side on ONE
+   road and call whatever differs. The same shape as `dropOff` and `railsOff`,
+   and here for the same reason: this road is generated fresh at every load, so
+   two builds in two pages are two different roads. */
+let groundFull = false;
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
@@ -27010,6 +27020,29 @@ function drawRoad(){
   if(drawWatch) skipBy = {};
   if(drawWatch) walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
   let groundMax = -1e9;
+  /* ---- HOW FAR DOWN THE GROUND HAS BEEN PAINTED (RLG-299) --------------
+     The ground used to be filled from every slice to the BOTTOM OF THE SCREEN,
+     far to near, each nearer slice painting over the last. One band of verge
+     cost about 130 full-height fills, and it measured 2.9 to 11.1 fps across
+     four places - the only layer that was real in all of them.
+
+     It is TILED now: each slice paints the band between its own two edges and
+     no further. The bands abut exactly, because slice n's near edge IS slice
+     n-1's far edge - the same z, projected once - so nothing has to be computed
+     to make them meet.
+
+     THIS IS WHAT `groundBot` IS FOR. The chain of abutting bands BREAKS at a
+     crest: an inverted slice is skipped, then every slice hidden behind the
+     crest is skipped by `groundMax`, and the next slice to paint can start
+     BELOW where the last one ended. Filling to the bottom hid that gap, because
+     the band above it ran the whole way down. A tiled band does not, and the
+     hole would show the far field's colour through the ground - which is the
+     exact fault the record above this function spent three rounds on.
+
+     So a band starts at its own top OR at the bottom of the last one, whichever
+     is higher up the screen, and the run stays unbroken however the road folds.
+     ------------------------------------------------------------------- */
+  let groundBot = null;
   const lamp = lampsOn();
   const base = Math.floor(pos/SEG);
   let maxy = H;
@@ -27204,11 +27237,49 @@ function drawRoad(){
         const gB = bioAt(idx);
         if(drawWatch) layerSaw('front', 'ground');
         const gDrop = (gB.hazard === 'roll' && !dropOff) ? hazardSide(gB) : 0;
-        if(!gDrop) ctx.fillRect(0, y2, W, H - y2);
-        else {
-          /* the ground runs out to the rim and no further. The rim's own line
-             carries the slope down to the bottom of the screen for the nearest
-             slice, which is the shoreline's trick and is here for its reason. */
+        /* ---- THE BAND THIS SLICE OWNS, AND NOTHING BELOW IT (RLG-299) ---
+           `gTop` closes any gap a crest opened; see `groundBot` above. `gBot`
+           is this slice's own near edge, clamped to the frame - the nearest
+           drawn slices project far below it, which is what carries the ground
+           to the bottom of the screen now that nothing else does.
+
+           GROUND_LAP IS NOT A FUDGE. Two bands that ABUT are antialiased
+           against their shared edge independently, and neither covers the
+           shared row completely, so a hairline of whatever is underneath shows
+           between them. At 130 bands that is a curtain of it. RLG-297 hit the
+           same thing tiling the canyon wall and answered it the same way: let
+           each band run a little into the next. */
+        /* `groundBot` is null until a band has been painted, and the FIRST band
+           must start at its own top. Written as `-1e9` it made `Math.min` answer
+           minus a billion, so slice one filled the entire frame with its own
+           colour and every band after it painted a strip back over the top. The
+           check caught it at 38 to 58 per cent of the frame in CITY and COASTAL,
+           against a control of zero. */
+        const gTop = groundFull || groundBot === null ? y2 : Math.min(y2, groundBot);
+        const gBot = groundFull ? H : Math.min(H, y1 + GROUND_LAP);
+        if(!gDrop){
+          ctx.fillRect(0, gTop, W, gBot - gTop);
+          if(groundBot === null || gBot > groundBot) groundBot = gBot;
+        } else {
+          /* ---- THE CLIFF SIDE IS NOT TILED, AND THAT IS DELIBERATE ------
+             The ground beside a drop is not a rectangle, it is a quad cut off
+             at the rim, and the rim's line runs from this slice's far edge to
+             the BOTTOM OF THE SCREEN rather than to the slice's own near edge.
+             Stopping that quad at the band moves the rim - measured at up to
+             1.3 per cent of the frame on a MOUNTAIN, a sliver along the cliff.
+             Walking the old slope and stopping it at the band was tried and was
+             worse, at 7.7 per cent: where a crest opens a gap the band starts
+             ABOVE the slice's own top, and the rim line gets walked backwards
+             past where it begins.
+
+             The new line is the more correct one of the two. It is also not
+             this change's business - a change made for frame rate should paint
+             the same picture - so the cliff keeps the fill it had, and making
+             the rim exact is its own piece of work for the owner to judge.
+             THE SAVING IS BARELY AFFECTED: a MOUNTAIN is the cheapest ground of
+             the four places measured, at 2.9 fps against CITY's 11.1, and only
+             the hazard side of it is drawn this way.
+             ---------------------------------------------------------- */
           const rx1 = rimX(p1, idx, gDrop);
           const rx2 = rimX(p2, idx + 1, gDrop);
           ctx.beginPath();
@@ -27218,6 +27289,7 @@ function drawRoad(){
           ctx.lineTo(gDrop < 0 ? W : 0, H);
           ctx.closePath();
           ctx.fill();
+          groundBot = H;   /* it painted to the bottom, so nothing below is a gap */
         }
       }
       /* ---- AND THE SEA, IF THIS PLACE HAS ONE (RLG-059) ----------------
@@ -35686,6 +35758,8 @@ requestAnimationFrame(frameLoop);
      row measures the SCENERY - the farmland control swung nineteen levels
      between its own two sides with no drop on either. */
   API.wallOff = function(on){ wallOff = !!on; return wallOff; };
+  /* debug: the ground painted to the bottom of the frame, as before RLG-299 */
+  API.groundFull = function(on){ groundFull = !!on; return groundFull; };
   /* ---- ONE DOOR ONTO EVERY LAYER (RLG-299) ---------------------------
      `API.layerOff({ground:1, sea:1})` takes those layers away and puts every
      other one back, so an alternating harness sets the WHOLE state in one call

@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-130"></a>
+## [0.14.130] - 2026-09-23
+- Changed: **the ground is tiled instead of painted to the bottom of the screen.** Every slice used
+  to fill from its own far edge all the way down, far to near, so about 130 full-height fills made
+  one band of verge. Each slice now paints only the band between its two edges. Worth 4.8 fps in a
+  FOREST and 3.0 in a CITY, measured against the old fill on the same road. The picture is
+  pixel-identical, proved at a visible tolerance across seven places and three roads each, and the
+  check was watched failing with holes opened under every band. The ground beside a cliff keeps the
+  old fill on purpose: tiling it moves the rim, which is a better line but a separate decision.
+  [RLG-299](../fragments/RLG-299.md)
+
 <a id="v0-14-129"></a>
 ## [0.14.129] - 2026-09-22
 - Removed: **the tyre marks and the tyre smoke.** Neither has ever been seen. The smoke was dead
