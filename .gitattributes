@@ -1,22 +1,5 @@
 # Normalize line endings - store LF in the repository, check out native.
 * text=auto
-# BEGIN launcher-line-endings - generated, do not edit here
-# These lines are the environment's, and they are here because the launchers are. A launcher is
-# generated into this project by `Commands/materialize-projects.py`, and git decides on checkout what
-# line endings it gets. Without these rules `text=auto` hands a `.sh` CRLF on Windows, where it fails
-# with "bad interpreter: /bin/sh^M" - a message that names neither the file nor the problem - and
-# hands a `.bat` LF, which cmd.exe misreads in ways that look like a corrupt script.
-#
-# Measured 2026-08-28: sixteen of eighteen projects had no such rule, and the launchers had already
-# split into one text in two line endings because of it.
-#
-# Everything outside this region is the project's own. Add what this project needs beside it.
-*.sh    text eol=lf
-*.bash  text eol=lf
-*.zsh   text eol=lf
-*.bat   text eol=crlf
-*.cmd   text eol=crlf
-# END launcher-line-endings
 
 # The web sources are served as they are stored. Keep them LF so a diff shows the change
 # and not the line endings.
