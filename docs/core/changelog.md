@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-128"></a>
+## [0.14.128] - 2026-09-22
+- Added: **an instrument that says what each drawn layer costs a frame.** `tools/layer-cost.py`
+  takes one layer away and puts it back inside one page, alternating, and reports what the frame
+  recovered. `API.layerOff` is the switch it uses: one call sets the whole skip state across 30
+  layers, and it drives the four switches that already existed so a caller has one list to read
+  and not five. It asserts nothing - it is an instrument, not a gate.
+  [RLG-299](../fragments/RLG-299.md)
+- Added: **the proof that no tyre mark has ever been on screen.** `tools/rubber-proof.py` counts
+  what the rubber pass does with every mark and where each one lands. The marks are laid 340 units
+  behind the car, and on a frame 862 pixels tall they project to y=1085 and below.
+  [RLG-327](../fragments/RLG-327.md)
+
 <a id="v0-14-127"></a>
 ## [0.14.127] - 2026-09-22
 - Changed: **the swamp is brackish water on both sides, railed on both.** It was railed on one

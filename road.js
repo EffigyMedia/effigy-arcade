@@ -10113,6 +10113,7 @@ let farSea = { sea:false, drew:false };
    MOUNTAIN stay unbuilt without a branch anywhere else.
    ------------------------------------------------------------------------ */
 function drawScenery(idx, p1, y1, z1, fade){
+  if(lOff('scenery')) return;
   const B = bioAt(idx);
   const spec = SCENERY[B.name];
   if(!spec) return;
@@ -16209,6 +16210,22 @@ let massTrace = { quads: 0, slices: 0, top: {} };
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
+/* ---- THE PER-LAYER COST INSTRUMENT (RLG-299) --------------------------
+   One switch per drawn layer, so a check can take ONE layer away and read what
+   the frame costs without it. The same shape as `wallOff`, `railsOff` and
+   `dropOff`, generalised, and it is here for the same reason those three are: a
+   cost is only real as a DIFFERENCE measured inside one page, against the same
+   road, the same hour and the same machine load.
+
+   WHY NOT A TIMER ROUND EACH PAINT. A canvas call records into a display list
+   and the raster happens later, so a timer round `ctx.fill()` measures the
+   recording and reports nearly nothing for the very thing this is looking for -
+   overdraw. Taking the layer away moves the raster, which is what shows.
+
+   It is off unless a harness turns it on, and nothing in the product reads it.
+   -------------------------------------------------------------------- */
+let layerOff = {};
+function lOff(k){ return layerOff[k] === true; }
 /* what the skyline band was last PAINTED at, per place - see `paint` in drawSky */
 const skyBandDrawn = {};
 /* what rain does to a surface, as a colour to mix toward rather than as a black
@@ -17647,6 +17664,8 @@ let ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
    car simply being somewhere else.
    -------------------------------------------------------------------------- */
 let skids = [], tyreSmoke = [], lastPX;
+/* what the last frame's rubber pass actually did with them (RLG-327) */
+let rubberSeen = { skids: 0, near: 0, far: 0, noproj: 0, drawn: 0, onScreen: 0, top: null, bot: null, H: 0 };
 /* 420 marks meant 420 projections and 1,260 fill calls a frame. 180 still
    leaves a long trail behind a slide and costs a third as much. */
 const SKID_MAX = 180, SMOKE_MAX = 90;
@@ -18268,14 +18287,22 @@ function drawGantry(cp){
 
 
 function drawRubber(){
+  if(lOff('rubber')) return;
+  rubberSeen = { skids: skids.length, near: 0, far: 0, noproj: 0, drawn: 0,
+                 onScreen: 0, top: null, bot: null, H: H };
   for(const s2 of skids){
     const d = s2.z - pos;
     /* the near cull was 30, which threw marks away while they were still on
        screen sliding past the car — the one moment you can actually see your
        own rubber in a forward view */
-    if(d < 4 || d > 5200) continue;
+    if(d < 4){ rubberSeen.near++; continue; }
+    if(d > 5200){ rubberSeen.far++; continue; }
     const p1 = proj(s2.x*ROAD, s2.z);
-    if(!p1.ok) continue;
+    if(!p1.ok){ rubberSeen.noproj++; continue; }
+    rubberSeen.drawn++;
+    if(rubberSeen.top === null || p1.y < rubberSeen.top) rubberSeen.top = +p1.y.toFixed(1);
+    if(rubberSeen.bot === null || p1.y > rubberSeen.bot) rubberSeen.bot = +p1.y.toFixed(1);
+    if(p1.y >= 0 && p1.y <= H) rubberSeen.onScreen++;
     /* wider and darker: at 5% of a lane and 27% opacity they were invisible
        against tarmac that is already almost black */
     const w = Math.max(1.4, p1.scale * ROAD * W * 0.10);
@@ -26934,6 +26961,7 @@ let rampOff = false;
    screen's height. The windscreen passes 1, so its lamps are unchanged. */
 function lampPoleH(sc, k){ return Math.max(4 * k, sc * 1.05); }
 function paintStreetLamp(lx, y1, sc, side, alpha, lamp, glow, vw, vh, k){
+  if(lOff('lamp')) return;
   const poleH = lampPoleH(sc, k);
   const poleW = Math.max(k, sc * 0.045);
   const armL  = Math.max(2 * k, sc * 0.30) * -side;
@@ -27257,7 +27285,7 @@ function drawRoad(){
          DISTANCE in this projection rather than wall - so the honest move is to
          stop painting ground there at all and let what lies beyond show.
          ---------------------------------------------------------- */
-      if(!bioAt(idx).overWater){
+      if(!bioAt(idx).overWater && !lOff('ground')){
         const gB = bioAt(idx);
         if(drawWatch) layerSaw('front', 'ground');
         const gDrop = (gB.hazard === 'roll' && !dropOff) ? hazardSide(gB) : 0;
@@ -27371,7 +27399,7 @@ function drawRoad(){
         const kDFar = CAM_H * H / 2 * DROP_DEPTH * bGrowFar;
         const fy1 = p1.y + p1.scale * kD;
         const fy2 = n === DRAW ? horizon : p2.y + p2.scale * kDFar;
-        if(fy2 < H){
+        if(fy2 < H && !lOff('drop')){
           /* the place's own ground in its own bands, hazed for the distance it
              really is: much further than the slice above it */
           const far = clamp(1 - fade * 0.55, 0, 1);
@@ -27409,10 +27437,12 @@ function drawRoad(){
         /* THE LIP ARRIVES WITH THE FALL IT IS THE EDGE OF (RLG-303). A lit band
            on ground that does not drop is a bright line across the boundary,
            which is the hard line this ruling exists to remove. */
+        if(!lOff('rim')){
         ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52 * bGrow, RIM_LIT);
         quad(dx1, y1, dx1 + dropSide * lipW, y1,
              dx2 + dropSide * lipW, y2, dx2, y2);
         if(drawWatch) layerSaw('front', 'rim');
+        }
       }
 
       /* ---- AND THE WALL IS THE SAME PLANE TURNED OVER (RLG-297) ----------
@@ -27629,13 +27659,13 @@ function drawRoad(){
 
       const sB = bioAt(idx);
       /* the marsh on both sides (RLG-319), with the sea's own shoreline */
-      if(sB.marsh){
+      if(sB.marsh && !lOff('marsh')){
         const mTone = seaTone({ sea: sB.marsh }, 1 - fade);
         for(const ms of [-1, 1])
           if(shoreFill(p1, p2, y1, y2, ms, sB.marshAt, mTone) && drawWatch) layerSaw('front', 'marsh');
         ctx.fillStyle = groundCol;
       }
-      if(sB.sea){
+      if(sB.sea && !lOff('sea')){
         /* ---- AND THE WATER'S EDGE IS A LINE (RLG-059) ---------------
            This was a rectangle at the NEAR shore, filled for the whole height
            of the slice - so the coast came out as a hard staircase, one step
@@ -27900,7 +27930,7 @@ function drawRoad(){
        never names the game.
        ------------------------------------------------------------- */
     const deckB = bioAt(idx);
-    if(deckB.truss || CFG.circuitOnly){
+    if((deckB.truss || CFG.circuitOnly) && !lOff('kerb')){
       ctx.fillStyle = mixRGB(mixRGB(deckB.truss ? (dark ? '#8e8a80' : '#6f6b62')
                                                 : (dark ? '#c9c3b4' : '#8c3346'),
                                     snowRumble, snowLight),
@@ -27922,9 +27952,11 @@ function drawRoad(){
        -------------------------------------------------------------------- */
     /* a span carries its running surface on a deck, and a deck is not asphalt */
     const onDeck = !!bioAt(idx).overWater;
+    if(!lOff('road')){
     ctx.fillStyle = tarmacTone(dark, fade, onDeck);
     quad(p1.x-p1.w, y1, p1.x+p1.w, y1, p2.x+p2.w, y2, p2.x-p2.w, y2);
     if(drawWatch) layerSaw('front', 'road');
+    }
 
     /* ---- AND AN EXPANSION JOINT ACROSS IT (RLG-112) ------------------
        The third of the three things RLG-112 says make a span read as a bridge.
@@ -27938,7 +27970,7 @@ function drawRoad(){
        width of the carriageway because a joint is structural: it crosses
        everything the deck carries, kerb to kerb.
        -------------------------------------------------------------- */
-    if(onDeck && postIn(z1, z2, TRUSS.joint) && p1.w > 2){
+    if(onDeck && postIn(z1, z2, TRUSS.joint) && p1.w > 2 && !lOff('joint')){
       const jh = Math.max(0.8, (y1 - y2) * 0.34);
       ctx.fillStyle = 'rgba(22,22,28,0.85)';
       quad(p1.x-p1.w, y1, p1.x+p1.w, y1, p1.x+p1.w, y1-jh, p1.x-p1.w, y1-jh);
@@ -27955,7 +27987,7 @@ function drawRoad(){
        rather than merely dark */
     const paint = 1 - settle * 0.85;
     // lane markers (dashed on the dark stripes only)
-    if(dark){
+    if(dark && !lOff('lanes')){
       ctx.fillStyle = 'rgba(255,180,90,'+((0.30+0.5*fade)*paint)+')';
       for(let l=1;l<LANES;l++){
         const o = (l/LANES)*2 - 1;
@@ -27966,15 +27998,17 @@ function drawRoad(){
       if(drawWatch) layerSaw('front', 'lanes');
     }
     // solid edge lines
+    if(!lOff('edges')){
     ctx.fillStyle = 'rgba(240,235,220,'+((0.22+0.35*fade)*paint)+')';
     const e1=p1.w*0.022, e2=p2.w*0.022;
     quad(p1.x-p1.w*0.965-e1,y1,p1.x-p1.w*0.965+e1,y1,p2.x-p2.w*0.965+e2,y2,p2.x-p2.w*0.965-e2,y2);
     quad(p1.x+p1.w*0.965-e1,y1,p1.x+p1.w*0.965+e1,y1,p2.x+p2.w*0.965+e2,y2,p2.x+p2.w*0.965-e2,y2);
     if(drawWatch) layerSaw('front', 'edges');
+    }
 
     /* the deck's ironwork, over its own slice's markings and under everything
        the sprite pass draws (RLG-112) */
-    if(deckB.truss){ drawTruss(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, H); if(drawWatch) layerSaw('front', 'truss'); }
+    if(deckB.truss && !lOff('truss')){ drawTruss(p1, p2, y1, y2, idx*SEG, (idx+1)*SEG, H); if(drawWatch) layerSaw('front', 'truss'); }
     /* ---- AND THE LIMIT OF TRAVEL, WHERE THE PLACE PUTS ONE (RLG-265) ----
        After the truss, so a deck's own railing is never doubled by one of
        these - a bridge stops the car at its parapet and declares no hazard
@@ -28534,7 +28568,7 @@ function flushSprites(){
 /* `onRoad` selects half a bucket: true for what stands on the carriageway,
    false for everything else, null for all of it */
 function paintBucket(list, onRoad){
-  if(!list) return;
+  if(!list || lOff('sprites')) return;
   /* ---- FAR TO NEAR INSIDE THE BUCKET TOO (owner report, 2026-09-07) ------
      Owner: "cars are rendering through scenery and the checkpoint signs."
 
@@ -29772,7 +29806,7 @@ function draw(){
     const s = shake*shake*11;
     ctx.translate(rnd(-s,s), rnd(-s,s));
   }
-  drawSky();
+  if(!lOff('sky')) drawSky();
   /* ---- THE GROUND UNDER EVERYTHING ------------------------------------
      This was '#241a30', a dark purple-blue — the same family as the sky. It
      is the base the world is painted on, so anywhere the road or the verge
@@ -29815,9 +29849,11 @@ function draw(){
   /* over water the far field is a plane far below rather than the ground at the
      road's own level, so it is a gradient of DISTANCE down the frame (RLG-112) */
   const gB = bioAt(Math.floor(pos/SEG) + DRAW);
+  if(!lOff('farground')){
   ctx.fillStyle = gB.overWater ? waterFill(gB, horizon, H, H, horizon)
                                : groundBase(0.30);
   ctx.fillRect(0, horizon, W, H-horizon);
+  }
   /* the boats go straight onto the water and under everything the road pass
      draws, so the deck covers any that would otherwise show through it */
   if(gB.overWater)
@@ -29967,7 +30003,7 @@ function draw(){
      removes it: the haze now sits on the sky and the distant ground, and the
      road and verge are drawn over it, exactly as they would be in life.
      ------------------------------------------------------------------- */
-  drawHaze();
+  if(!lOff('haze')) drawHaze();
   /* ---- AND THE ROAD'S OWN BAND GOES AFTER THE HAZE, NOT BEFORE IT ------
      The sea's band is painted before `drawHaze` and takes the wash as paint.
      The ROAD cannot be, and the reason is the join: the drawn road is painted
@@ -30177,13 +30213,13 @@ function draw(){
      they go after the road and its sprites and before the player's own car -
      a car does not light its own paintwork */
   drawBeams();
-  drawPursuitWash();
-  drawPlayer();
-  drawRain();
+  if(!lOff('wash')) drawPursuitWash();
+  if(!lOff('player')) drawPlayer();
+  if(!lOff('rain')) drawRain();
   /* the drops on the lens go over the weather and under the HUD */
-  drawLens();
-  drawSpeedLines();
-  drawFx();
+  if(!lOff('lens')) drawLens();
+  if(!lOff('speed')) drawSpeedLines();
+  if(!lOff('fx')) drawFx();
   if(CFG.afterDraw) CFG.afterDraw(ctx);
   ctx.restore();
 
@@ -30198,10 +30234,12 @@ function draw(){
     g.addColorStop(1,'rgba(150,10,20,'+(0.20+0.4*v)+')');
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
   }
+  if(!lOff('vignette')){
   const vg = ctx.createRadialGradient(W/2,H*0.55,H*0.30,W/2,H*0.55,H*0.85);
   vg.addColorStop(0,'rgba(0,0,0,0)');
   vg.addColorStop(1,'rgba(0,0,0,.55)');
   ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  }
   drawCountIn();
   drawStartPrompt();
 }
@@ -31821,7 +31859,7 @@ function drawMirror(){
      frame. If it ever needs to be cheaper, the answer is to draw fewer cars in
      it rather than to draw wrong ones.
      ------------------------------------------------------------------- */
-  drawMirrorFull(mx, my, mw, mh);
+  if(!lOff('glass')) drawMirrorFull(mx, my, mw, mh);
   /* a hint of curvature across the glass, over the top of everything */
   const sheen = ctx.createLinearGradient(mx, my, mx+mw*0.5, my+mh);
   sheen.addColorStop(0,'rgba(255,255,255,.07)');
@@ -35557,6 +35595,9 @@ requestAnimationFrame(frameLoop);
   API.setPhase = function(v){ dayClock = (v % 1) * DAY_SECONDS; return phase(); };
   /* debug only - see `beamsOff`. Returns the state so a harness can assert it took */
   API.setBeams = function(on){ beamsOff = !on; return !beamsOff; };
+  /* what rubber is on the road right now. A check that takes the marks away has
+     to know there were marks to take, or it proves an empty array (RLG-327) */
+  API.rubber = function(){ return Object.assign({ smoke: tyreSmoke.length }, rubberSeen); };
   API.skylinePixel = function(key){
     const a = skylineFor(key || biome);
     const g = a.body.getContext('2d');
@@ -35734,6 +35775,27 @@ requestAnimationFrame(frameLoop);
      row measures the SCENERY - the farmland control swung nineteen levels
      between its own two sides with no drop on either. */
   API.wallOff = function(on){ wallOff = !!on; return wallOff; };
+  /* ---- ONE DOOR ONTO EVERY LAYER (RLG-299) ---------------------------
+     `API.layerOff({ground:1, sea:1})` takes those layers away and puts every
+     other one back, so an alternating harness sets the WHOLE state in one call
+     and never has to remember what it turned off last. `API.layerOff()` with
+     nothing restores the frame.
+
+     The four switches that already existed - the wall, the rail, the range and
+     the end face - are driven from here as well, so a caller has one list to
+     read and not five. They keep their own entry points: the checks that use
+     them are written and passing.
+     ---------------------------------------------------------------- */
+  API.layerOff = function(o){
+    layerOff = {};
+    if(o) for(const k in o) if(o[k]) layerOff[k] = true;
+    wallOff    = !!layerOff.wall;
+    railsOff   = !!layerOff.rail;
+    rangeOff   = !!layerOff.range;
+    endWallOff = !!layerOff.face;
+    beamsOff   = !!layerOff.beams;
+    return layerOff;
+  };
   API.wallModel = function(o){
     if(o){
       if(o.rise  > 0) WALL_RISE  = o.rise;
