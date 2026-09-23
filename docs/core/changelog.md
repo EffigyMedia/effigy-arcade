@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-132"></a>
+## [0.14.132] - 2026-09-23
+- Changed: **the cliff floor is tiled, which completes the three fills.** The engine carried a note
+  saying a tiled floor had been tried and left a hole wherever a crest made the walk skip slices;
+  what it was missing is a chain, so a band starts at its own top or at the bottom of the last one.
+  Worth 3.6 fps on a MOUNTAIN. The picture is pixel-identical and the check was watched failing
+  with holes opened. Across all three fills: 11.2 fps in a SWAMP, up to 14.3 on a coast road, 4.8
+  in a FOREST, 3.6 on a MOUNTAIN, 3.0 in a CITY.
+  [RLG-299](../fragments/RLG-299.md)
+
 <a id="v0-14-131"></a>
 ## [0.14.131] - 2026-09-23
 - Changed: **the water beside the road is tiled too.** The sea and the swamp's marsh ran their

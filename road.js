@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.131';
+window.ROAD_BUILD = '0.14.132';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16208,6 +16208,10 @@ const GROUND_LAP = 1;
    shared, because the two are tuned against different edges and a shared
    constant would tie them together for no reason (RLG-299) */
 const WATER_LAP = 1;
+/* and for the floor of a cliff, the third surface that ran to the bottom */
+const FLOOR_LAP = 1;
+/* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
+let floorFull = false;
 /* debug: the water painted to the bottom of the frame, as it was before
    RLG-299 tiled it, so a check can put the two frames on ONE road */
 let waterFull = false;
@@ -27069,6 +27073,9 @@ function drawRoad(){
   /* the same for the water, which is painted over the ground on one side and
      has to close the same gaps a crest opens (RLG-299) */
   let waterBot = null;
+  /* and the cliff floor's, which is the surface the engine's own note says was
+     tried as a tile once and left holes - the note is at the fill (RLG-299) */
+  let floorBot = null;
   const lamp = lampsOn();
   const base = Math.floor(pos/SEG);
   let maxy = H;
@@ -27418,19 +27425,34 @@ function drawRoad(){
           const far = clamp(1 - fade * 0.55, 0, 1);
           ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), DROP_SHADE, DROP_DARK),
                                  DROP_HAZE * far, hexRGB(dB.sky || '#2a3550'));
-          /* FILLED TO THE BOTTOM OF THE SCREEN, as the ground is. A slice the
-             road pass skips - hidden behind a crest - draws no floor, and a
-             floor that only covered its own rows left a hole there. Painted
-             far to near, each nearer slice covers the rows below its own top,
-             so every row shows the nearest floor that reaches it. */
+          /* ---- TILED, AND THE HOLE THAT STOPPED IT LAST TIME (RLG-299) ---
+             What stood here said this: "FILLED TO THE BOTTOM OF THE SCREEN, as
+             the ground is. A slice the road pass skips - hidden behind a crest
+             - draws no floor, and a floor that only covered its own rows left a
+             hole there." That is a true account of a tiling attempt that
+             failed, and it is why the floor was painted about 130 times over.
+
+             THE MISSING PIECE WAS A CHAIN. A band starts at its own top OR at
+             the bottom of the last one, whichever is higher up the screen, so a
+             run of skipped slices is closed by the next slice that paints
+             instead of being left open. The ground and the water are tiled the
+             same way and for the same reason.
+
+             The nearest slice is unaffected: its floor projects below the frame
+             so the band clamps to the bottom of the screen, which is where the
+             floor already reached.
+             ------------------------------------------------------------- */
+          const fTop = floorFull || floorBot === null ? fy2 : Math.min(fy2, floorBot);
+          const fBot = floorFull ? H : Math.min(H, fy1 + FLOOR_LAP);
           ctx.beginPath();
-          ctx.moveTo(dx2, fy2);
-          ctx.lineTo(edge, fy2);
-          ctx.lineTo(edge, H);
-          ctx.lineTo(dx1, H);
-          ctx.lineTo(dx1, Math.min(H, fy1));
+          ctx.moveTo(dx2, fTop);
+          ctx.lineTo(edge, fTop);
+          ctx.lineTo(edge, fBot);
+          ctx.lineTo(dx1, fBot);
+          ctx.lineTo(dx1, Math.min(fBot, fy1));
           ctx.closePath();
           ctx.fill();
+          if(floorBot === null || fBot > floorBot) floorBot = fBot;
           dropTrace.floor.push([n, fy2, H]);
           if(drawWatch) layerSaw('front', 'drop');
         }
@@ -35796,6 +35818,8 @@ requestAnimationFrame(frameLoop);
   API.groundFull = function(on){ groundFull = !!on; return groundFull; };
   /* debug: the water painted to the bottom of the frame, as before RLG-299 */
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
+  /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
+  API.floorFull = function(on){ floorFull = !!on; return floorFull; };
   /* ---- ONE DOOR ONTO EVERY LAYER (RLG-299) ---------------------------
      `API.layerOff({ground:1, sea:1})` takes those layers away and puts every
      other one back, so an alternating harness sets the WHOLE state in one call

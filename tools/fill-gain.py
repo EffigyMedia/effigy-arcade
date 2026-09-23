@@ -48,14 +48,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--places', default='CITY,FOREST,MOUNTAIN,COASTAL,DESERT,TUNDRA,SWAMP')
     # one instrument for the three fills, the same way one proof covers them
-    ap.add_argument('--fill', default='ground', choices=('ground', 'water'))
+    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff'))
     ap.add_argument('--roads', type=int, default=3)
     ap.add_argument('--rounds', type=int, default=4)
     ap.add_argument('--window', type=int, default=800)
     ap.add_argument('--phase', type=float, default=0.75)
     ap.add_argument('--speed', type=float, default=0.55)
     args = ap.parse_args()
-    switch = {'ground': 'groundFull', 'water': 'waterFull'}[args.fill]
+    switch = {'ground': 'groundFull', 'water': 'waterFull', 'cliff': 'floorFull'}[args.fill]
     console_utf8()
 
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
@@ -121,9 +121,12 @@ def main():
     if args.fill == 'ground':
         print('  a MOUNTAIN is expected to show little: the ground beside a cliff is')
         print('  deliberately left filling to the bottom - see the note in the engine')
-    else:
+    elif args.fill == 'water':
         print('  only a COASTAL and a SWAMP have water beside the road; the rest are')
         print('  the control, and are expected to show nothing at all')
+    else:
+        print('  only a place with a hazard side has a cliff floor; the rest are the')
+        print('  control, and are expected to show nothing at all')
     return 0
 
 

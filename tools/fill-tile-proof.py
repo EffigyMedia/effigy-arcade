@@ -120,11 +120,12 @@ def main():
     # The ground, the water and the cliff floor are the same fault written
     # three times, so they get one check rather than three copies of it. The
     # switch under test is named here; everything else is identical.
-    ap.add_argument('--fill', default='ground', choices=('ground', 'water'),
-                    help='which fill to put back: groundFull or waterFull')
+    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff'),
+                    help='which fill to put back: groundFull, waterFull or floorFull')
     args = ap.parse_args()
-    switch = {'ground': 'groundFull', 'water': 'waterFull'}[args.fill]
-    keep = {'ground': 'ground', 'water': 'sea'}[args.fill]
+    switch = {'ground': 'groundFull', 'water': 'waterFull',
+              'cliff': 'floorFull'}[args.fill]
+    keep = {'ground': 'ground', 'water': 'sea', 'cliff': 'drop'}[args.fill]
     console_utf8()
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
     srv = socketserver.TCPServer(('127.0.0.1', 0), h)
@@ -165,7 +166,8 @@ def main():
             # water is under test - lifting it would leave the water floating
             # over the far field rather than over the verge it meets
             off = {k: 1 for k in ALL_OFF if k != keep and not (
-                args.fill == 'water' and k in ('marsh',))}
+                args.fill == 'water' and k in ('marsh',)) and not (
+                args.fill == 'cliff' and k in ('rim',))}
             pg.evaluate("(o) => window.__probe.road.layerOff(o)", off)
 
             for place in PLACES:
