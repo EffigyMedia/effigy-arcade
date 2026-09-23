@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-134"></a>
+## [0.14.134] - 2026-09-23
+- Added: **a measurement of what inside the scenery costs a frame.** `tools/scenery-cost.py` splits
+  it into the walk and the raster and counts what was painted and how big. The cost is entirely the
+  raster; the walk is free. The painted area is in the few large near objects, so dropping distant
+  ones buys a tenth of it. It also corrects RLG-299's own table: the scenery costs a FOREST and a
+  SWAMP 16 to 18 fps, not a CITY and a COASTAL, and the old figures were road noise that passed
+  the sign test. [RLG-328](../fragments/RLG-328.md)
+
 <a id="v0-14-133"></a>
 ## [0.14.133] - 2026-09-23
 - Changed: **the cliff rim is exact.** The ground beside a drop ran its cut toward a position it

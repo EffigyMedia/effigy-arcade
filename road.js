@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.133';
+window.ROAD_BUILD = '0.14.134';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -10119,7 +10119,8 @@ function drawScenery(idx, p1, y1, z1, fade){
   if(!spec) return;
   /* sized in scenery units, so the road's width has no say in how big a tree is */
   const sc = p1.scale * SCENE_UNIT * W/2;
-  if(sc < 1) return;
+  if(sc < 1){ sceneryCount.thin++; return; }
+  sceneryCount.slices++;
   /* ---- A THICK PLACE FILLS, IT DOES NOT LINE (RLG-059) -----------------
      Owner, 2026-08-30: "heavily populated biome scenery should be replaced from
      the road edge to out beyond the edge of the screen like forests and
@@ -10248,7 +10249,8 @@ function drawScenery(idx, p1, y1, z1, fade){
     const spec2 = boatKey ? SCENERY[boatKey] : (cropKey ? SCENERY[cropKey] : spec);
     const artKey = boatKey || (cropKey ? cropKey : B.name);
     if(!spec2) continue;
-    const rows2 = (boatKey || cropSide) ? (spec2.rows || 1) : rows;
+    let rows2 = (boatKey || cropSide) ? (spec2.rows || 1) : rows;
+    if(sceneryRows > 0 && rows2 > sceneryRows) rows2 = sceneryRows;
     for(let row = rows2 - 1; row >= 0; row--){
       const salt = row * 101;
       const r0 = sceneRand(idx, (side < 0 ? 11 : 23) + salt);
@@ -10274,7 +10276,7 @@ function drawScenery(idx, p1, y1, z1, fade){
       const grow = spec2.lattice ? 1 : SCENE_GROW_LO + r2 * SCENE_GROW_SPAN;
       const w2 = sc * spec2.w * grow;
       const h2 = w2 * (art.height / art.width);
-      if(w2 < 0.8) continue;
+      if(w2 < 0.8){ sceneryCount.tiny++; continue; }
       /* MEASURED FROM THE EDGE OF THE TARMAC, not from the middle of it. The
          row walks outward; `spread` jitters within the row so the rows do not
          read as ranks. */
@@ -10287,13 +10289,14 @@ function drawScenery(idx, p1, y1, z1, fade){
       const xi = p1.x + side * roadsideAt(p1, off);
       const x = xi + side * w2/2;
       /* off the sides of the screen entirely - cheaper to skip than to clip */
-      if(x + w2 < 0 || x - w2 > W) continue;
+      if(x + w2 < 0 || x - w2 > W){ sceneryCount.offscreen++; continue; }
       const gate = crestGate(z1, y1, y1 - h2, 'scenery');
-      if(gate.hide){ crestDid('scenery', 'hidden'); continue; }
+      if(gate.hide){ crestDid('scenery', 'hidden'); sceneryCount.hidden++; continue; }
       ctx.save();
       if(gate.clip !== null){
         crestDid('scenery', 'clipped');
         ctx.beginPath(); ctx.rect(0, 0, W, gate.clip); ctx.clip();
+        sceneryCount.clipped++;
       } else crestDid('scenery', 'drawn');
       /* the last stretch of the draw fades them in, so an object does not arrive
          whole at the edge of the world. The lamps do the same. */
@@ -10348,7 +10351,11 @@ function drawScenery(idx, p1, y1, z1, fade){
                                        w:+w2.toFixed(4), h:+h2.toFixed(4),
                                        z:z1, pos:+pos.toFixed(2),
                                        a:+ctx.globalAlpha.toFixed(3) });
-      ctx.drawImage(art, x - w2/2, y1 - h2, w2, h2);
+      sceneryCount.objects++;
+      sceneryCount.area += w2 * h2;
+      for(let b2 = 0; b2 < SCENE_BUCKETS.length; b2++)
+        if(w2 < SCENE_BUCKETS[b2]){ sceneryCount.w[b2]++; sceneryCount.a[b2] += w2 * h2; break; }
+      if(sceneryRaster) ctx.drawImage(art, x - w2/2, y1 - h2, w2, h2);
       if(drawWatch) layerSaw('front', 'scenery');
       /* the windows, on the same schedule as the street lamps */
       /* the lit variant follows the spec that was actually drawn, so a barn
@@ -10358,7 +10365,8 @@ function drawScenery(idx, p1, y1, z1, fade){
       if(litArt && lampsOn() > 0.02){
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = edgeFade(fade) * lampsOn();
-        ctx.drawImage(litArt, x - w2/2, y1 - h2, w2, h2);
+        sceneryCount.lit++;
+        if(sceneryRaster) ctx.drawImage(litArt, x - w2/2, y1 - h2, w2, h2);
         ctx.globalCompositeOperation = 'source-over';
       }
       ctx.globalAlpha = 1;
@@ -16210,6 +16218,28 @@ const GROUND_LAP = 1;
 const WATER_LAP = 1;
 /* and for the floor of a cliff, the third surface that ran to the bottom */
 const FLOOR_LAP = 1;
+/* ---- WHAT THE SCENERY DID THIS FRAME (RLG-299) -------------------------
+   The scenery is the largest single cost in the measured table - 18.0 fps in a
+   CITY and 13.9 in a COASTAL - and it has no known remedy, so the first thing
+   to know is WHICH HALF of it costs that: the walk that decides where every
+   object goes, or the raster that paints them.
+
+   `sceneryRaster` answers it. Turned off, the walk runs exactly as it does now
+   - every hash, every projection, every gate, every save and clip - and only
+   the two `drawImage` calls are skipped. So the frame recovered with it off is
+   the RASTER, and whatever is left when the whole layer goes is the WALK.
+   ---------------------------------------------------------------------- */
+let sceneryRaster = true;
+/* debug: cap how many ROWS of scenery a place may draw, so a check can say
+   what the rows cost against what the objects cost (RLG-299) */
+let sceneryRows = 0;   /* 0 is no cap */
+/* and how BIG they were, because 1,165 objects in a SWAMP cost 15.9 fps while
+   345 in a CITY cost 0.2 - so the count is not what is being paid for, the
+   painted AREA is, and a remedy has to know how that area is distributed */
+const SCENE_BUCKETS = [2, 4, 8, 16, 32, 1e9];
+let sceneryCount = { slices: 0, objects: 0, lit: 0, hidden: 0, clipped: 0,
+                     tiny: 0, offscreen: 0, thin: 0, area: 0,
+                     w: [0, 0, 0, 0, 0, 0], a: [0, 0, 0, 0, 0, 0] };
 /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
 let floorFull = false;
 /* debug: the water painted to the bottom of the frame, as it was before
@@ -27044,6 +27074,9 @@ function drawRoad(){
   buildHillClip();
   spriteStats = { drawn:0, culled:0, clipped:0 };
   roadY = []; emitted = {};
+  sceneryCount = { slices: 0, objects: 0, lit: 0, hidden: 0, clipped: 0,
+                   tiny: 0, offscreen: 0, thin: 0, area: 0,
+                   w: [0, 0, 0, 0, 0, 0], a: [0, 0, 0, 0, 0, 0] };
   if(drawWatch) skipBy = {};
   if(drawWatch) walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
   let groundMax = -1e9;
@@ -35846,6 +35879,11 @@ requestAnimationFrame(frameLoop);
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
   API.floorFull = function(on){ floorFull = !!on; return floorFull; };
+  /* debug: run the scenery's whole walk and paint none of it, so a check can
+     tell the walk's cost from the raster's (RLG-299) */
+  API.sceneryRaster = function(on){ sceneryRaster = !!on; return sceneryRaster; };
+  API.sceneryCount = function(){ return Object.assign({}, sceneryCount); };
+  API.sceneryRows = function(n){ sceneryRows = n | 0; return sceneryRows; };
   /* ---- ONE DOOR ONTO EVERY LAYER (RLG-299) ---------------------------
      `API.layerOff({ground:1, sea:1})` takes those layers away and puts every
      other one back, so an alternating harness sets the WHOLE state in one call
