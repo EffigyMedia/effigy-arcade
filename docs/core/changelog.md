@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-129"></a>
+## [0.14.129] - 2026-09-22
+- Removed: **the tyre marks and the tyre smoke.** Neither has ever been seen. The smoke was dead
+  code that nothing had pushed into since the day it was found to fight with the damage smoke; the
+  marks were laid 340 units behind the car, which is below the bottom edge of a forward view, and
+  projected to y=1085 and further down on a frame 862 pixels tall. Thirty marks a frame cost thirty
+  projections and ninety fills to paint off the screen. The tyre squeal is unchanged and now has a
+  check of its own for the path the deletion nearly took with it.
+  [RLG-327](../fragments/RLG-327.md)
+- Fixed: the build tag. `A.version` moved to 0.14.128 and `window.ROAD_BUILD` did not, so the
+  previous build reported MIXED. Both read the same number again.
+  [RLG-327](../fragments/RLG-327.md)
+
 <a id="v0-14-128"></a>
 ## [0.14.128] - 2026-09-22
 - Added: **an instrument that says what each drawn layer costs a frame.** `tools/layer-cost.py`

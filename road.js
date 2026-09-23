@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.127';
+window.ROAD_BUILD = '0.14.129';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -2481,7 +2481,7 @@ function updateViewShift(){
 /* ---- THE ROAD BENDS -------------------------------------------------------
    A pseudo-3D road curves by displacing each segment sideways as it recedes.
    The classic way is to accumulate the offset while drawing, but `proj()` is
-   called from everywhere — sprites, skids, the mirror — so it needs a value
+   called from everywhere — sprites, the road pass, the mirror — so it needs a value
    any z can be asked for.
 
    `bendAt(z)` is the lateral displacement of the road CENTRELINE at z, built by
@@ -13886,12 +13886,6 @@ function engineRpm(){
       spd = Math.min(playerTop(), spd + kick * 2600);
       snd.launch(kick);
       if(kick > 0.45){
-        /* `stepRubber` ages a mark by `t` and paints it by `heat`, and this
-           record carried `life` and `w` instead - so the launch mark had no
-           heat to draw with and no clock to expire on, and sat on the road
-           until the player drove 2,000 units past it. `layRubber` is the one
-           place that knows the shape. */
-        layRubber(playerX, pos + PLAYER_Z - 340, Math.min(1, kick), playerW());
         shake = Math.max(shake, kick * 0.55);
       }
     }
@@ -13997,7 +13991,6 @@ function doLaunch(){
   launchNote = L.q > 0.75 ? 'PERFECT LAUNCH' : 'GOOD LAUNCH';
   if(L.q > 0.60){
     shake = Math.max(shake, L.q * 0.30);
-    layRubber(playerX, pos + PLAYER_Z - 340, L.q * 0.9, playerW());
   }
 }
 /* How much drive the launch is still taking away. 1 is a clean getaway. */
@@ -17656,33 +17649,32 @@ const AMB_FIRST = [40, 140];
 /* how long until the next ambulance is called out - see `spawnEmergency` */
 let ambT = rnd(AMB_FIRST[0], AMB_FIRST[1]);
 
-/* ---- rubber on the road --------------------------------------------------
-   One system for every car out here. A mark is a short world-space segment at
-   a lane position; they scroll past with everything else and fade, so the road
-   carries a record of what has been happening on it. Smoke rises off the same
-   events, which is what makes a hard corner read as hard rather than as the
-   car simply being somewhere else.
+/* ---- THERE IS NO RUBBER ON THE ROAD (RLG-327) ------------------------------
+   There was, for a long time, and not one mark of it was ever on the screen.
+   The marks were laid at `pos + PLAYER_Z - 340` - deliberately BEHIND the car,
+   because at the car's own z the sprite covered its own rubber - and 340 units
+   back is below the bottom edge of a forward-facing view. Measured on a frame
+   862 pixels tall, the marks projected to y=1085 and further down. The smoke
+   was worse: nothing had pushed into its array since the day it was found to
+   fight with the damage smoke for the same patch of screen.
+
+   So a mark cost a projection and three fills a frame, thirty at a time, to
+   paint below the frame. Deleted by the owner's ruling of 2026-09-22.
+
+   IF IT COMES BACK IT BELONGS IN THE GLASS. The road behind your own wheels is
+   what the mirror shows and what a forward view structurally cannot, which is
+   the same lesson as [[RLG-326]] - the smoke and fire behind a damaged car are
+   drawn only in the view that cannot see them either.
+
+   WHAT SURVIVED THE DELETION, AND WHY. `scrubOf` measures how hard a car is
+   sliding across the road, and it looked like part of the rubber because every
+   one of its callers fed a mark. It is not: `step()` reads the player's own
+   scrub 2,300 lines below where it is computed - inside the same 2,800-line
+   function - and hands it to the TYRE SQUEAL. Taking it out silenced a sound
+   with no syntax error to show for it.
    -------------------------------------------------------------------------- */
-let skids = [], tyreSmoke = [], lastPX;
-/* what the last frame's rubber pass actually did with them (RLG-327) */
-let rubberSeen = { skids: 0, near: 0, far: 0, noproj: 0, drawn: 0, onScreen: 0, top: null, bot: null, H: 0 };
-/* 420 marks meant 420 projections and 1,260 fill calls a frame. 180 still
-   leaves a long trail behind a slide and costs a third as much. */
-const SKID_MAX = 180, SMOKE_MAX = 90;
-
-/* `heat` is 0-1: how badly the tyres are letting go */
-function layRubber(x, z, heat, w){
-  if(heat <= 0.05) return;
-  const half = (w || 0.26) * 0.42;
-  for(const side of [-half, half]){
-    skids.push({ x: x + side, z, t: 1, heat });
-  }
-  if(skids.length > SKID_MAX) skids.splice(0, skids.length - SKID_MAX);
-  /* No tyre smoke. It fought with the damage smoke coming off the bonnet for
-     the same patch of screen and neither read clearly — the marks say what
-     the tyres are doing on their own. */
-}
-
+/* the player's lateral position last frame, for the scrub rate */
+let lastPX;
 /* how hard a car is scrubbing: sideways rate against speed, plus braking */
 function scrubOf(o, dx, dt, v, isBraking){
   const fast = clamp(v / (MAX_SPD*0.42), 0, 1);        /* nothing at a crawl */
@@ -17693,23 +17685,6 @@ function scrubOf(o, dx, dt, v, isBraking){
   const brake = isBraking ? 0.75 : 0;
   return clamp(Math.max(lateral, brake) * fast, 0, 1);
 }
-
-function stepRubber(dt){
-  for(let i=skids.length-1;i>=0;i--){
-    const s2 = skids[i];
-    s2.t -= dt * 0.055;                     /* rubber lasts a good while */
-    if(s2.t <= 0 || s2.z < pos - 2000) skids.splice(i,1);
-  }
-  for(let i=tyreSmoke.length-1;i>=0;i--){
-    const m = tyreSmoke[i];
-    m.t -= dt * 0.9;
-    m.r += dt * 0.5;
-    m.x += m.drift * dt;
-    if(m.t <= 0 || m.z < pos - 1200) tyreSmoke.splice(i,1);
-  }
-}
-
-/* laid down before the cars, so they sit on top of their own rubber */
 /* the rear lamps of any car ahead of you */
 function tailLights(box, braking, spr){
   /* below this the lamps are a pixel and a half and nobody can see them */
@@ -18285,49 +18260,6 @@ function drawGantry(cp){
   }
 }
 
-
-function drawRubber(){
-  if(lOff('rubber')) return;
-  rubberSeen = { skids: skids.length, near: 0, far: 0, noproj: 0, drawn: 0,
-                 onScreen: 0, top: null, bot: null, H: H };
-  for(const s2 of skids){
-    const d = s2.z - pos;
-    /* the near cull was 30, which threw marks away while they were still on
-       screen sliding past the car — the one moment you can actually see your
-       own rubber in a forward view */
-    if(d < 4){ rubberSeen.near++; continue; }
-    if(d > 5200){ rubberSeen.far++; continue; }
-    const p1 = proj(s2.x*ROAD, s2.z);
-    if(!p1.ok){ rubberSeen.noproj++; continue; }
-    rubberSeen.drawn++;
-    if(rubberSeen.top === null || p1.y < rubberSeen.top) rubberSeen.top = +p1.y.toFixed(1);
-    if(rubberSeen.bot === null || p1.y > rubberSeen.bot) rubberSeen.bot = +p1.y.toFixed(1);
-    if(p1.y >= 0 && p1.y <= H) rubberSeen.onScreen++;
-    /* wider and darker: at 5% of a lane and 27% opacity they were invisible
-       against tarmac that is already almost black */
-    const w = Math.max(1.4, p1.scale * ROAD * W * 0.10);
-    const h = Math.max(2, p1.scale * 320);
-    ctx.fillStyle = 'rgba(8,8,10,' + Math.min(0.85, 0.9 * s2.t * (0.45 + s2.heat*0.55)) + ')';
-    ctx.fillRect(p1.x - w/2, p1.y - h, w, h);
-    /* a scuffed edge, so it is not a flat black bar */
-    ctx.fillStyle = 'rgba(40,38,42,' + Math.min(0.4, 0.4 * s2.t) + ')';
-    ctx.fillRect(p1.x - w*0.72, p1.y - h, w*0.26, h);
-    ctx.fillRect(p1.x + w*0.46, p1.y - h, w*0.26, h);
-  }
-  for(const m of tyreSmoke){
-    const d = m.z - pos;
-    if(d < 30 || d > 5200) continue;
-    const p1 = proj(m.x*ROAD, m.z);
-    if(!p1.ok) continue;
-    const rad = Math.max(2, p1.scale * ROAD * W * m.r * 2.2);
-    const a = m.t * 0.34;
-    const gr = ctx.createRadialGradient(p1.x, p1.y, 0, p1.x, p1.y, rad);
-    gr.addColorStop(0, 'rgba(214,214,220,' + a + ')');
-    gr.addColorStop(1, 'rgba(190,190,200,0)');
-    ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(p1.x, p1.y, rad, 0, 6.2832); ctx.fill();
-  }
-}
 
 /* ---- race mode ----------------------------------------------------------
    Twelve runners over twelve miles. You start LAST and you are slightly the
@@ -19315,12 +19247,6 @@ function stepRacers(dt){
     if(rDec > 900) r.brakeT = 0.35; else if(r.brakeT > 0) r.brakeT -= dt;
     r.braking = (r.brakeT || 0) > 0;
     r.z += r.spd*dt;
-    /* rivals lay rubber on the same terms you do */
-    const rdx = r.x - (r.lastX === undefined ? r.x : r.lastX);
-    r.lastX = r.x;
-    const rs = scrubOf(r, rdx, dt, r.spd, r.spd < want*0.7);
-    if(rs > 0.05) layRubber(r.x, r.z, rs, r.w);
-
     /* they can put a cruiser out, and be put out by one */
     if(!optEasy){
       for(const c of cops){
@@ -21141,15 +21067,15 @@ function step(dt){
   const held = countIn > 0;
   /* ---- WHAT THE LAUNCH LEFT BEHIND (RLG-110) --------------------------
      Aged here, at the top of the step, so the throttle below reads a drag
-     that is current rather than one frame stale. A spinning car lays rubber
-     for exactly as long as it is spinning, which is the only thing on the
-     screen that says why it is not moving.
+     that is current rather than one frame stale.
+
+     IT LAID RUBBER HERE TOO, and the record said that was "the only thing on
+     the screen that says why it is not moving". It never was on the screen -
+     see [[RLG-327]] - so a spinning car has never had that tell, and removing
+     the marks takes nothing away from it. Whatever replaces it has to be in
+     front of the car or in the glass.
      ------------------------------------------------------------------- */
-  if(spinT > 0){
-    spinT = Math.max(0, spinT - dt);
-    layRubber(playerX, pos + PLAYER_Z - 340,
-              0.55 + 0.45 * clamp(spinT / LAUNCH.spinFor, 0, 1), playerW());
-  }
+  if(spinT > 0) spinT = Math.max(0, spinT - dt);
   if(bogHold > 0) bogHold = Math.max(0, bogHold - dt);
   if(launchNoteT > 0) launchNoteT = Math.max(0, launchNoteT - dt);
   /* the gauges' own afterglow, aged with everything else rather than on a
@@ -21481,18 +21407,11 @@ function step(dt){
   }
   /* The floor was 1700 — about 22mph — so the car could never actually stop.
      It can now sit still, which is what a brake pedal is for. */
-  /* the player's own rubber: hard steering at speed, or hard on the brakes */
+  /* how hard the player is sliding across the road. The tyre squeal reads this
+     far below, and it used to lay rubber here as well - see [[RLG-327]] */
   const pdx = playerX - (lastPX === undefined ? playerX : lastPX);
   lastPX = playerX;
   const pScrub = scrubOf(null, pdx, dt, spd, braking && spd > MAX_SPD*0.22);
-  /* Laid BEHIND the car, not under it. At the car's own z the sprite covers
-     its own rubber completely — the marks were there the whole time and
-     hidden by the thing making them. Half a car back puts them on the tarmac
-     below the bumper where you can actually see them. */
-  /* a squealing corner lays rubber too, lighter than a snatch at the wheel (RLG-099) */
-  const pRubber = Math.max(pScrub, cornerSquealNow() * 0.6);
-  if(pRubber > 0.05) layRubber(playerX, pos + PLAYER_Z - 340, pRubber, playerW());
-  stepRubber(dt);
 
   /* ---- A SIREN KEEPS ASKING ---------------------------------------------
      A horn is one request per press; a siren is a standing one. While the bar
@@ -23200,10 +23119,6 @@ function step(dt){
     if(!parked && k.tx !== undefined && !k.onPlayer && isFinite(k.tx))
       k.x += clamp(k.tx - k.x, -1.6*dt, 1.6*dt);
     if(!isFinite(k.x)) k.x = playerX;
-    const kdx = k.x - (k.lastX === undefined ? k.x : k.lastX);
-    k.lastX = k.x;
-    const ks = scrubOf(k, kdx, dt, k.spd, false);
-    if(ks > 0.05) layRubber(k.x, k.z, ks, k.w || 0.27);
     let aim = aggro ? playerX : clamp(playerX + (k.side||1)*0.55, -1.05, 1.05);
     /* Boxing in: each cruiser takes a station AROUND the car rather than
        chasing its centre — one either side, one across the front — so the
@@ -28404,7 +28319,6 @@ function drawCopLights(box, phase, spr, scheme){
 
 function drawWorld(){
   rampSeen = {};
-  drawRubber();
 
   const items = [];
   if(drawWatch) viewKinds = { front:{}, glass:{} };
@@ -33976,7 +33890,7 @@ function endRun(keepMusic){
   state = 'title';
   spd = 0; fx.length = 0; shake = 0;
   traffic.length = 0; cops.length = 0; blocks.length = 0;
-  racers.length = 0; crates.length = 0; skids.length = 0;
+  racers.length = 0; crates.length = 0;
   if(typeof cpGantries !== 'undefined') cpGantries.length = 0;
   /* the MUSIC was stopped and the CAR was not — the engine, wind and tyre
      loops are held voices and they keep sounding until something tells them
@@ -35595,9 +35509,6 @@ requestAnimationFrame(frameLoop);
   API.setPhase = function(v){ dayClock = (v % 1) * DAY_SECONDS; return phase(); };
   /* debug only - see `beamsOff`. Returns the state so a harness can assert it took */
   API.setBeams = function(on){ beamsOff = !on; return !beamsOff; };
-  /* what rubber is on the road right now. A check that takes the marks away has
-     to know there were marks to take, or it proves an empty array (RLG-327) */
-  API.rubber = function(){ return Object.assign({ smoke: tyreSmoke.length }, rubberSeen); };
   API.skylinePixel = function(key){
     const a = skylineFor(key || biome);
     const g = a.body.getContext('2d');
