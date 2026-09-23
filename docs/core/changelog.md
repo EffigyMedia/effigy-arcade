@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-133"></a>
+## [0.14.133] - 2026-09-23
+- Changed: **the cliff rim is exact.** The ground beside a drop ran its cut toward a position it
+  never reached, so the rim drifted inside each band and every band restarted the drift. The cut
+  lands on the rim at the band's own bottom now. It was held back from the other three fills because
+  it is the only part that changes the picture, and the owner took it on its own. It also took a
+  MOUNTAIN from 0.7 fps to 6.8, because the cliff side was the part still painting to the bottom.
+  The check proves the change is the rim and nothing else: with the rim removed the picture is
+  pixel-identical on every road. [RLG-299](../fragments/RLG-299.md)
+
 <a id="v0-14-132"></a>
 ## [0.14.132] - 2026-09-23
 - Changed: **the cliff floor is tiled, which completes the three fills.** The engine carried a note

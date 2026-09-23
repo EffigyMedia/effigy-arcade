@@ -119,8 +119,8 @@ def main():
         print('  %-10s %8.1f   %.1f to %.1f' % (place, median(v), min(v), max(v)))
     print()
     if args.fill == 'ground':
-        print('  a MOUNTAIN is expected to show little: the ground beside a cliff is')
-        print('  deliberately left filling to the bottom - see the note in the engine')
+        print('  the ground beside a cliff is tiled too since 0.14.133, which is what')
+        print('  took a MOUNTAIN from 0.7 fps to 6.8 - see the note at the fill')
     elif args.fill == 'water':
         print('  only a COASTAL and a SWAMP have water beside the road; the rest are')
         print('  the control, and are expected to show nothing at all')

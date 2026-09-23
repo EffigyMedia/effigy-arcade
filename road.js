@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.132';
+window.ROAD_BUILD = '0.14.133';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -27070,6 +27070,9 @@ function drawRoad(){
      is higher up the screen, and the run stays unbroken however the road folds.
      ------------------------------------------------------------------- */
   let groundBot = null;
+  /* where the cliff rim stood at the bottom of the last ground band, so a gap a
+     crest opens is closed along the rim rather than square across it */
+  let groundRimX = null;
   /* the same for the water, which is painted over the ground on one side and
      has to close the same gaps a crest opens (RLG-299) */
   let waterBot = null;
@@ -27293,36 +27296,59 @@ function drawRoad(){
         if(!gDrop){
           ctx.fillRect(0, gTop, W, gBot - gTop);
           if(groundBot === null || gBot > groundBot) groundBot = gBot;
+          groundRimX = null;   /* no rim on this slice, so none to carry */
         } else {
-          /* ---- THE CLIFF SIDE IS NOT TILED, AND THAT IS DELIBERATE ------
-             The ground beside a drop is not a rectangle, it is a quad cut off
-             at the rim, and the rim's line runs from this slice's far edge to
-             the BOTTOM OF THE SCREEN rather than to the slice's own near edge.
-             Stopping that quad at the band moves the rim - measured at up to
-             1.3 per cent of the frame on a MOUNTAIN, a sliver along the cliff.
-             Walking the old slope and stopping it at the band was tried and was
-             worse, at 7.7 per cent: where a crest opens a gap the band starts
-             ABOVE the slice's own top, and the rim line gets walked backwards
-             past where it begins.
+          /* ---- AND THE CLIFF SIDE IS TILED TOO, WHICH MOVES THE RIM ------
+             Owner-decided 2026-09-23, after 0.14.132 put the other three fills
+             on the device. This one was held back from that work on purpose:
+             it is the only part of the tiling that CHANGES the picture, and a
+             change made for frame rate should not.
 
-             The new line is the more correct one of the two. It is also not
-             this change's business - a change made for frame rate should paint
-             the same picture - so the cliff keeps the fill it had, and making
-             the rim exact is its own piece of work for the owner to judge.
-             THE SAVING IS BARELY AFFECTED: a MOUNTAIN is the cheapest ground of
-             the four places measured, at 2.9 fps against CITY's 11.1, and only
-             the hazard side of it is drawn this way.
+             WHAT IT CHANGES. The ground beside a drop is a quad cut off at the
+             rim, and the old quad ran that cut from this slice's far edge to
+             the BOTTOM OF THE SCREEN - so inside the band the slice actually
+             shows, which ends at its own near edge, the rim was heading for a
+             position it never reached, and the next band restarted the drift.
+             The cut now lands on `rx1` at the band's own bottom, which is where
+             the rim is: `rx1` IS the rim at the near edge. Measured at up to
+             1.3 per cent of the frame on a MOUNTAIN, a sliver along the cliff.
+
+             A MIDDLE COURSE WAS TRIED AND WAS WORSE. Walking the old slope and
+             simply stopping it at the band came out at 7.7 per cent, because
+             where a crest opens a gap the band starts ABOVE the slice's own top
+             and the line gets walked backwards past where it begins.
+
+             THE GAP FOLLOWS THE RIM, AND A RECTANGLE WOULD NOT. Where a crest
+             opens a gap, `gTop` sits above this slice's own top and the rim's x
+             is only known at the two edges this slice projects. Filling that
+             band as a RECTANGLE outboard of `rx2` was tried first: it is a
+             blocky step where the rim is a slope, and on a road that folds a
+             lot it reached 7.8 per cent of the frame against under 1 per cent
+             elsewhere. The band is a trapezoid instead, running from the rim
+             where the last band ended to the rim where this one begins - which
+             is the line the rim actually takes across the gap.
              ---------------------------------------------------------- */
           const rx1 = rimX(p1, idx, gDrop);
           const rx2 = rimX(p2, idx + 1, gDrop);
+          const far = gDrop < 0 ? W : 0;
+          if(gTop < y2 && groundRimX !== null){
+            ctx.beginPath();
+            ctx.moveTo(far, gTop);
+            ctx.lineTo(groundRimX, gTop);
+            ctx.lineTo(rx2, y2);
+            ctx.lineTo(far, y2);
+            ctx.closePath();
+            ctx.fill();
+          }
           ctx.beginPath();
-          ctx.moveTo(gDrop < 0 ? W : 0, y2);
+          ctx.moveTo(far, y2);
           ctx.lineTo(rx2, y2);
-          ctx.lineTo(rx1, H);
-          ctx.lineTo(gDrop < 0 ? W : 0, H);
+          ctx.lineTo(rx1, gBot);
+          ctx.lineTo(far, gBot);
           ctx.closePath();
           ctx.fill();
-          groundBot = H;   /* it painted to the bottom, so nothing below is a gap */
+          if(groundBot === null || gBot > groundBot) groundBot = gBot;
+          groundRimX = rx1;   /* where the rim stands at the bottom of this band */
         }
       }
       /* ---- AND THE SEA, IF THIS PLACE HAS ONE (RLG-059) ----------------
