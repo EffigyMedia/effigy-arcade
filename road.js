@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.140';
+window.ROAD_BUILD = '0.14.141';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16008,20 +16008,14 @@ let RANGE_OUT = 16;
    distance like every other surface here - which is the thing the first attempt
    lacked and the thing that makes depth read at all in this engine.
    ------------------------------------------------------------------- */
-/* ---- AND IT IS SHADOW, NOT DISTANCE, WHICH IS A CORRECTION -------------
-   The first cut hazed the face the way the valley FLOOR is hazed, because the
-   floor is genuinely far away. It looked wrong for a reason worth writing down:
-   within one slice the band runs from the rim at the top to the floor at the
-   bottom, so hazing by depth makes the BOTTOM of the band the palest part - and
-   the bottom of the band is the part nearest the car, at the bottom of the
-   screen. The near rock came out washed and read as flat ground, which is how
-   the owner could still "see into the mountain face I'm driving on".
-
-   A cliff you are driving along is NEAR. It is dark rock in its own shadow, and
-   it takes barely any air. The haze is a fifth of what it was and the face is
-   darker, so it reads as the thing it is. */
-let CLIFF_SHADE = 0.64,  /* how far the face darkens toward the drop's shadow */
-    CLIFF_HAZE  = 0.16;  /* and how little of the distance haze it takes      */
+/* ---- THE FACE OVER THE EDGE TAKES THE WALL'S OWN NUMBERS (RLG-329) -----
+   It had two tunables of its own for a day and both were wrong, in opposite
+   directions: a flat dark tone read as a shadow on a field, and a hazed one
+   read as more field. The owner settled it - "the same color as the mountain
+   face going up... rendered in strips going down" - so it takes `WALL_SHADE`,
+   `WALL_HAZE` and `WALL_FACET`, and has no numbers of its own to drift from
+   them. The rock over one edge is the rock over the other.
+   -------------------------------------------------------------------- */
 let RANGE_STEP = 10;      /* segments between peaks along the valley          */
 let RANGE_H    = 28;      /* how tall a peak stands, in camera heights        */
 /* the drawn peaks this frame, per view, for a check */
@@ -27742,36 +27736,51 @@ function drawRoad(){
         if(!lOff('cliff')){
           const cTop = Math.min(H, y2), cBot = Math.min(H, fy2);
           if(cBot > cTop + 0.05){
+            /* ---- IT IS THE UP FACE, POINTED DOWN (RLG-329) -------------
+               Owner, 2026-09-24: "The face going down toward that valley used
+               to be the same color as the mountain face going up. It was
+               rendered in strips going down."
+
+               SO IT IS THE WALL'S OWN PAINTER AND THE WALL'S OWN COLOUR. Both
+               of my earlier cuts invented a treatment for this face - first a
+               flat tone, then a haze of its own - and both were wrong in the
+               same way: they made it a DIFFERENT SURFACE from the rock above
+               the road, when it is the same rock seen over the other edge.
+
+               `WALL_SHADE` and `WALL_HAZE` are what the up face takes, and the
+               facets are its own noise fixed to the road, so the strips vary
+               down the fall the way the wall's vary up it. Three of them, which
+               is what the wall uses: the wall's own note says the partition is
+               what makes it affordable, because the strips cover the band
+               exactly once rather than painting over each other.
+               -------------------------------------------------------- */
             const cFar = clamp(1 - fade * 0.55, 0, 1);
-            const cRock = mixRGB(groundTone(idx, dark), CLIFF_SHADE, DROP_DARK);
-            const cAir = hexRGB(skyStops()[3]);
-            /* ---- AND IT IS DARKEST UNDER THE LIP -------------------
-               A flat tone is what [[RLG-278]] called a shadow on a field, and
-               it is right: the fall has no depth if every row of it is the
-               same colour. The top of the band is the rock just under the
-               rim, in its own shadow and barely hazed; the bottom is the foot
-               of the fall, as far away as the valley floor and washed with
-               the same air. THE GRADIENT IS ONLY BUILT WHERE IT CAN BE SEEN -
-               a band under two dozen pixels is a sliver and takes the flat
-               tone, which keeps this to a handful of gradients a frame
-               rather than one per slice. */
-            if(cBot - cTop > 24){
-              const cg = ctx.createLinearGradient(0, cTop, 0, cBot);
-              /* darkest right under the lip, easing only a little toward the
-                 foot - never toward pale, which is what made it read flat */
-              cg.addColorStop(0, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 0.20, cAir));
-              cg.addColorStop(1, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 1.00, cAir));
-              ctx.fillStyle = cg;
-            } else {
-              ctx.fillStyle = mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar, cAir);
-            }
-            ctx.beginPath();
-            ctx.moveTo(dx2, cTop);
-            ctx.lineTo(edge, cTop);
-            ctx.lineTo(edge, cBot);
-            ctx.lineTo(dx2, cBot);
-            ctx.closePath();
-            ctx.fill();
+            const cAir = hexRGB(dB.sky || '#2a3550');
+            const cAt = (t) => cTop + (cBot - cTop) * t;
+            /* ---- AND IT IS SHADED LIKE THE MASSIF, NOT LIKE THE WALL ----
+               MOUNTAIN carries `mass`, so the face that rises from the roadside
+               is painted by the massif rather than by the wall - and the massif
+               is much the darker of the two, `WALL_SHADE + (1 - lit) * MASS_SHADE`
+               against the wall's `WALL_SHADE` alone. Matched to the wall, this
+               face came out pale beside the rock it is supposed to be part of.
+               It takes the massif's own shading, with the facet noise varying
+               each strip as a turned plane would. */
+            const cStrip = (t0, t1, facet) => {
+              ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark),
+                                            clamp(WALL_SHADE + MASS_SHADE * 0.62 + facet, 0, 1),
+                                            DROP_DARK),
+                                     WALL_HAZE * cFar, cAir);
+              const ya = cAt(t0), yb = cAt(t1) + 0.6;   /* a lap, as the bands take */
+              ctx.beginPath();
+              ctx.moveTo(dx2, ya); ctx.lineTo(edge, ya);
+              ctx.lineTo(edge, yb); ctx.lineTo(dx2, yb);
+              ctx.closePath();
+              ctx.fill();
+            };
+            const cK = (dB.ridge === undefined) ? 1 : dB.ridge;
+            cStrip(0, 0.34, (ridgeNoise(idx, CAP_RUN, 733) - 0.5) * WALL_FACET * cK);
+            cStrip(0.34, 0.70, (ridgeNoise(idx, CAP_RUN, 739) - 0.5) * WALL_FACET * cK);
+            cStrip(0.70, 1, (ridgeNoise(idx, CAP_RUN, 743) - 0.5) * WALL_FACET * cK);
             if(drawWatch) layerSaw('front', 'cliff');
           }
         }
@@ -36157,14 +36166,6 @@ requestAnimationFrame(frameLoop);
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
   API.floorFull = function(on){ floorFull = !!on; return floorFull; };
-  /* the cliff face's two tunables, so they can be judged on a device */
-  API.cliffModel = function(o){
-    if(o){
-      if(o.shade >= 0) CLIFF_SHADE = o.shade;
-      if(o.haze  >= 0) CLIFF_HAZE  = o.haze;
-    }
-    return { shade: CLIFF_SHADE, haze: CLIFF_HAZE };
-  };
   /* debug: the two baked gradients built live again, so a check can put the two
      frames side by side on ONE road and call whatever differs (RLG-299) */
   API.bakedOff = function(on){ bakedOff = !!on; return bakedOff; };

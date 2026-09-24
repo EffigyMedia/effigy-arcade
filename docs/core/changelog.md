@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-141"></a>
+## [0.14.141] - 2026-09-24
+- Changed: **the face over the edge is the same rock as the face above the road, in strips.** Three
+  earlier cuts each invented a treatment for it - flat, then hazed, then darker - when it is not a
+  surface of its own: it is the massif seen over the other edge. It takes the wall's shade, haze and
+  facet noise, painted as three strips down the fall, and has no numbers of its own left to drift
+  from them. [RLG-329](../fragments/RLG-329.md)
+
 <a id="v0-14-140"></a>
 ## [0.14.140] - 2026-09-24
 - Fixed: **the cliff face reads as rock, not as distance.** It was hazed the way the valley floor is,
