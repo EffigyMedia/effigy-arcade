@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.135';
+window.ROAD_BUILD = '0.14.136';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15226,24 +15226,68 @@ const TEMP_STEP = TEMP_STEP_F / (TEMP_F_HI - TEMP_F_LO);
    returning rather than from one drive, and that is the part the owner
    changed.
    ------------------------------------------------------------------------ */
-function rollClimateNear(key, fromT){
+function rollClimateNear(key, fromT, stepMul){
   const B = BIOMES[key] || BIOMES.FOREST;
   const vary = B.vary === undefined ? 0.15 : B.vary;
   const base = B.temp === undefined ? 0.45 : B.temp;
-  const lo = Math.max(base - vary, fromT - TEMP_STEP);
-  const hi = Math.min(base + vary, fromT + TEMP_STEP);
+  /* `stepMul` widens the step the climate may take in one crossing. It is 1
+     everywhere except the one case in `pickNext` where the road would otherwise
+     have to repeat a place: a bigger jump in the weather is less noticeable
+     than seeing the same place come round again (RLG-332). */
+  const step = TEMP_STEP * (stepMul || 1);
+  const lo = Math.max(base - vary, fromT - step);
+  const hi = Math.min(base + vary, fromT + step);
   if(lo > hi) return null;                 /* this place cannot follow that one */
   return climateAt(key, rnd(lo, hi));
 }
 /* the place the road goes to next, and the instance it will hold - decided
    together, because the second is what says whether the first is allowed */
-function pickNext(fromKey, fromT){
-  const tries = BIOME_KEYS.length * 4;
-  for(let i = 0; i < tries; i++){
-    const k = BIOME_KEYS[(Math.random()*BIOME_KEYS.length)|0];
-    if(k === fromKey) continue;
-    const c = rollClimateNear(k, fromT);
-    if(c) return { key: k, clim: c };
+/* ---- AND IT REMEMBERS ONE MORE PLACE THAN IT USED TO (RLG-332) --------
+   Owner, 2026-09-23, from the device: "I kept getting mountain to city to
+   mountain to city to mountain to city to mountain to city. We also need to
+   make sure that we don't ever roll the same biome back to back."
+
+   THE SECOND RULE WAS ALREADY KEPT AND THE FIRST FAULT IS NOT THE SAME RULE. A
+   picker that refuses only the place you are standing in can alternate between
+   two forever without once repeating itself. Measured before the fix, from a
+   cold MOUNTAIN: 118 ping-pongs in 300 crossings and 8 distinct places, reading
+   CITY MOUNTAIN TUNDRA MOUNTAIN TUNDRA CITY MOUNTAIN TUNDRA CITY TUNDRA.
+
+   AND THE CLIMATE IS WHY IT SETTLES THERE. A place may only be entered within
+   its own temperature range and the run may only move about 0.077 a crossing -
+   ten degrees of a hundred and thirty. A MOUNTAIN reaches 0.00 to 0.30 and a
+   CITY reaches 0.00 to 0.90, while TUNDRA's window is 0.01 to 0.09 and
+   everything else starts at 0.30. A run that settles cold has two places it can
+   comfortably reach, and with a memory of one it has nowhere to go but back.
+
+   `avoid` carries the place before this one, so the walk cannot return within
+   two and has to spend a crossing somewhere else - which is also what lets the
+   temperature climb out of the cold corner instead of sitting in it.
+
+   IT IS TWO PASSES, AND THE SECOND ONE IS WHY THIS CANNOT STALL. If nothing on
+   the board can follow this place without returning, the bar is dropped and the
+   old rule stands alone. A generator that can refuse every option is a
+   generator that will one day stop the game.
+   -------------------------------------------------------------------- */
+function pickNext(fromKey, fromT, avoid){
+  /* ---- THREE PASSES, AND THE ORDER IS THE PRIORITY ------------------
+     The first is the rule as stated. The second keeps the place rule and lets
+     the WEATHER take a bigger step, because a cornered road should jump the
+     climate rather than repeat itself - fifteen degrees is a thing nobody
+     counts and a repeated place is a thing everybody does. Only the third
+     gives the place rule up, and it exists so this can never return nothing.
+     ---------------------------------------------------------------- */
+  const passes = [{ bar: 1, step: 1 }, { bar: 1, step: 2 }, { bar: 0, step: 1 }];
+  for(const pass of passes){
+    const bar = pass.bar && avoid && avoid.length ? avoid : null;
+    const tries = BIOME_KEYS.length * 4;
+    for(let i = 0; i < tries; i++){
+      const k = BIOME_KEYS[(Math.random()*BIOME_KEYS.length)|0];
+      if(k === fromKey) continue;
+      if(bar && bar.indexOf(k) >= 0) continue;
+      const c = rollClimateNear(k, fromT, pass.step);
+      if(c) return { key: k, clim: c };
+    }
   }
   /* ---- AND A LAST RESORT THAT STILL MOVES (RLG-142) -----------------
      Nothing on the board is stranded today - a CITY ranges 0.00 to 0.90 and
@@ -15257,6 +15301,9 @@ function pickNext(fromKey, fromT){
   let best = null, bestGap = 1e9;
   for(const k of BIOME_KEYS){
     if(k === fromKey) continue;
+    /* the bar is NOT applied here: this is the path that runs when the board
+       has stranded the road, and refusing more of it would be the stall the
+       two passes above exist to prevent */
     const B = BIOMES[k];
     const vary = B.vary === undefined ? 0.15 : B.vary;
     const base = B.temp === undefined ? 0.45 : B.temp;
@@ -15425,8 +15472,8 @@ let planKey = null, planEdge = -1e9, planClim = null;
 let soonKey = null, soonClim = null;
 function soonEdge(){ return Math.ceil((pos + Math.max(0, biomeNext) + GEN_AHEAD) / SEG); }
 /* choose the place that follows `k`, whose temperature is `t` */
-function chooseSoon(k, t){
-  const aft = pickNext(k, t);
+function chooseSoon(k, t, prev){
+  const aft = pickNext(k, t, prev ? [prev] : null);
   soonKey = aft ? aft.key : null;
   soonClim = aft ? aft.clim : null;
 }
@@ -16979,7 +17026,7 @@ function openBiome(){
      the distance is armed here with the same range every other change uses.
      ---------------------------------------------------------------- */
   biomeNext = placeSpan(biome);
-  chooseSoon(biome, climTo.temp);
+  chooseSoon(biome, climTo.temp, biomePrev);
   /* a run can OPEN in a forest or a tundra, so both rolls belong here as well */
   planDeer();
   rollAurora();
@@ -17165,7 +17212,7 @@ function stepBiome(dt){
     if(!biomeStarted){
       openBiome();
       biomeNext = placeSpan(biomeTo);
-      chooseSoon(biomeTo, climTo.temp);
+      chooseSoon(biomeTo, climTo.temp, biomeFrom);
     } else {
       /* ---- THE PLACE IS CHOSEN AT THE GENERATOR'S FRONTIER (RLG-150) ---
          The timer decides WHICH place comes next and WHERE it begins, and it
@@ -17184,7 +17231,8 @@ function stepBiome(dt){
          the pick knew nothing about it. It is the instance that says whether a
          place may follow this one, so the two are one decision now and the
          answer rides with the plan. */
-      const nxt = soonKey ? { key: soonKey, clim: soonClim } : pickNext(biome, climTo.temp);
+      const nxt = soonKey ? { key: soonKey, clim: soonClim }
+                         : pickNext(biome, climTo.temp, [biomePrev]);
       const k = nxt ? nxt.key : biome;
       planClim = nxt ? nxt.clim : null;
       const made = Math.max(bendZ0 + totalLen(curveSegs),
@@ -17197,7 +17245,7 @@ function stepBiome(dt){
          distance - so place lengths are what they always were. */
       biomeNext = placeSpan(k);
       /* and the place after it, now, so its skyline can grow for a mile */
-      chooseSoon(k, planClim ? planClim.temp : climTo.temp);
+      chooseSoon(k, planClim ? planClim.temp : climTo.temp, biomeTo);
     }
   }
   /* ---- AND THE PLAN BECOMES THE PICTURE AT THE HORIZON (RLG-150) --------
@@ -36498,12 +36546,15 @@ requestAnimationFrame(frameLoop);
   API.walkPlaces = function(n, fromKey, fromT){
     let k = fromKey || biome;
     let t = fromT === undefined ? climTo.temp : fromT;
+    let prev = null;
     const out = [];
     for(let i = 0; i < (n || 200); i++){
-      const nx = pickNext(k, t);
+      /* the walk carries its own history, or it would measure a picker with a
+         memory the real road does not give it (RLG-332) */
+      const nx = pickNext(k, t, prev ? [prev] : null);
       if(!nx){ out.push({ key: null, temp: null, stepF: null }); break; }
       const stepF = Math.abs(nx.clim.temp - t) * (TEMP_F_HI - TEMP_F_LO);
-      k = nx.key; t = nx.clim.temp;
+      prev = k; k = nx.key; t = nx.clim.temp;
       out.push({ key: k, temp: +t.toFixed(4), stepF: +stepF.toFixed(2) });
     }
     return out;

@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-136"></a>
+## [0.14.136] - 2026-09-23
+- Fixed: **the road no longer takes turns between two places.** Reported from the device as mountain
+  to city to mountain to city; measured at 118 returns-within-two in 300 crossings from a cold
+  start, with only 8 distinct places. The picker refused the place you were standing in and nothing
+  more, and the climate rule leaves a cold run just two places it can reach. It now refuses the
+  place before as well, and when that corners it completely it takes a bigger jump in the WEATHER
+  rather than repeating a place. 0 repeats and 0 returns across 1,500 crossings, watched failing at
+  66. [RLG-332](../fragments/RLG-332.md)
+
 <a id="v0-14-135"></a>
 ## [0.14.135] - 2026-09-23
 - Changed: **the vignette is drawn once and copied after, instead of rebuilt every frame.** It is a
