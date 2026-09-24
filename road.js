@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.136';
+window.ROAD_BUILD = '0.14.137';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9108,8 +9108,36 @@ const SANDSTONE = {
   dark:'#5e3324', mid:'#75422c', far:'#8e5738',
   litDark:'#7d4630', litMid:'#96593a', litFar:'#b0714a'
 };
+/* ---- AND THE MOUNTAIN'S OWN ROCK, FOR THE SAME REASON (RLG-331) --------
+   Owner, 2026-09-23, from the device: "The ground the mountain color and the
+   scenery mountain colors the valley mountain colors all need to match so they
+   look like the same mountain valley we can differ the colors but they all need
+   to match at the same time."
+
+   A MOUNTAIN HAD THREE UNRELATED PALETTES AND ONE OF THEM WAS A DEFAULT NOBODY
+   CHOSE. Its ground came from `grassLo`/`grassHi` - a green-grey; its scenery
+   faces came from a neutral grey in this table; and its valley range fell
+   through to `skyBase`'s default of '#150c22', WHICH IS A VIOLET. Sampled off
+   the screen: the range read rgb(69,66,85) against a ground of rgb(122,135,128)
+   - not a shade apart, a different hue family.
+
+   SANDSTONE ABOVE ALREADY SOLVED THIS FOR A CANYON and its own note says what
+   it is for: "wall art, the ground the walls stand in, and the silhouette on the
+   horizon". This is the same table for a mountain, and the same three readers.
+
+   THE GROUND IS UNCHANGED BY IT. `dark` and `mid` ARE the two colours MOUNTAIN
+   already had, so the verge is the colour it has always been and the scenery and
+   the range come to meet it rather than the other way about. The rule the owner
+   asked for is one SOURCE, not one colour: these still differ by distance and by
+   light, they just cannot differ by accident any more.
+   -------------------------------------------------------------------- */
+const GRANITE = {
+  dark:'#2b3a33', mid:'#3c4f45', far:'#556b60',
+  litDark:'#3c4f45', litMid:'#556b60', litFar:'#6e8779'
+};
 const ROCK_TONE = {
-  rock:  [['#3a3a40','#4a4a52','#5d6068'], ['#4c4c54','#5c5f68','#70747e']],
+  rock:  [[GRANITE.dark, GRANITE.mid, GRANITE.far],
+          [GRANITE.litDark, GRANITE.litMid, GRANITE.litFar]],
   snow:  [['#e8eef6','#cfdae8','#aebfd4'], ['#ffffff','#e3ebf4','#c3d1e2']],
   sand:  [[SANDSTONE.dark, SANDSTONE.mid, SANDSTONE.far],
           [SANDSTONE.litDark, SANDSTONE.litMid, SANDSTONE.litFar]]
@@ -14842,7 +14870,12 @@ const BIOMES = {
               sky:'#5a3520', city:0.05, trees:0.05, skyForm:'mesa' },
   MOUNTAIN: { name:'MOUNTAIN', temp:0.15, vary:0.15, precip:0.45, bias:1.00,
               hill:1.00, bend:1.00,
-              grassLo:'#2b3a33', grassHi:'#3c4f45',
+              /* the ground is GRANITE's own two darkest tones, so the verge,
+                 the rock faces beside the road and the range across the valley
+                 are one rock in three lights (RLG-331) */
+              grassLo:GRANITE.dark, grassHi:GRANITE.mid,
+              /* and the silhouette, which fell through to a violet default */
+              skyBase:GRANITE.mid,
               /* the cliff is the hazard and it has no water to agree with, so it
                  reads `hazardRoll` and the rock face stands opposite (RLG-265) */
               hazard:'roll',

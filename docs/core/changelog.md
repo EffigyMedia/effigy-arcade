@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-137"></a>
+## [0.14.137] - 2026-09-23
+- Changed: **a mountain valley is one rock now.** The ground, the rock faces beside the road and the
+  range across the valley came from three unrelated palettes, and the range's was a default MOUNTAIN
+  never declared - a violet, rgb(69,66,85), against a green-grey ground. They read from one table,
+  the way a canyon's sandstone already fed its wall, its ground and its silhouette. The ground is
+  unchanged: the new table's two darkest tones are the colours it already had.
+  [RLG-331](../fragments/RLG-331.md)
+
 <a id="v0-14-136"></a>
 ## [0.14.136] - 2026-09-23
 - Fixed: **the road no longer takes turns between two places.** Reported from the device as mountain
