@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-142"></a>
+## [0.14.142] - 2026-09-24
+- Fixed: **the cliff face falls from the rim instead of lying across the valley.** It was painted
+  from the rim out to the edge of the frame, which is the valley floor's shape rather than a
+  cliff's, so its strips ran sideways across the valley instead of down the fall. It is a ribbon
+  following the rim now: top edge the rim line, bottom edge the foot, and nothing moving sideways.
+  [RLG-329](../fragments/RLG-329.md)
+
 <a id="v0-14-141"></a>
 ## [0.14.141] - 2026-09-24
 - Changed: **the face over the edge is the same rock as the face above the road, in strips.** Three

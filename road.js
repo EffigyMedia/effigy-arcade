@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.141';
+window.ROAD_BUILD = '0.14.142';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -27734,46 +27734,43 @@ function drawRoad(){
            read as a lip rather than a shadow.
            ---------------------------------------------------------- */
         if(!lOff('cliff')){
-          const cTop = Math.min(H, y2), cBot = Math.min(H, fy2);
-          if(cBot > cTop + 0.05){
-            /* ---- IT IS THE UP FACE, POINTED DOWN (RLG-329) -------------
-               Owner, 2026-09-24: "The face going down toward that valley used
-               to be the same color as the mountain face going up. It was
-               rendered in strips going down."
+          /* ---- THE FACE FALLS FROM THE RIM; IT DOES NOT LIE ACROSS THE
+                 VALLEY (RLG-329) -------------------------------------
+             Owner, 2026-09-24: "no. Now you've just painted ACROSS the valley
+             level with the road. It should go DOWN over the edge."
 
-               SO IT IS THE WALL'S OWN PAINTER AND THE WALL'S OWN COLOUR. Both
-               of my earlier cuts invented a treatment for this face - first a
-               flat tone, then a haze of its own - and both were wrong in the
-               same way: they made it a DIFFERENT SURFACE from the rock above
-               the road, when it is the same rock seen over the other edge.
+             AND THAT WAS A PLAIN GEOMETRY MISTAKE. The face was painted from
+             the rim OUT TO THE EDGE OF THE SCREEN, which is a band lying flat
+             at the road's own level - the shape the valley FLOOR has, not the
+             shape a cliff has.
 
-               `WALL_SHADE` and `WALL_HAZE` are what the up face takes, and the
-               facets are its own noise fixed to the road, so the strips vary
-               down the fall the way the wall's vary up it. Three of them, which
-               is what the wall uses: the wall's own note says the partition is
-               what makes it affordable, because the strips cover the band
-               exactly once rather than painting over each other.
-               -------------------------------------------------------- */
-            const cFar = clamp(1 - fade * 0.55, 0, 1);
+             A SHEER FACE IS A RIBBON THAT FOLLOWS THE RIM. Its top edge is the
+             rim line, `y1` to `y2`; its bottom edge is the foot of the fall,
+             `fy1` to `fy2`; and its left and right are the rim's own x at each
+             end of the slice. Nothing moves sideways, because a point directly
+             below another at the same distance projects to the same screen x -
+             only the y falls. Outboard of the foot is the valley floor, which
+             is painted separately and does run to the edge of the frame.
+
+             The strips go DOWN the ribbon, each one a band between the rim and
+             the foot, so they follow the fall rather than stacking across it.
+             ---------------------------------------------------------- */
+          if(fy2 > y2 + 0.05 || fy1 > y1 + 0.05){
+            const cHz = clamp(1 - fade * 0.55, 0, 1);
             const cAir = hexRGB(dB.sky || '#2a3550');
-            const cAt = (t) => cTop + (cBot - cTop) * t;
-            /* ---- AND IT IS SHADED LIKE THE MASSIF, NOT LIKE THE WALL ----
-               MOUNTAIN carries `mass`, so the face that rises from the roadside
-               is painted by the massif rather than by the wall - and the massif
-               is much the darker of the two, `WALL_SHADE + (1 - lit) * MASS_SHADE`
-               against the wall's `WALL_SHADE` alone. Matched to the wall, this
-               face came out pale beside the rock it is supposed to be part of.
-               It takes the massif's own shading, with the facet noise varying
-               each strip as a turned plane would. */
+            const downNear = (t) => y1 + (fy1 - y1) * t;
+            const downFar  = (t) => y2 + (fy2 - y2) * t;
             const cStrip = (t0, t1, facet) => {
               ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark),
                                             clamp(WALL_SHADE + MASS_SHADE * 0.62 + facet, 0, 1),
                                             DROP_DARK),
-                                     WALL_HAZE * cFar, cAir);
-              const ya = cAt(t0), yb = cAt(t1) + 0.6;   /* a lap, as the bands take */
+                                     WALL_HAZE * cHz, cAir);
               ctx.beginPath();
-              ctx.moveTo(dx2, ya); ctx.lineTo(edge, ya);
-              ctx.lineTo(edge, yb); ctx.lineTo(dx2, yb);
+              ctx.moveTo(dx2, downFar(t0));
+              ctx.lineTo(dx1, downNear(t0));
+              /* a lap down the fall, so two strips cannot leave a hairline */
+              ctx.lineTo(dx1, downNear(t1) + 0.6);
+              ctx.lineTo(dx2, downFar(t1) + 0.6);
               ctx.closePath();
               ctx.fill();
             };
