@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.137';
+window.ROAD_BUILD = '0.14.138';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15971,6 +15971,25 @@ let RANGE_OUT = 16;
    rather than one picture repeating, each as wide as the art's own proportion
    makes it. Tunables with committed defaults, read and written through
    `API.rangeModel`. The old `RANGE_SCALE` and `RANGE_AT` went with the picture. */
+/* ---- THE FACE THAT HANGS FROM THE RIM (RLG-329) ------------------------
+   Owner, 2026-09-23, from the device: "The sheer cliff face is what hangs
+   beyond the road down to the valley... that means there is literally nothing
+   and you can see underneath the mountain range."
+
+   [[RLG-278]] took it out and the note at the drop still says why: a dark face
+   "reads as a shadow on a field, because the drop is mostly DISTANCE in this
+   projection rather than wall". THAT DIAGNOSIS IS RIGHT AND THE CONCLUSION WAS
+   WRONG. Painting nothing does not leave a cliff, it leaves a HOLE - the sky
+   and the far field show through the gap between the rim and the valley floor,
+   under the range that is supposed to be standing behind it.
+
+   SO THE FACE IS ROCK, NOT A BAND OF SHADOW. It is the place's own stone, shaded
+   harder than the floor because a wall under a lip is in shadow, and hazed with
+   distance like every other surface here - which is the thing the first attempt
+   lacked and the thing that makes depth read at all in this engine.
+   ------------------------------------------------------------------- */
+let CLIFF_SHADE = 0.52,  /* how far the face darkens toward the drop's shadow */
+    CLIFF_HAZE  = 0.55;  /* and how much of the distance haze it takes        */
 let RANGE_STEP = 10;      /* segments between peaks along the valley          */
 let RANGE_H    = 28;      /* how tall a peak stands, in camera heights        */
 /* the drawn peaks this frame, per view, for a check */
@@ -27630,8 +27649,16 @@ function drawRoad(){
           /* the place's own ground in its own bands, hazed for the distance it
              really is: much further than the slice above it */
           const far = clamp(1 - fade * 0.55, 0, 1);
+          /* ---- THE FLOOR IS THE MOUNTAINS' COLOUR (RLG-331) -----------
+             Owner, 2026-09-23: "the valley floor should adopt the same color as
+             the mountains". It already came from the place's own rock, but it
+             hazed toward `sky` while the range across the valley hazes toward
+             the SKY'S OWN far stop - two different washes over one rock, which
+             is the same fault one level down. Both take the same haze now, so
+             the floor and the peaks standing on it go grey together. */
+          const vHaze = hexRGB(skyStops()[3]);
           ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), DROP_SHADE, DROP_DARK),
-                                 DROP_HAZE * far, hexRGB(dB.sky || '#2a3550'));
+                                 DROP_HAZE * far, vHaze);
           /* ---- TILED, AND THE HOLE THAT STOPPED IT LAST TIME (RLG-299) ---
              What stood here said this: "FILLED TO THE BOTTOM OF THE SCREEN, as
              the ground is. A slice the road pass skips - hidden behind a crest
@@ -27662,6 +27689,57 @@ function drawRoad(){
           if(floorBot === null || fBot > floorBot) floorBot = fBot;
           dropTrace.floor.push([n, fy2, H]);
           if(drawWatch) layerSaw('front', 'drop');
+        }
+        /* ---- AND THE FACE BETWEEN THE RIM AND THE FLOOR (RLG-329) -----
+           The hole. The floor starts at `fy2` and the road's own ground stops
+           at the rim on `y2`, so everything between them was UNPAINTED - the
+           sky and the far field showing through, under a range that is meant to
+           stand behind the valley.
+
+           It is filled from the same rock as the ground and the floor, shaded
+           harder because a wall under a lip is in shadow, and hazed with
+           distance so it recedes rather than sitting flat. ONE FLAT TONE A
+           SLICE IS ENOUGH because the slices are thin and each is shaded by its
+           own depth - the gradient down the face is the stack of them, which is
+           how the wall, the ground and the floor all already work.
+
+           It is painted BEFORE the lit lip, so the lip still reads as the top
+           edge of it - and that pairing is what [[RLG-278]] says makes a cliff
+           read as a lip rather than a shadow.
+           ---------------------------------------------------------- */
+        if(!lOff('cliff')){
+          const cTop = Math.min(H, y2), cBot = Math.min(H, fy2);
+          if(cBot > cTop + 0.05){
+            const cFar = clamp(1 - fade * 0.55, 0, 1);
+            const cRock = mixRGB(groundTone(idx, dark), CLIFF_SHADE, DROP_DARK);
+            const cAir = hexRGB(skyStops()[3]);
+            /* ---- AND IT IS DARKEST UNDER THE LIP -------------------
+               A flat tone is what [[RLG-278]] called a shadow on a field, and
+               it is right: the fall has no depth if every row of it is the
+               same colour. The top of the band is the rock just under the
+               rim, in its own shadow and barely hazed; the bottom is the foot
+               of the fall, as far away as the valley floor and washed with
+               the same air. THE GRADIENT IS ONLY BUILT WHERE IT CAN BE SEEN -
+               a band under two dozen pixels is a sliver and takes the flat
+               tone, which keeps this to a handful of gradients a frame
+               rather than one per slice. */
+            if(cBot - cTop > 24){
+              const cg = ctx.createLinearGradient(0, cTop, 0, cBot);
+              cg.addColorStop(0, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 0.35, cAir));
+              cg.addColorStop(1, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 1.25, cAir));
+              ctx.fillStyle = cg;
+            } else {
+              ctx.fillStyle = mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar, cAir);
+            }
+            ctx.beginPath();
+            ctx.moveTo(dx2, cTop);
+            ctx.lineTo(edge, cTop);
+            ctx.lineTo(edge, cBot);
+            ctx.lineTo(dx2, cBot);
+            ctx.closePath();
+            ctx.fill();
+            if(drawWatch) layerSaw('front', 'cliff');
+          }
         }
         /* ---- WHERE THE RANGE IS DRAWN -----------------------------------
            The picture model placed its one tile at a chosen slice - first the
@@ -36045,6 +36123,14 @@ requestAnimationFrame(frameLoop);
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
   API.floorFull = function(on){ floorFull = !!on; return floorFull; };
+  /* the cliff face's two tunables, so they can be judged on a device */
+  API.cliffModel = function(o){
+    if(o){
+      if(o.shade >= 0) CLIFF_SHADE = o.shade;
+      if(o.haze  >= 0) CLIFF_HAZE  = o.haze;
+    }
+    return { shade: CLIFF_SHADE, haze: CLIFF_HAZE };
+  };
   /* debug: the two baked gradients built live again, so a check can put the two
      frames side by side on ONE road and call whatever differs (RLG-299) */
   API.bakedOff = function(on){ bakedOff = !!on; return bakedOff; };

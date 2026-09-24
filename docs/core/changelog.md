@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-138"></a>
+## [0.14.138] - 2026-09-23
+- Fixed: **the cliff face hangs from the rim to the valley floor again.** Nothing was painted between
+  the two, so the sky showed through under the range that is meant to stand behind the valley. It is
+  the place's own rock, shaded because a wall under a lip is in shadow, hazed with distance, and
+  darkest just under the lip - which is what the face it replaces lacked when it was taken out for
+  reading as a shadow. [RLG-329](../fragments/RLG-329.md)
+- Changed: **the valley floor takes the mountains' haze.** It came from the same rock as the range
+  but washed toward a different colour, so the floor and the peaks standing on it drifted apart.
+  [RLG-331](../fragments/RLG-331.md)
+
 <a id="v0-14-137"></a>
 ## [0.14.137] - 2026-09-23
 - Changed: **a mountain valley is one rock now.** The ground, the rock faces beside the road and the
