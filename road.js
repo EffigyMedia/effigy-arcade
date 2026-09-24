@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.147';
+window.ROAD_BUILD = '0.14.148';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -33863,9 +33863,19 @@ function showSettings(){
          start, not a fixed light (RLG-051). */
       '<button class="go ghost" data-act="time">TIME \u00B7 <b>' +
         TIMES[optTime].key + '</b></button>' +
-      /* practice has a clock only if you ask for one */
+      /* ---- PRACTICE HAS A CLOCK ONLY IF YOU ASK FOR ONE -----------------
+         IT READS CHECKPOINTS, NOT TIMED (owner, 2026-09-24: "instead of the
+         setting saying timed, I'd rather it say checkpoints"). What the switch
+         actually turns on is the gantries and the seconds they pay, and naming
+         it after the thing you drive through says that; naming it after the
+         clock said only that a number was counting.
+
+         THE LABEL CHANGED AND NOTHING ELSE DID. `timedRun`, `data-act="timed"`
+         and `API.setTimed` keep their names - they are read by six harnesses
+         and by the save, and renaming a stored key is how a setting silently
+         goes back to its default for every player who already set it. */
       (mode === 'race' ? '' :
-        '<button class="go ghost" data-act="timed">TIMED \u00B7 <b>' +
+        '<button class="go ghost" data-act="timed">CHECKPOINTS \u00B7 <b>' +
           (timedRun ? 'ON' : 'OFF') + '</b></button>') +
       /* shut on shift, and shut the way RLG-115 shuts a mode: the reason is
          given rather than the control vanishing (RLG-203) */

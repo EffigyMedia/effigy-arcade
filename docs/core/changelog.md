@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-148"></a>
+## [0.14.148] - 2026-09-24
+- Changed: **the practice clock setting reads CHECKPOINTS rather than TIMED.** Owner-asked. What
+  the switch turns on is the gantries and the seconds they pay, and naming it after the thing you
+  drive through says that. The LABEL only: the stored key, the `data-act`, `timedRun` and
+  `API.setTimed` keep their names, because renaming a stored key is how a setting silently
+  reverts to its default for everyone who already set it, and six harnesses read that name.
+  [RLG-342](../fragments/RLG-342.md)
+
 <a id="v0-14-147"></a>
 ## [0.14.147] - 2026-09-24
 - Added: **RANDOM is one of the times of day, and it is the default.** Owner-asked. It is not a
