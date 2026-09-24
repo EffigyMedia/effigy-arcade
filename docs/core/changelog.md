@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-149"></a>
+## [0.14.149] - 2026-09-24
+- Fixed: **the horizon swings with the car's heading instead of the road a mile ahead.** The owner
+  diagnosed it - "you're moving it as the road twists and turns way down the road not where the
+  player's car is" - and the constant said so in its own name: `SKY_BEND_AT = ROAD_FAR`, the whole
+  draw distance. Worse, `bendPx` subtracts the car's heading out of its answer, so what was left
+  was pure curvature: the skyline swung when the road bent far away while the car was going
+  straight, and sat still when the car turned. Measured before the change, the heading was
+  identical to five places at two positions thirty thousand units apart while the horizon swung
+  thirty-nine pixels. It reads `slopeCache` at the car now. `SKY_SWING` is 60 and is a tunable,
+  not 0.55 carried over - the two quantities are in different units, and the number comes from
+  measured peaks of 300 against 2.62. Whether the amount looks like distance is a device call.
+  [RLG-343](../fragments/RLG-343.md)
+
 <a id="v0-14-148"></a>
 ## [0.14.148] - 2026-09-24
 - Changed: **the practice clock setting reads CHECKPOINTS rather than TIMED.** Owner-asked. What

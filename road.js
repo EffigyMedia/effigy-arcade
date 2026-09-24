@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.148';
+window.ROAD_BUILD = '0.14.149';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -380,7 +380,10 @@ const CULL_AHEAD  = OUT_OF_SIGHT + 9000;
                   road a roadblock is laid. 0.87 of the drawn road, which is the
                   26,000 of 30,000 it was
      BORE_FAR     how far down a tunnel is built, just past the drawn road
-     SKY_BEND_AT  where the skyline reads the bend it swings against
+     SKY_BEND_AT  GONE (RLG-343). The skyline swung against the bend at the far
+                end of the DRAW, and the owner found the fault in it: a distant
+                horizon must answer the CAR's heading, not the road a mile off.
+                `SKY_SWING` is what scales it now, and it is not a distance
 
    WHAT IS DELIBERATELY NOT HERE: distances that happen to be near the old draw
    but mean something else. `RAGE_LOST` is how far you have to outrun an angry
@@ -391,7 +394,32 @@ const CULL_AHEAD  = OUT_OF_SIGHT + 9000;
 const ROAD_FAR    = DRAW * SEG;
 const LOOK_AHEAD  = Math.round(ROAD_FAR * 0.87);
 const BORE_FAR    = ROAD_FAR + 3000;
-const SKY_BEND_AT = ROAD_FAR;
+/* ---- WHAT A DISTANT HORIZON ACTUALLY SWINGS AGAINST (RLG-343) ---------
+   Owner, 2026-09-24: "I've also kind of figured out why the horizon parallax
+   seems weird. It's because you're moving it as the road twists and turns way
+   down the road not where the player's car is."
+
+   IT WAS `bendPx(pos + ROAD_FAR)`, the road's deviation sixty thousand units
+   ahead - and `bendPx` SUBTRACTS the car's own heading, so what was left was
+   pure curvature. The skyline therefore swung when the road bent a mile away
+   while the car was still going straight, and sat still when the car turned.
+
+   MEASURED OVER A DRIVE, and one pair of samples says the whole thing: at
+   pos 10,062 and again at 39,610 the heading was the same -1.13110 to five
+   places - the car dead straight for thirty thousand units - while the term
+   ahead went from 74.6 to 145.6 and swung the horizon thirty-nine pixels.
+
+   SO IT READS THE HEADING, which is `slopeCache` at the car: the direction the
+   road is pointing where the camera sits. A skyline miles away does not care
+   what the road does ahead of you; it sweeps because YOU have rotated.
+
+   SKY_SWING IS NOT 0.55 CARRIED OVER. The two quantities are in different
+   units - a deviation in pixels against a heading - and 0.55 was fitted to the
+   first. Measured peaks over the same drive were 300 against 2.62 and medians
+   88.4 against 0.85, so 60 puts the swing on the same scale as it was. It is a
+   tunable with a committed default, and `API.skySwing` moves it, because how
+   far a horizon should sweep is taste and only the device can judge it. */
+let SKY_SWING = 60;
 /* the closest anything has been placed this run, relative to the player. A
    harness reads it: if this ever drops under the draw distance, something is
    arriving in view again. */
@@ -25502,7 +25530,7 @@ function drawSky(){
      road did, which reads as the whole world sliding rather than as distance.
      A skyline that far off barely moves: 0.55, and chased slower so it drifts
      rather than snaps. */
-  const skyWant = -bendPx(pos + SKY_BEND_AT) * 0.55;
+  const skyWant = -lookup(slopeCache, pos) * SKY_SWING;
   /* published for `skyTrace`, because a check that displaces the chase has to know
      what it is converging ON. The trace used to report the raw `bendPx` and a
      harness reading THAT measured a residual against a number the chase never
@@ -37588,7 +37616,7 @@ requestAnimationFrame(frameLoop);
      is driven by the bend a long way ahead and chased frame to frame, so a
      twitch can be in either the input or the chase (RLG-062). */
   /* displace the skyline's chase, so a check can watch it come back. The chase
-     converges on `bendPx(pos + SKY_BEND_AT)`, which is CONSTANT while the car is
+     converges on the car's heading times `SKY_SWING`, which is CONSTANT while the car is
      parked - so pushing the value away from it and timing the return measures
      the chase rate and nothing else (RLG-096). */
   API.setSkySmooth = function(v){ skySmooth = v; return skySmooth; };
@@ -37599,9 +37627,21 @@ requestAnimationFrame(frameLoop);
      can refuse to measure below it rather than measure the clamp (RLG-096). */
   API.skyStepMax = function(){ return SKY_STEP_MAX; };
   API.skyChaseFrames = function(on){ skyChaseFrames = !!on; return skyChaseFrames; };
+  API.skySwing = function(v){ if(v !== undefined) SKY_SWING = +v; return SKY_SWING; };
   API.skyTrace = function(){
-    return { pos:+pos.toFixed(2), want:+bendPx(pos + SKY_BEND_AT).toFixed(4),
+    return { pos:+pos.toFixed(2),
+             want:+(-lookup(slopeCache, pos) * SKY_SWING).toFixed(4),
+             swing:SKY_SWING,
              target:+skyTarget.toFixed(4),
+             /* ---- THE TWO QUANTITIES, SIDE BY SIDE (RLG-343) --------------
+                `ahead` is the road's deviation at the far end of the draw, which
+                is what the skyline USED to swing against, and `heading` is the
+                direction the car itself is pointing, which is what it swings
+                against now. They are published together so the owner's report -
+                that the horizon answers the road far away rather than the car -
+                can be read as two numbers rather than argued about. */
+             ahead:+bendPx(pos + ROAD_FAR).toFixed(4),
+             heading:+lookup(slopeCache, pos).toFixed(5),
              smooth:+skySmooth.toFixed(4), z0:bendZ0, segs:curveSegs.length };
   };
   /* debug only: a dead straight, dead flat road. Perspective questions are

@@ -71,6 +71,19 @@ SETTLE_MS = 1500
 # the two residuals must agree to within this share of the larger. The old form differed by a
 # factor of about fifteen at half the frame rate, so this is not a tight rope to walk.
 AGREE = 0.35
+# ---- AND A FLOOR, BECAUSE A RATIO BETWEEN TWO NEARLY-ZERO NUMBERS IS NOISE -------------------
+# RLG-343 changed what the chase converges ON - the car's heading rather than the road's
+# deviation a mile ahead - and the new target is far steadier while the car drives. The chase
+# then finishes so completely inside SETTLE_MS that both residuals land near zero, and this
+# check read 0.0641 against 0.4128 and called an 84 per cent gap a frame-counting chase. Both
+# were 99.6 per cent converged.
+#
+# IT DOES NOT WEAKEN THE CHECK, AND THE REASON IS THE DEFECT'S OWN SHAPE. A chase that counts
+# frames gets HALF AS FAR at half the frame rate, so its slow residual is LARGE - the old form
+# measured a factor of fifteen. It cannot land under a floor of two pixels out of a hundred-
+# pixel push. So the floor can only ever excuse a pair that are both essentially converged,
+# which is the one case where the ratio says nothing.
+SETTLED = 2.0
 # the throttled run has to be meaningfully slower or the comparison is a rate against itself
 MIN_SLOWDOWN = 1.6
 # ...and it has to stay ABOVE the sky's own step clamp. Below that the chase is deliberately not
@@ -195,10 +208,14 @@ def main():
         big = max(fast['residual'], slow['residual'])
         gap = abs(fast['residual'] - slow['residual'])
         share = (gap / big) if big else 0
-        res.check(share <= AGREE,
+        settled = big <= SETTLED
+        res.check(settled or share <= AGREE,
                   'the chase gets equally far in equal TIME, whatever the frame rate',
                   'residuals %.4f and %.4f differ by %.0f%% - the chase is counting frames'
                   % (fast['residual'], slow['residual'], share * 100))
+        if settled:
+            print('        both runs converged to within %.1fpx of %.0f pushed, so the share '
+                  'between them is noise and the floor decides' % (SETTLED, PUSH))
         print('        residuals %.4f and %.4f, differing by %.0f%%'
               % (fast['residual'], slow['residual'], share * 100))
         print()
