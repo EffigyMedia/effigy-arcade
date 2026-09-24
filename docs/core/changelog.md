@@ -19,6 +19,15 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-143"></a>
+## [0.14.143] - 2026-09-24
+- Changed: **the valley is deep enough for its face to read as a cliff**, and the face tucks under
+  the ground instead of meeting it. The fall's height on screen is the drop's depth, and at twelve
+  camera heights it was a strip hugging the rail; it is twenty-two. The ground and the face shared
+  an edge and were antialiased against it independently, which left a hairline of the sky between
+  them - the same fault the wall, the ground and the water each had, with the same answer.
+  [RLG-329](../fragments/RLG-329.md)
+
 <a id="v0-14-142"></a>
 ## [0.14.142] - 2026-09-24
 - Fixed: **the cliff face falls from the rim instead of lying across the valley.** It was painted

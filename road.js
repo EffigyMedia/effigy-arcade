@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.142';
+window.ROAD_BUILD = '0.14.143';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -15822,7 +15822,16 @@ const DROP_DARK = [16,18,24], RIM_LIT = [236,240,248];
    thirteen - how much it is shaded toward `DROP_DARK` as a valley floor under
    the rim, and how much sky it takes at its farthest. Tunables with committed
    defaults. */
-let DROP_DEPTH = 12, DROP_SHADE = 0.30, DROP_HAZE = 0.42;
+/* ---- AND HOW FAR THE VALLEY IS BELOW THE ROAD (RLG-329) ---------------
+   The face over the edge is the band between the rim and the foot, so its
+   height on screen IS this number: at 12 camera heights the fall was a thin
+   strip hugging the rail, which read as an edging rather than as a cliff. The
+   owner asked for a face that goes down into the valley, and the shape was
+   already right - it was the depth that was not. */
+let DROP_DEPTH = 22, DROP_SHADE = 0.30, DROP_HAZE = 0.42;
+/* how far the face's top strip runs UNDER the ground it hangs from, so the
+   two cannot leave an antialiased hairline between them (RLG-329) */
+const CLIFF_LAP = 1.2;
 /* ---- AND THE WALL IS THAT PLANE TURNED OVER (owner, 2026-09-20, RLG-297) ---
    "The canyon walls might look better if they are built like the cliff face of
    the mountain biome, but going up off screen instead."
@@ -27765,10 +27774,21 @@ function drawRoad(){
                                             clamp(WALL_SHADE + MASS_SHADE * 0.62 + facet, 0, 1),
                                             DROP_DARK),
                                      WALL_HAZE * cHz, cAir);
+              /* ---- AND THE TOP STRIP TUCKS UNDER THE GROUND (RLG-329) ---
+                 Owner, 2026-09-24: "The road/ground needs to perfectly meet
+                 with the ribbon going down and not leave the little gaps
+                 exposed." The ground stops ON the rim line and the face starts
+                 on it, so the two ABUT - and the canvas antialiases each
+                 against that shared edge independently, leaving a hairline of
+                 whatever is behind between them. It is the same fault the
+                 tiled bands had and it takes the same answer: the top strip
+                 starts a little ABOVE the rim so it runs under the ground
+                 instead of meeting it. */
+              const lapUp = t0 <= 0 ? CLIFF_LAP : 0;
               ctx.beginPath();
-              ctx.moveTo(dx2, downFar(t0));
-              ctx.lineTo(dx1, downNear(t0));
-              /* a lap down the fall, so two strips cannot leave a hairline */
+              ctx.moveTo(dx2, downFar(t0) - lapUp);
+              ctx.lineTo(dx1, downNear(t0) - lapUp);
+              /* and a lap down the fall, so two strips cannot part either */
               ctx.lineTo(dx1, downNear(t1) + 0.6);
               ctx.lineTo(dx2, downFar(t1) + 0.6);
               ctx.closePath();
