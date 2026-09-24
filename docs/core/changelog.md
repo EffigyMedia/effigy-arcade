@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-145"></a>
+## [0.14.145] - 2026-09-24
+- Fixed: **the slab of the up face that never rendered, at one fixed distance ahead of the
+  car.** MOUNTAIN and CANYON are the only two places that declare a mass, and their up face is
+  drawn by the massif rather than by the wall - which is why the seam the first read suspected
+  was never involved. Past two fifths of the draw the massif merges a run of six slices into one
+  quad, but it decided that from the SLICE's distance while anchoring the run on the slice's
+  absolute index in the world. At the boundary the two disagree: a slice just past the threshold
+  defers to its run's anchor, the anchor is nearer and so on the other side of the threshold, and
+  everything between them is painted by nothing. The anchor's distance decides now. Measured
+  before the fix at a gap of up to five slices starting at n=121 against a threshold of 120, in
+  both places, varying with where the car stands - which is why the strip held station while the
+  world moved through it. `tools/mass-gap-test.py` asserts every slice is covered and was watched
+  failing with the old line put back. [RLG-336](../fragments/RLG-336.md)
+
 <a id="v0-14-144"></a>
 ## [0.14.144] - 2026-09-24
 - Added: **a reader for where the massif stands**, for the report that one mountain ahead travels

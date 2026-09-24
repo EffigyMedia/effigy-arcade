@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.144';
+window.ROAD_BUILD = '0.14.145';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16199,9 +16199,37 @@ function massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide){
      start to its end is the same surface; only the road's bend is taken as a
      chord, and at that distance the chord is under a pixel too. */
   let step = 1, q2 = p2, yy2 = y2;
-  if(n > DRAW * MASS_MERGE){
+  /* ---- THE RUN DECIDES WHETHER TO MERGE, NOT THE SLICE (RLG-336) -------
+     Owner, 2026-09-24, from the device, with shots of both places that have a
+     mass: "there is a strip not rendering on the upward face. It's at a static
+     distance so it stays there. Like all the strips passing through a certain
+     spot don't get rendered."
+
+     THAT IS EXACTLY WHAT THIS DID. The test was `n > DRAW * MASS_MERGE` - the
+     SLICE's own distance - while the run is anchored on the slice's ABSOLUTE
+     index, so that the rock stands still in the world as the car advances. The
+     two disagree at the boundary. A slice just past the threshold defers to its
+     run's anchor; the anchor is a few slices NEARER, so it can be on the other
+     side of the threshold, where it takes `step = 1` and paints itself alone.
+     Everything between them is painted by nothing.
+
+     MEASURED before the change, on a draw of 300 with MASS_RUN 6 and
+     MASS_MERGE 0.40: the anchors stood at n = 125, 131, 137 and the threshold
+     at 120, so n = 121 to 124 was covered by no quad at all - in CANYON and in
+     MOUNTAIN alike, which are the only two places that declare a mass. The gap
+     runs from nothing to five slices depending on where the run falls, and it
+     holds station because the threshold is a fraction of the DRAW, which is a
+     fixed distance ahead of the car.
+
+     So the anchor's distance decides. A run wholly past the threshold merges;
+     a run that straddles it paints slice by slice, which is what the near half
+     of the draw does anyway. At most five extra quads a frame, twice for a
+     canyon, against a hole in the rock.
+     ------------------------------------------------------------------- */
+  const inRun = ((idx % MASS_RUN) + MASS_RUN) % MASS_RUN;
+  if(n - inRun > DRAW * MASS_MERGE){
     step = MASS_RUN;
-    if(idx % step !== 0) return;          /* covered by the run's own quad */
+    if(inRun !== 0) return;               /* covered by the run's own quad */
     q2 = proj(0, (idx + step) * SEG);
     if(!q2.ok) return;
     yy2 = q2.y;
@@ -16287,6 +16315,13 @@ function massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide){
       massFront = { B: dB, idx: idx, sides: massFront && massFront.B === dB
                       ? Array.from(new Set(massFront.sides.concat([ws]))) : [ws] };
       massTrace.slices += step;           /* slices COVERED, merged or not */
+      /* ---- AND WHICH ONES, SO A CHECK CAN SAY NONE WAS MISSED (RLG-336) ---
+         `top` is keyed by the slice that PAINTED, and past the merge that is one
+         slice in six - so a reader cannot tell a covered slice from a dropped
+         one without reimplementing the decision above, which is the shape of
+         check this codebase has been burned by. The engine states its own
+         coverage here instead. */
+      for(let k = 0; k < step; k++) massTrace.covered[n + k] = 1;
       massTrace.top[n] = +top.toFixed(1);
       /* AND THROUGH THE WALL'S OWN TRACE: the mass is the wall now, so what a
          check wrote about the wall - it runs the length of the draw, it leaves
@@ -16346,7 +16381,7 @@ function drawMassFront(){
   if(massTrace.front && !endWallDrawn){ endWallDrawn = 1; endWallN++; }
 }
 /* what the mass painted this frame, for a check (RLG-306) */
-let massTrace = { quads: 0, slices: 0, top: {} };
+let massTrace = { quads: 0, slices: 0, top: {}, covered: {} };
 /* where the massif last stood, for RLG-333 */
 let massAt = null;
 /* how far each ground band runs into the one below it, so the canvas cannot
@@ -27273,7 +27308,7 @@ function shoreFill(p1, p2, y1, y2, side, at, style, bandTop, bandBot){
 function drawRoad(){
   dropTrace = { floor: [], rim: {} };
   wallTrace = [];
-  massTrace = { quads: 0, slices: 0, top: {} };
+  massTrace = { quads: 0, slices: 0, top: {}, covered: {} };
   massShadeCache.clear();
   massFront = null;
   wallSeam = [null, null];
@@ -36286,6 +36321,7 @@ requestAnimationFrame(frameLoop);
     return { run:MASS_RUN, merge:MASS_MERGE, L:MASS_L.slice(), H:MASS_H.slice(), jag:MASS_JAG,
              shade:MASS_SHADE, off:massOff,
              quads:massTrace.quads, slices:massTrace.slices, top:Object.assign({}, massTrace.top),
+             covered:Object.assign({}, massTrace.covered),
              front:massTrace.front || 0, mirror:massTrace.mirror || 0,
              mirrorBack:massTrace.mirrorBack || 0 };
   };
