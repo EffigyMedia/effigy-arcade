@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.145';
+window.ROAD_BUILD = '0.14.147';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -962,9 +962,36 @@ const TIMES = [
   { key:'DUSK',     p:0.00 },
   { key:'MIDNIGHT', p:0.25 },
   { key:'DAWN',     p:0.50 },
-  { key:'MIDDAY',   p:0.75 }
+  { key:'MIDDAY',   p:0.75 },
+  /* ---- AND ONE THAT IS NOT AN HOUR AT ALL (RLG-339) ------------------
+     Owner, 2026-09-24: "I'd like one of the time of day choices to be random
+     and that should be the default."
+
+     `p` IS NULL RATHER THAN A NUMBER, because RANDOM is not a fifth hour - it
+     is a instruction to draw one of the four. `timeStart` is the only thing
+     that reads it and the only place the draw happens, so a run gets ONE hour
+     and keeps it: the four minutes then run on from there exactly as any other
+     choice does, and dusk still becomes night.
+
+     IT IS LAST IN THE TABLE AND THAT IS DELIBERATE. The option is saved as an
+     INDEX, so putting RANDOM first would have moved every existing choice down
+     one and silently turned a player's MIDDAY into a DAWN. Appended, every
+     index already written still means what it meant. */
+  { key:'RANDOM',   p:null }
 ];
-let optTime = 0;
+/* RANDOM IS THE DEFAULT, which is the second half of the ruling. A machine with
+   nothing stored takes it; a player who has ever set a time keeps theirs,
+   because the stored index is read over this. */
+let optTime = TIMES.length - 1;
+/* the hour a run begins at. RANDOM draws from the hours that ARE hours, found
+   by their own `p` rather than by counting back from the end of the table - so
+   a fifth real hour added tomorrow joins the draw without this changing. */
+function timeStart(){
+  const T = TIMES[optTime] || TIMES[0];
+  if(T && T.p !== null && T.p !== undefined) return T.p;
+  const real = TIMES.filter(t => t.p !== null && t.p !== undefined);
+  return real[(Math.random() * real.length) | 0].p;
+}
 /* debug only — never saved, never treated as an unlock */
 /* two switches, one per locked group: the racing ladder and the police. The
    patrol car once rode on the racers' switch, which meant testing a pursuit
@@ -13223,7 +13250,7 @@ function reset(){
      a setting the player chooses that the game then ignores because the
      previous run ended at 3am is not a setting. The continuity is worth less
      than the control, so the run starts where the player said. */
-  dayClock = TIMES[optTime].p * DAY_SECONDS;
+  dayClock = timeStart() * DAY_SECONDS;
   /* ---- AND THE WORLD STARTS AGAIN WITH IT (RLG-022, RLG-090) ---------
      The map used to be inherited: only the FIRST run of a page load chose its
      opening place outright, and a second run took the last one's place and
@@ -15103,7 +15130,25 @@ const OPEN_KEYS = BIOME_KEYS.filter(k => !BIOMES[k].passage);
 /* the draw itself, named so a check can sample the ACTUAL pick rather than a
    copy of it written into a harness. One call away from `openBiome`, so the two
    cannot drift. */
-function pickOpening(){ return OPEN_KEYS[(Math.random()*OPEN_KEYS.length)|0]; }
+/* ---- AND THE DEBUG MENU CAN NAME IT (RLG-338) ------------------------
+   Owner, 2026-09-24, having failed to reach a MOUNTAIN to test three open
+   reports: "just have the debug have a recyclable menu where you're picking
+   the starting biome."
+
+   IT IS READ HERE, INSIDE THE REAL DRAW, so a run started with it set opens
+   exactly as a run does - `openBiome` calls this one function and there is no
+   second path for a debug run to drift down. `null` is off and is the shipped
+   state; the switch is not saved, like the two beside it.
+
+   OPEN_KEYS, NOT BIOME_KEYS, because a run never begins inside a passage
+   ([[RLG-140]]) and a debug row that could break that rule would be a way to
+   test a state the game cannot reach. TUNNEL and BRIDGE are two of the most
+   common places anyway, so nothing is lost by leaving them off the list. */
+let dbgStart = null;
+function pickOpening(){
+  if(dbgStart && OPEN_KEYS.indexOf(dbgStart) >= 0) return dbgStart;
+  return OPEN_KEYS[(Math.random()*OPEN_KEYS.length)|0];
+}
 let biome = 'FOREST';
 function bio(){ return BIOMES[biome] || BIOMES.FOREST; }
 
@@ -34817,6 +34862,27 @@ function showTitle(){
    They are deliberately not saved. A debug switch that survives a reload is a
    debug switch you forget you left on.
    -------------------------------------------------------------------------- */
+/* ---- AND A PLACE YOU CANNOT WAIT FOR (RLG-338) ------------------------------
+   Owner, 2026-09-24, trying to test three reports that all need a mountain: "I
+   haven't actually seen a mountain yet. I couldn't get that biome."
+
+   MEASURED THROUGH THE GAME'S OWN PICKER, `API.walkPlaces`, over 9,600 place
+   changes: a MOUNTAIN is 2.11 per cent of them and takes 58 places to arrive on
+   average, which at three and a quarter to six miles a place is something like
+   270 miles of driving. It was absent altogether from eleven walks of two
+   hundred places. A TUNDRA is 0.03 per cent - three in 9,600.
+
+   SO A RUN CAN BE TOLD WHERE TO OPEN. It is the STARTING place and not a jump:
+   the owner asked for it that way, and it is the better shape - a teleport in
+   the middle of a run would have to place a change at the horizon and hope the
+   car reaches it, while an opening is simply where the road begins.
+
+   It is a DEBUG switch in the same idiom as the two above it: not saved, on no
+   path a player takes, and it writes nothing. OFF is the shipped state.
+
+   THE SKEW ITSELF IS NOT FIXED HERE and is tracked on its own - what the mix of
+   places should be is the owner's call rather than a defect with one answer.
+   ------------------------------------------------------------------------- */
 function showDebug(){
   document.body.classList.add('titling');
   const state = k => k ? 'ON' : 'OFF';
@@ -34824,14 +34890,24 @@ function showDebug(){
     '<div class="eyebrow">' + GAME_TITLE.toUpperCase() + '</div><h1>Debug</h1>' +
     '<div class="tip">OPENS CARS FOR TESTING WITHOUT MARKING THEM UNLOCKED</div>' +
     '<div class="tmenu">' +
-      '<button class="go ghost" data-act="dr">UNLOCK ALL RACERS \u00b7 <b>' +
+      '<button class="go ghost" data-act="dr">UNLOCK ALL RACERS · <b>' +
         state(dbgRacers) + '</b></button>' +
-      '<button class="go ghost" data-act="dp">UNLOCK POLICE \u00b7 <b>' +
+      '<button class="go ghost" data-act="dp">UNLOCK POLICE · <b>' +
         state(dbgPolice) + '</b></button>' +
+      '<button class="go ghost" data-act="ds">START IN · <b>' +
+        (dbgStart || 'ANYWHERE') + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
       dp:   () => { dbgPolice  = !dbgPolice;  showDebug(); },
+      /* cycles OFF, then every place a run may open in, then back to OFF - so
+         one row both chooses and clears, and a thumb never has to find a
+         second control to undo the first */
+      ds:   () => {
+        const at = dbgStart ? OPEN_KEYS.indexOf(dbgStart) : -1;
+        dbgStart = at + 1 >= OPEN_KEYS.length ? null : OPEN_KEYS[at + 1];
+        showDebug();
+      },
       back: () => showOptions() });
 }
 

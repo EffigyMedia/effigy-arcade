@@ -19,6 +19,29 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-147"></a>
+## [0.14.147] - 2026-09-24
+- Added: **RANDOM is one of the times of day, and it is the default.** Owner-asked. It is not a
+  fifth hour - it draws one of the four when a run opens, and the day then runs on from there
+  exactly as a chosen hour does. It is APPENDED to the table rather than put first, because the
+  option is saved as an index: first would have shifted every choice already written and turned a
+  player's MIDDAY into a DAWN. So RANDOM is the default only where nothing is stored, and anyone
+  who has set a time keeps it. `tools/time-random-test.py` reads the hour off the engine over
+  forty runs, because a RANDOM stuck on dusk would look identical in the menu.
+  [RLG-339](../fragments/RLG-339.md)
+
+<a id="v0-14-146"></a>
+## [0.14.146] - 2026-09-24
+- Added: **OPTIONS > DEBUG can choose the place a run opens in.** Owner-asked, after failing to
+  reach a MOUNTAIN to test three open reports: measured through the game's own picker over 9,600
+  place changes, a MOUNTAIN is 2.11 per cent of them and takes 58 places to first appear - on the
+  order of 270 miles - and a TUNDRA is three in 9,600. The row cycles ANYWHERE and every place a
+  run may open in; it is read inside `pickOpening`, the one function the real opening draw calls,
+  so a debug run opens down the same path a normal one does. Not saved, like the two switches
+  beside it. A mid-run jump was built first and the owner corrected it to a starting place, which
+  also removed the question of whether the car ever arrives.
+  [RLG-338](../fragments/RLG-338.md)
+
 <a id="v0-14-145"></a>
 ## [0.14.145] - 2026-09-24
 - Fixed: **the slab of the up face that never rendered, at one fixed distance ahead of the

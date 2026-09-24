@@ -296,7 +296,8 @@ def garage_cars(page):
 
 
 def time_of_day(page, res):
-    """The garage's TIME control offers four times, and the run starts at the one chosen.
+    """The garage's TIME control offers the four hours and RANDOM, and the run starts at the
+    one chosen.
 
     Two assertions, and the second is the one that matters. A button whose label cycles has
     proved only that a button cycles - this project has shipped a control that changed a label
@@ -304,9 +305,16 @@ def time_of_day(page, res):
 
     MIDNIGHT is chosen rather than DUSK because DUSK is phase 0, and 0 is also what an
     uninitialised clock reads. A test that passes when the feature does nothing is not a test.
+
+    RANDOM JOINED THE ROW ON 2026-09-24 AND IS THE DEFAULT (RLG-339), so this check was
+    updated rather than relaxed: it still names every entry in order and still requires the
+    wrap. RANDOM sits LAST in the table - the option is saved as an index, and putting it
+    first would have shifted every choice already written - so it is what a fresh machine
+    shows first and the four hours follow it. Whether RANDOM actually rolls is a different
+    question and `tools/time-random-test.py` owns it.
     """
     labels = []
-    for _ in range(5):
+    for _ in range(6):
         el = page.query_selector('[data-act="time"] b')
         if not el:
             res.check(False, 'the garage offers a TIME control')
@@ -314,9 +322,11 @@ def time_of_day(page, res):
         labels.append(el.inner_text().strip())
         page.click('[data-act="time"]')
         page.wait_for_timeout(60)
-    cycle, wrapped = labels[:4], labels[4]
-    res.check(cycle == ['DUSK', 'MIDNIGHT', 'DAWN', 'MIDDAY'] and wrapped == 'DUSK',
-              'TIME offers four times and wraps', ' → '.join(labels))
+    # a fresh save opens on RANDOM, so the walk from here is RANDOM then the four hours,
+    # and the sixth reading is the wrap
+    cycle, wrapped = labels[:5], labels[5]
+    res.check(cycle == ['RANDOM', 'DUSK', 'MIDNIGHT', 'DAWN', 'MIDDAY'] and wrapped == 'RANDOM',
+              'TIME offers RANDOM and the four hours, and wraps', ' → '.join(labels))
     # leave it on MIDNIGHT, then drive and see where the sky actually is
     while page.eval_on_selector('[data-act="time"] b', 'el => el.textContent').strip() != 'MIDNIGHT':
         page.click('[data-act="time"]')
