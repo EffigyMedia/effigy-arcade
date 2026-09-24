@@ -27287,6 +27287,7 @@ function drawRoad(){
                    tiny: 0, offscreen: 0, thin: 0, area: 0,
                    w: [0, 0, 0, 0, 0, 0], a: [0, 0, 0, 0, 0, 0] };
   if(drawWatch) skipBy = {};
+  if(drawWatch) groundBands = [];
   if(drawWatch) walkTrace = { proj:[], below:[], inv:[], scen:[], noScen:[], cars:[] };
   let groundMax = -1e9;
   /* ---- HOW FAR DOWN THE GROUND HAS BEEN PAINTED (RLG-299) --------------
@@ -27533,8 +27534,18 @@ function drawRoad(){
            colour and every band after it painted a strip back over the top. The
            check caught it at 38 to 58 per cent of the frame in CITY and COASTAL,
            against a control of zero. */
+        /* A LAP WAS TRIED HERE AND THE EVIDENCE DID NOT SUPPORT IT (RLG-337).
+           `Math.min(y2, groundBot - GROUND_LAP)` was reasoned from the rule
+           that a shared edge is overlapped and never met on, and it changed
+           nothing measurable: seventy stops on fourteen roads before and after,
+           same events at the same size. The chain does not break - `groundBands`
+           reports no gap anywhere in it, and every row that read as see-through
+           came out fully covered when the coverage was composited from the band
+           list. Do not re-apply it without a measurement that moves. */
         const gTop = groundFull || groundBot === null ? y2 : Math.min(y2, groundBot);
         const gBot = groundFull ? H : Math.min(H, y1 + GROUND_LAP);
+        if(drawWatch) groundBands.push([n, +gTop.toFixed(2), +gBot.toFixed(2),
+                                        +y2.toFixed(2), +y1.toFixed(2), gDrop ? 1 : 0]);
         if(!gDrop){
           ctx.fillRect(0, gTop, W, gBot - gTop);
           if(groundBot === null || gBot > groundBot) groundBot = gBot;
@@ -27573,6 +27584,12 @@ function drawRoad(){
           const rx1 = rimX(p1, idx, gDrop);
           const rx2 = rimX(p2, idx + 1, gDrop);
           const far = gDrop < 0 ? W : 0;
+          /* what this band did about the gap, for RLG-337: whether a crest opened one
+             at all, whether there was a remembered rim to close it along, and where the
+             rim stood at both ends. The band record above carries it. */
+          if(drawWatch) groundBands[groundBands.length - 1].push(
+            gTop < y2 ? 1 : 0, groundRimX === null ? -1 : +groundRimX.toFixed(1),
+            +rx1.toFixed(1), +rx2.toFixed(1));
           if(gTop < y2 && groundRimX !== null){
             ctx.beginPath();
             ctx.moveTo(far, gTop);
@@ -28520,6 +28537,13 @@ function layerSaw(view, what){ const L = viewLayers[view]; L[what] = (L[what] ||
    crest tangent winking out for three frames, the second is a car genuinely
    behind a hill. Recorded only under the watch. */
 let skipBy = {};
+/* ---- EVERY GROUND BAND PAINTED THIS FRAME, TOP AND BOTTOM (RLG-337) -----
+   The ground is tiled, so the picture is a CHAIN of bands and the fault
+   reported against it is a gap in that chain. A picture can say a row is
+   see-through; only the chain itself can say which two bands failed to meet
+   over it, and whether the one above stopped short or the one below started
+   late. Guessing at that cost two rounds. Recorded only under the watch. */
+let groundBands = [];
 /* `buildHillClip` fills `hillClip[n]` for the segment `base + n`, where `base`
    is `floor(pos/SEG)`. `crestY` looks it up with `floor((worldZ - pos)/SEG)`,
    which is the count of segments AHEAD of the player rather than that index -
@@ -38659,6 +38683,31 @@ requestAnimationFrame(frameLoop);
   API.watchDraw = function(on){ drawWatch = on ? 1 : 0; drawSeen = []; return drawWatch; };
   API.drawFrame = function(){ return { n:drawFrameNo, seen:drawSeen }; };
   API.walkTrace = function(){ return walkTrace; };
+  /* ---- WHICH SLICES THE CREST HID, AND BY HOW MUCH (RLG-337) -----------
+     `skipBy` is already written by the walk, under `watchDraw`: a slice whose
+     far edge has gone back UP relative to the nearest ground painted is behind
+     a crest, and the entry is how far up. Nothing could read it.
+
+     THE INVERTED SLICE IS NOT THE CREST. `walkTrace.inv` looked like the crest
+     detector and is not one - measured over forty samples on a road with the
+     hill factor forced to its ceiling, every inversion in the draw was under
+     three tenths of a pixel, which is the road flattening toward the horizon
+     and is what the engine's own note at that guard says. The apex inverts; the
+     stretch the apex HIDES is what this records, and it is the thing a check
+     about a crest has to be able to say was in front of the car.
+     ------------------------------------------------------------------- */
+  /* the chain of bands as it was actually painted, far to near: the slice, the
+     band's top and bottom, the slice's own two edges, and whether it was the
+     cliff-side quad. A gap between one band's bottom and the next band's top is
+     the fault RLG-337 reports, and this is the only thing that can name it
+     rather than photograph it. */
+  API.groundBands = function(){ return groundBands.slice(); };
+  API.groundSkips = function(){
+    const ks = Object.keys(skipBy);
+    let worst = 0;
+    for(const k of ks) if(skipBy[k] > worst) worst = skipBy[k];
+    return { n: ks.length, worst: +worst.toFixed(2), by: skipBy };
+  };
   /* which kinds each view was handed this frame - see `viewKinds` */
   API.viewKinds = function(){ return { front:Object.keys(viewKinds.front).sort(),
                                        glass:Object.keys(viewKinds.glass).sort() }; };
