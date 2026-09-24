@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-139"></a>
+## [0.14.139] - 2026-09-24
+- Fixed: **the rock faces beside the road have their brightness back.** Matching the mountain's
+  surfaces was right, but the first cut took the LUMINANCE across with the hue and the nearest face
+  dropped fifteen levels - and a jagged silhouette reads by its contrast against what is behind it.
+  The rock is its own rank now: the tones that stood there before, moved onto the ground's colour
+  balance and left at the brightness they had. [RLG-331](../fragments/RLG-331.md)
+
 <a id="v0-14-138"></a>
 ## [0.14.138] - 2026-09-23
 - Fixed: **the cliff face hangs from the rim to the valley floor again.** Nothing was painted between

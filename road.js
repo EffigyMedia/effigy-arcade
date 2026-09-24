@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.138';
+window.ROAD_BUILD = '0.14.139';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -9132,12 +9132,32 @@ const SANDSTONE = {
    light, they just cannot differ by accident any more.
    -------------------------------------------------------------------- */
 const GRANITE = {
+  /* the two the GROUND uses, and they are the colours MOUNTAIN already had */
   dark:'#2b3a33', mid:'#3c4f45', far:'#556b60',
-  litDark:'#3c4f45', litMid:'#556b60', litFar:'#6e8779'
+  /* ---- AND THE ROCK IS A SEPARATE RANK, WHICH IS A CORRECTION ---------
+     Owner, 2026-09-23, on the first cut of this: "The way the mountain face
+     went up in the roadway before you just 'fixed it' looked great with its
+     jaggedness."
+
+     IT WAS RIGHT AND THE FAULT WAS BRIGHTNESS, NOT HUE. The first cut pointed
+     the scenery's rock faces at the GROUND's own three tones, which are much
+     darker than the rock palette they replaced - the nearest face went from
+     rgb(58,58,64) to rgb(43,58,51), fifteen levels down. A jagged silhouette
+     reads by its CONTRAST against what is behind it, so darkening the nearest
+     faces is precisely how to lose the jaggedness, and that is what happened.
+
+     These are the rock palette's OWN brightnesses, in the mountain's hue. Each
+     one is the tone that stood here before this work, moved onto the ground's
+     red-green-blue balance and left at the luminance it had. So the valley is
+     one rock, which is what was asked for, and the faces beside the road are as
+     light against the sky as they ever were, which is what was lost.
+     ---------------------------------------------------------------- */
+  rockNear:'#33453c', rockMid:'#41584d', rockFar:'#537062',
+  litNear:'#435a4f',  litMid:'#526f62',  litFar:'#648777'
 };
 const ROCK_TONE = {
-  rock:  [[GRANITE.dark, GRANITE.mid, GRANITE.far],
-          [GRANITE.litDark, GRANITE.litMid, GRANITE.litFar]],
+  rock:  [[GRANITE.rockNear, GRANITE.rockMid, GRANITE.rockFar],
+          [GRANITE.litNear, GRANITE.litMid, GRANITE.litFar]],
   snow:  [['#e8eef6','#cfdae8','#aebfd4'], ['#ffffff','#e3ebf4','#c3d1e2']],
   sand:  [[SANDSTONE.dark, SANDSTONE.mid, SANDSTONE.far],
           [SANDSTONE.litDark, SANDSTONE.litMid, SANDSTONE.litFar]]
