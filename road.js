@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.139';
+window.ROAD_BUILD = '0.14.140';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16008,8 +16008,20 @@ let RANGE_OUT = 16;
    distance like every other surface here - which is the thing the first attempt
    lacked and the thing that makes depth read at all in this engine.
    ------------------------------------------------------------------- */
-let CLIFF_SHADE = 0.52,  /* how far the face darkens toward the drop's shadow */
-    CLIFF_HAZE  = 0.55;  /* and how much of the distance haze it takes        */
+/* ---- AND IT IS SHADOW, NOT DISTANCE, WHICH IS A CORRECTION -------------
+   The first cut hazed the face the way the valley FLOOR is hazed, because the
+   floor is genuinely far away. It looked wrong for a reason worth writing down:
+   within one slice the band runs from the rim at the top to the floor at the
+   bottom, so hazing by depth makes the BOTTOM of the band the palest part - and
+   the bottom of the band is the part nearest the car, at the bottom of the
+   screen. The near rock came out washed and read as flat ground, which is how
+   the owner could still "see into the mountain face I'm driving on".
+
+   A cliff you are driving along is NEAR. It is dark rock in its own shadow, and
+   it takes barely any air. The haze is a fifth of what it was and the face is
+   darker, so it reads as the thing it is. */
+let CLIFF_SHADE = 0.64,  /* how far the face darkens toward the drop's shadow */
+    CLIFF_HAZE  = 0.16;  /* and how little of the distance haze it takes      */
 let RANGE_STEP = 10;      /* segments between peaks along the valley          */
 let RANGE_H    = 28;      /* how tall a peak stands, in camera heights        */
 /* the drawn peaks this frame, per view, for a check */
@@ -27745,8 +27757,10 @@ function drawRoad(){
                rather than one per slice. */
             if(cBot - cTop > 24){
               const cg = ctx.createLinearGradient(0, cTop, 0, cBot);
-              cg.addColorStop(0, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 0.35, cAir));
-              cg.addColorStop(1, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 1.25, cAir));
+              /* darkest right under the lip, easing only a little toward the
+                 foot - never toward pale, which is what made it read flat */
+              cg.addColorStop(0, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 0.20, cAir));
+              cg.addColorStop(1, mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar * 1.00, cAir));
               ctx.fillStyle = cg;
             } else {
               ctx.fillStyle = mixRGB(cRock, DROP_HAZE * CLIFF_HAZE * cFar, cAir);

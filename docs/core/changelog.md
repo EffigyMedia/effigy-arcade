@@ -19,6 +19,13 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-140"></a>
+## [0.14.140] - 2026-09-24
+- Fixed: **the cliff face reads as rock, not as distance.** It was hazed the way the valley floor is,
+  which made the part nearest the car the palest thing on screen - so the face was there and still
+  looked like flat ground. A cliff you drive along is near: it is dark rock in its own shadow and
+  takes barely any air. [RLG-329](../fragments/RLG-329.md)
+
 <a id="v0-14-139"></a>
 ## [0.14.139] - 2026-09-24
 - Fixed: **the rock faces beside the road have their brightness back.** Matching the mountain's
