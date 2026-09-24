@@ -19,6 +19,14 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-144"></a>
+## [0.14.144] - 2026-09-24
+- Added: **a reader for where the massif stands**, for the report that one mountain ahead travels
+  with the car. `API.massAt` gives the segment it stood on and how far ahead that was, which settles
+  the question without judgement: a thing fixed in the world keeps its segment while the car
+  advances. It also narrowed the hunt - the massif is only painted for slices the road pass SKIPS,
+  which is the geometry hidden behind a crest. [RLG-333](../fragments/RLG-333.md)
+
 <a id="v0-14-143"></a>
 ## [0.14.143] - 2026-09-24
 - Changed: **the valley is deep enough for its face to read as a cliff**, and the face tucks under

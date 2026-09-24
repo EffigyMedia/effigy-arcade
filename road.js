@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.143';
+window.ROAD_BUILD = '0.14.144';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16313,6 +16313,11 @@ function drawMassFront(){
   let e = F.idx;                          /* walk to the place's true nearest segment */
   while(e > 0 && bioAt(e - 1) === F.B) e--;
   const p = proj(0, e * SEG);
+  /* what segment the massif stood on and where it landed, so a check can ask
+     whether it is fixed in the world or riding the camera (RLG-333) */
+  massAt = { seg: e, pos: +pos.toFixed(1), ahead: +(e * SEG - pos).toFixed(1),
+             x: p && p.ok ? +p.x.toFixed(1) : null,
+             y: p && p.ok ? +p.y.toFixed(1) : null };
   if(!p.ok) return;
   const B = F.B, base = railX(), kH = p.scale * CAM_H * H / 2;
   const rock = hexRGB(groundTone(e, false)), sky = hexRGB(B.sky || '#2a3550');
@@ -16342,6 +16347,8 @@ function drawMassFront(){
 }
 /* what the mass painted this frame, for a check (RLG-306) */
 let massTrace = { quads: 0, slices: 0, top: {} };
+/* where the massif last stood, for RLG-333 */
+let massAt = null;
 /* how far each ground band runs into the one below it, so the canvas cannot
    leave an antialiased hairline between the two (RLG-299, and RLG-297 before
    it, where the same hairline read as a see-through mountain face) */
@@ -36177,6 +36184,7 @@ requestAnimationFrame(frameLoop);
      row measures the SCENERY - the farmland control swung nineteen levels
      between its own two sides with no drop on either. */
   API.wallOff = function(on){ wallOff = !!on; return wallOff; };
+  API.massAt = function(){ return massAt; };
   /* debug: the ground painted to the bottom of the frame, as before RLG-299 */
   API.groundFull = function(on){ groundFull = !!on; return groundFull; };
   /* debug: the water painted to the bottom of the frame, as before RLG-299 */
