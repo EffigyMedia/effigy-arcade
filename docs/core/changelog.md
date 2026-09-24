@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-135"></a>
+## [0.14.135] - 2026-09-23
+- Changed: **the vignette is drawn once and copied after, instead of rebuilt every frame.** It is a
+  full-frame radial gradient that depends on nothing but the size of the frame, so it is baked into
+  an offscreen canvas and blitted: rebuilt once against 1,170 frames that reused it. Worth 4.8 fps
+  in a SWAMP, 4.3 in a CITY and 4.0 on a MOUNTAIN, and nothing in the two places already at the
+  frame cap. The picture is pixel-identical, and the check was watched failing on a bake
+  deliberately built at the wrong alpha. The sky's base was baked too and taken back out: it cannot
+  be proved identical because the stars and clouds animate over it, and it measured a 2.0 fps LOSS
+  in a CITY because its colours move with the hour and the cache is thrown away one frame in five.
+  [RLG-299](../fragments/RLG-299.md)
+
 <a id="v0-14-134"></a>
 ## [0.14.134] - 2026-09-23
 - Added: **a measurement of what inside the scenery costs a frame.** `tools/scenery-cost.py` splits

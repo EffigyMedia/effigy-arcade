@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.134';
+window.ROAD_BUILD = '0.14.135';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -24896,16 +24896,83 @@ function chase(k, dt){
   return 1 - Math.pow(1 - k, dt * 60);
 }
 
+/* ---- A GRADIENT COMPUTED ONCE AND BLITTED AFTER (RLG-299) --------------
+   Owner's ruling, 2026-09-23: "fixing rasterization performance is still a win,
+   so long as we aren't impacting fidelity." These two are the cleanest case of
+   it in the engine - the SAME PIXELS, arrived at without evaluating a gradient
+   across the whole frame sixty times a second.
+
+   A canvas gradient is evaluated per pixel at fill time. The sky's base is a
+   four-stop ramp across the whole frame above the horizon, and the vignette is
+   a radial across all of it; both were rebuilt and re-evaluated every frame,
+   and neither had changed. Baked into an offscreen canvas and drawn with
+   `drawImage`, the fill becomes a copy.
+
+   THE KEY IS WHAT INVALIDATES THEM, because a stale cache is a fidelity bug and
+   that is the one thing this must not be. The key carries everything the image
+   depends on and nothing else: the size, and for the sky its four stop colours,
+   which move with the hour, the weather and the place. When the key changes the
+   image is drawn again. There is no clock in the key and no timeout - if a
+   colour moves by a hair, the key is a different string.
+
+   `bakedOff` puts both back to the live gradient, so a check can diff the two
+   frames on one road and prove they are the same picture.
+   ---------------------------------------------------------------------- */
+let bakedOff = false;
+/* and one switch each, so a check can price them apart: the vignette can be
+   proved identical and the sky cannot, because the sky animates over its own
+   base and a still frame of it does not exist (RLG-299) */
+let bakedOffOne = { vignette: false };
+const baked = {};
+function bakedFill(key, w, h, paint){
+  if(bakedOff || bakedOffOne[key]) return null;
+  if(w < 1 || h < 1) return null;
+  let b = baked[key];
+  if(!b || b.w !== w || b.h !== h){
+    b = baked[key] = { w: w, h: h, key: null,
+                       cv: document.createElement('canvas') };
+    b.cv.width = Math.ceil(w); b.cv.height = Math.ceil(h);
+    b.g = b.cv.getContext('2d');
+  }
+  return b;
+}
+/* how many times a baked image has been drawn again, for a check to read. A
+   cache that rebuilds every frame is slower than no cache at all, and it would
+   look exactly like a working one from the outside (RLG-299) */
+let bakeStats = { vignette: 0, vignetteHit: 0 };
+
 function drawSky(){
   const n = nightFall(), gold = goldenHour();
   /* day sky under night sky, crossfaded; the golden band on top of both */
   const st = skyStops();
-  const g = ctx.createLinearGradient(0,0,0,horizon+2);
+  /* ---- BAKED: the four stops and the height are the whole of it --------
+     Nothing else reaches this gradient, so nothing else can stale the image.
+     The stars, the aurora, the clouds and the sun are drawn live over the top
+     of it, because they move and this does not. */
+  /* ---- AND THE SKY'S BASE IS NOT BAKED, WHICH WAS MEASURED (RLG-299) ---
+     It was, for an afternoon. Two things sent it back and either would have
+     been enough.
+
+     IT IS A LOSS IN A CITY. This gradient's four stops are mixed from the hour,
+     and the hour moves every frame, so a cache keyed on the colours is thrown
+     away about ONE FRAME IN FIVE - 250 rebuilds against 890 reuses, measured.
+     Rebuilding costs a gradient evaluation AND a blit, so where the frame is
+     already quick the cache loses: FOREST +2.5 fps, SWAMP +3.6, CITY -2.0.
+
+     AND IT CANNOT BE PROVED IDENTICAL, which under the owner's ruling of
+     2026-09-23 - "so long as we aren't impacting fidelity" - is the end of it.
+     The stars, the clouds and the aurora animate over this base on their own
+     clocks, so two frames of the sky are never the same frame and the pixel
+     check has no still control to read against. The vignette below has one, and
+     that is exactly why the vignette is baked and this is not.
+     ------------------------------------------------------------------ */
+  const skyH = horizon + 2;
+  const g = ctx.createLinearGradient(0,0,0,skyH);
   g.addColorStop(0,    st[0]);
   g.addColorStop(0.42, st[1]);
   g.addColorStop(0.78, st[2]);
   g.addColorStop(1,    st[3]);
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,horizon+2);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,skyH);
 
   /* ---- STARS BELONG TO A CLEAR NIGHT (owner, 2026-09-01, RLG-151) ------
      "Can the clear night sky have stars?" - and the sky already had them, which
@@ -30336,10 +30403,28 @@ function draw(){
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
   }
   if(!lOff('vignette')){
-  const vg = ctx.createRadialGradient(W/2,H*0.55,H*0.30,W/2,H*0.55,H*0.85);
-  vg.addColorStop(0,'rgba(0,0,0,0)');
-  vg.addColorStop(1,'rgba(0,0,0,.55)');
-  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  /* ---- BAKED: this one depends on the frame size and nothing else ------
+     So its key is the size, which `bakedFill` already checks, and it is drawn
+     again only when the frame is resized. */
+  const vb = bakedFill('vignette', W, H);
+  if(vb){
+    if(vb.key !== 'v'){
+      vb.key = 'v';
+      bakeStats.vignette++;
+      const vg2 = vb.g.createRadialGradient(W/2,H*0.55,H*0.30,W/2,H*0.55,H*0.85);
+      vg2.addColorStop(0,'rgba(0,0,0,0)');
+      vg2.addColorStop(1,'rgba(0,0,0,.55)');
+      vb.g.clearRect(0, 0, W, H);
+      vb.g.fillStyle = vg2;
+      vb.g.fillRect(0, 0, W, H);
+    } else bakeStats.vignetteHit++;
+    ctx.drawImage(vb.cv, 0, 0);
+  } else {
+    const vg = ctx.createRadialGradient(W/2,H*0.55,H*0.30,W/2,H*0.55,H*0.85);
+    vg.addColorStop(0,'rgba(0,0,0,0)');
+    vg.addColorStop(1,'rgba(0,0,0,.55)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  }
   }
   drawCountIn();
   drawStartPrompt();
@@ -35879,6 +35964,12 @@ requestAnimationFrame(frameLoop);
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
   API.floorFull = function(on){ floorFull = !!on; return floorFull; };
+  /* debug: the two baked gradients built live again, so a check can put the two
+     frames side by side on ONE road and call whatever differs (RLG-299) */
+  API.bakedOff = function(on){ bakedOff = !!on; return bakedOff; };
+  API.bakedOffOne = function(k, on){ if(k in bakedOffOne) bakedOffOne[k] = !!on;
+                                     return Object.assign({}, bakedOffOne); };
+  API.bakeStats = function(){ return Object.assign({}, bakeStats); };
   /* debug: run the scenery's whole walk and paint none of it, so a check can
      tell the walk's cost from the raster's (RLG-299) */
   API.sceneryRaster = function(on){ sceneryRaster = !!on; return sceneryRaster; };

@@ -48,14 +48,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--places', default='CITY,FOREST,MOUNTAIN,COASTAL,DESERT,TUNDRA,SWAMP')
     # one instrument for the three fills, the same way one proof covers them
-    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff'))
+    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff', 'baked', 'sky', 'vignette'))
     ap.add_argument('--roads', type=int, default=3)
     ap.add_argument('--rounds', type=int, default=4)
     ap.add_argument('--window', type=int, default=800)
     ap.add_argument('--phase', type=float, default=0.75)
     ap.add_argument('--speed', type=float, default=0.55)
     args = ap.parse_args()
-    switch = {'ground': 'groundFull', 'water': 'waterFull', 'cliff': 'floorFull'}[args.fill]
+    switch = {'ground': 'groundFull', 'water': 'waterFull', 'cliff': 'floorFull',
+              'baked': 'bakedOff', 'sky': 'bakedOff', 'vignette': 'bakedOff'}[args.fill]
     console_utf8()
 
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
@@ -95,13 +96,20 @@ def main():
                         pg.evaluate("(v) => window.__probe.road.setSpd(window.__probe.road.MAX_SPD*v)",
                                     args.speed)
                         pg.evaluate("(v) => window.__probe.road.setPhase(v)", args.phase)
-                        pg.evaluate("([s, v]) => window.__probe.road[s](v)", [switch, full])
+                        if args.fill in ('sky', 'vignette'):
+                            pg.evaluate("([k, v]) => window.__probe.road.bakedOffOne(k, v)",
+                                        [args.fill, full])
+                        else:
+                            pg.evaluate("([s, v]) => window.__probe.road[s](v)", [switch, full])
                         fps = pg.evaluate(COUNT, args.window)
                         if full:
                             old = fps
                         else:
                             ds.append(fps - old)
-                pg.evaluate("(s) => window.__probe.road[s](false)", switch)
+                if args.fill in ('sky', 'vignette'):
+                    pg.evaluate("(k) => window.__probe.road.bakedOffOne(k, false)", args.fill)
+                else:
+                    pg.evaluate("(s) => window.__probe.road[s](false)", switch)
                 got.setdefault(place, []).append(median(ds))
         br.close()
     srv.shutdown()
@@ -124,9 +132,12 @@ def main():
     elif args.fill == 'water':
         print('  only a COASTAL and a SWAMP have water beside the road; the rest are')
         print('  the control, and are expected to show nothing at all')
-    else:
+    elif args.fill == 'cliff':
         print('  only a place with a hazard side has a cliff floor; the rest are the')
         print('  control, and are expected to show nothing at all')
+    else:
+        print('  the sky and the vignette are drawn in every place, so every place')
+        print('  should show the same gain - there is no control among them')
     return 0
 
 

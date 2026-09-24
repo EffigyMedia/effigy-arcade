@@ -85,10 +85,15 @@ SNAP = """(key) => {
 # actually see.
 TOL = 8
 
-DIFF = """([k1, k2, tol]) => {
+DIFF = """([k1, k2, tol, minY, maxY, maxX]) => {
+  const c = document.getElementById('cv');
   const a = window.__s[k1], b = window.__s[k2];
+  const first = Math.floor(minY * c.height) * c.width * 4;
+  const last = maxY > 0 ? Math.floor(maxY * c.height) * c.width * 4 : a.length;
+  const xEnd = maxX > 0 ? Math.floor(maxX * c.width) : c.width;
   let exact = 0, seen = 0;
-  for (let i = 0; i < a.length; i += 4) {
+  for (let i = first; i < last; i += 4) {
+    if (maxX > 0 && ((i / 4) % c.width) >= xEnd) continue;
     const dr = Math.abs(a[i] - b[i]), dg = Math.abs(a[i+1] - b[i+1]),
           db = Math.abs(a[i+2] - b[i+2]);
     if (dr || dg || db) exact++;
@@ -120,12 +125,59 @@ def main():
     # The ground, the water and the cliff floor are the same fault written
     # three times, so they get one check rather than three copies of it. The
     # switch under test is named here; everything else is identical.
-    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff'),
-                    help='which fill to put back: groundFull, waterFull or floorFull')
+    ap.add_argument('--fill', default='ground', choices=('ground', 'water', 'cliff', 'sky', 'vignette'),
+                    help='which fill to put back: groundFull, waterFull, floorFull or bakedOff')
+    ap.add_argument('--phase', type=float, default=0.75,
+                    help='the hour to pin: 0.00 dusk, 0.25 midnight, 0.50 dawn, 0.75 midday')
     args = ap.parse_args()
     switch = {'ground': 'groundFull', 'water': 'waterFull',
-              'cliff': 'floorFull'}[args.fill]
-    keep = {'ground': 'ground', 'water': 'sea', 'cliff': 'drop'}[args.fill]
+              'cliff': 'floorFull', 'sky': 'bakedOff',
+              'vignette': 'bakedOff'}[args.fill]
+    # what stays drawn while everything else is taken away. The baked arm needs
+    # both of the gradients it bakes.
+    keep = {'ground': ('ground',), 'water': ('sea', 'marsh'),
+            'cliff': ('drop', 'rim'),
+            'sky': ('sky',),
+            # the sky stays drawn with the vignette, because it is what CLEARS
+            # the top of the frame - and a vignette drawn with alpha over an
+            # uncleared canvas composites over its own last draw and darkens
+            # until it saturates, which is not a comparison of anything
+            'vignette': ('vignette',)}[args.fill]
+    # ---- THE GAUGES ARE ON THIS CANVAS TOO ---------------------------
+    # The dials are drawn onto the game's own canvas by the after-draw, and their
+    # needles settle for a while after the car is stopped - so a comparison of
+    # the WHOLE frame never had a still control, and reported 5,352 pixels moving
+    # between two identical draws. The fills all sit below the horizon and are
+    # read whole; the two baked gradients cover the frame, so they are read down
+    # to 0.6 of it, which is above the dials and well into both of them.
+    # ---- AND EACH ONE IS READ WHERE IT ACTUALLY PAINTS ------------------
+    # THE SKY'S BAND WAS WRONG FIRST AND THE CHECK PASSED ON IT. Both baked
+    # gradients were read at 0.45 to 0.60 of the frame - which is BELOW the
+    # horizon, where the sky paints nothing at all. Zero was guaranteed and the
+    # proof was a ceremony. The sky is read ABOVE the horizon, which sits near
+    # 0.40 of the frame, and the vignette below it.
+    # THE VIGNETTE'S BAND WAS WRONG AND THE CHECK PASSED ON A BROKEN BAKE.
+    # Read at 0.45 to 0.60 of the frame, it reported every place identical even
+    # with the baked image built at 0.40 alpha against the live 0.55 - because
+    # that band is the middle of a radial that is TRANSPARENT there. A vignette
+    # has to be read where it is dark, which is the top and the corners.
+    MAXY = {'sky': 0.34, 'vignette': 0.99}.get(args.fill, 0)
+    # ---- AND NOTHING CLEARS A CANVAS WITH THE SKY AND THE FAR GROUND OFF -
+    # The vignette is drawn with alpha, so with nothing clearing the frame it
+    # composites over its own last draw and DARKENS every frame until it
+    # saturates - which the control caught as 3,889 pixels moving between two
+    # identical draws. The far field's fill stays on for these two, because it
+    # is what clears below the horizon, and the comparison reads the band it
+    # clears: under the horizon and above the dials.
+    MINY = {'sky': 0.02, 'vignette': 0.90}.get(args.fill, 0)
+    # ---- AND THE VIGNETTE IS READ IN ITS BOTTOM-LEFT CORNER --------------
+    # It has to be read somewhere that is DARK, that something CLEARS, and that
+    # nothing else animates. The middle of the frame is transparent, the top is
+    # the sky's and its clouds drift, and the bottom right is where the dials
+    # are drawn onto this same canvas. The bottom-left corner is the one place
+    # that is all three: the far field's fill clears it every frame, the radial
+    # is at its darkest there, and nothing moves in it.
+    MAXX = 0.30 if args.fill == 'vignette' else 0
     console_utf8()
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
     srv = socketserver.TCPServer(('127.0.0.1', 0), h)
@@ -144,6 +196,7 @@ def main():
     worst = ('', 0, 0)
     floors = []
     per_place = {}
+    stats = None
     with sync_playwright() as p:
         br = launch_chromium(p, headless=True)
         pg = br.new_page(viewport={'width': 480, 'height': 900})
@@ -165,9 +218,14 @@ def main():
             # the water sits ON the ground, so the ground stays drawn when the
             # water is under test - lifting it would leave the water floating
             # over the far field rather than over the verge it meets
-            off = {k: 1 for k in ALL_OFF if k != keep and not (
-                args.fill == 'water' and k in ('marsh',)) and not (
-                args.fill == 'cliff' and k in ('rim',))}
+            off = {k: 1 for k in ALL_OFF if k not in keep}
+            # THE BAKED ARM TAKES THE GROUND AWAY AS WELL. Everything else in
+            # ALL_OFF leaves the verge drawn, because the water and the cliff sit
+            # on it - but the two baked gradients sit on nothing, and with the
+            # road pass still running the control could not settle. Only the sky
+            # and the vignette are left, so any difference is one of them.
+            if args.fill in ('sky', 'vignette'):
+                off['ground'] = 1
             pg.evaluate("(o) => window.__probe.road.layerOff(o)", off)
 
             # ---- A MOUNTAIN IS MEASURED TWICE WHEN THE GROUND IS UNDER TEST -
@@ -206,7 +264,13 @@ def main():
 
                 def shot(key, full):
                     pg.evaluate("([s, v]) => window.__probe.road[s](v)", [switch, full])
+                    # THE HOUR IS RE-PINNED AT EVERY SNAPSHOT. `setPhase` sets the
+                    # clock, it does not stop it, and the sky's colours move with
+                    # it - so two frames 130ms apart have different skies and the
+                    # control reported 9,368 pixels of a still frame moving.
+                    pg.evaluate("(v) => window.__probe.road.setPhase(v)", args.phase)
                     pg.wait_for_timeout(130)
+                    pg.evaluate("(v) => window.__probe.road.setPhase(v)", args.phase)
                     return pg.evaluate(SNAP, key)
 
                 # the control pair: the same setting twice. Anything it reports
@@ -214,10 +278,10 @@ def main():
                 # only worth reading against it.
                 px = shot('t1', False)
                 shot('t2', False)
-                floor = pg.evaluate(DIFF, ['t1', 't2', TOL])
+                floor = pg.evaluate(DIFF, ['t1', 't2', TOL, MINY, MAXY, MAXX])
                 shot('full', True)
                 pg.evaluate("(s) => window.__probe.road[s](false)", switch)
-                changed = pg.evaluate(DIFF, ['t1', 'full', TOL])
+                changed = pg.evaluate(DIFF, ['t1', 'full', TOL, MINY, MAXY, MAXX])
                 floors.append(floor[1])
                 # ---- READ AGAINST ITS OWN CONTROL, ROW BY ROW -------------
                 # A CITY came back with 160 changed pixels and a control of
@@ -233,6 +297,8 @@ def main():
                     worst = ('%s, road %d' % (label, road + 1), excess, pct)
                 per_place[label] = max(per_place.get(label, 0), pct)
 
+        if args.fill in ('sky', 'vignette'):
+            stats = pg.evaluate("() => window.__probe.road.bakeStats()")
         br.close()
     srv.shutdown()
 
@@ -249,6 +315,26 @@ def main():
     # the bottom of the frame for the reason recorded at it in the engine.
     worstAny = max(per_place.items(), key=lambda kv: kv[1]) if per_place else ('none', 0)
     rim = 'MOUNTAIN' if args.fill == 'ground' else None
+    if args.fill in ('sky', 'vignette'):
+        # ---- AND THE CACHE HAS TO ACTUALLY BE A CACHE -------------------
+        # A baked image rebuilt on every frame paints exactly the same pixels
+        # and is SLOWER than no cache at all, and every check above would pass
+        # on it. So the counters are read: how many times each image was drawn
+        # again, against how many frames used the one already there.
+        st = stats or {}
+        # THE VIGNETTE CAN ONLY BE REBUILT BY A RESIZE, so it is held to a hard
+        # line. THE SKY CANNOT BE: its four stop colours move with the hour, and
+        # the hour moves every frame, so the cache is rebuilt whenever a colour
+        # changes by one level. Measured at about one frame in four - which
+        # still makes copies of the other three, and whether that is a net win
+        # is `fill-gain.py --fill baked`'s question, not this one's. The line
+        # here is only that the image is reused more often than it is rebuilt.
+        for name, ratio in ((args.fill, 1 if args.fill == 'sky' else 8),):
+            built, hit = st.get(name, 0), st.get(name + 'Hit', 0)
+            check('the %s image is reused more than it is rebuilt' % name,
+                  hit > built * ratio,
+                  'rebuilt %d times against %d frames that reused it, %d%% rebuilt'
+                  % (built, hit, round(100.0 * built / max(1, built + hit))))
     flat = {k: v for k, v in per_place.items() if k != rim}
     worstFlat = max(flat.items(), key=lambda kv: kv[1]) if flat else ('none', 0)
     # ---- A CREST COSTS A HANDFUL OF PIXELS, FOR A KNOWN REASON -----------
