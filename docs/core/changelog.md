@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-151"></a>
+## [0.14.151] - 2026-09-26
+- Fixed: **the crest-hole check left a mountainside standing in front of the thing it measures.**
+  It takes three frames at each stop - tiled ground, the old fill, and no ground at all - with
+  every other layer switched off. Its list held the WALL and not the MASSIF, and the massif IS the
+  wall in the two places that have one: the wall painter hands the side over with
+  `if(dB.mass && !massOff) continue`. `layerOff` cannot reach the massif at all, because it has a
+  switch of its own. So four rounds of this hunt compared three frames that each had a mountain
+  painted over the ground, and anything missing behind it cancelled out of all three. Bare pixels
+  at a MOUNTAIN went from 0-76 to 12-13,938 with it taken out. `--massif` puts it back.
+  [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-150"></a>
 ## [0.14.150] - 2026-09-25
 - Added: **OPTIONS > DEBUG carries a live HORIZON SWEEP dial.** The owner reported the parallax

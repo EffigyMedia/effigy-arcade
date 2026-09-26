@@ -65,6 +65,16 @@ DEFAULT_PLACES = 'FOREST,CITY,MOUNTAIN,TUNDRA,DESERT,SWAMP,COASTAL'
 # every layer off except the ground and the far field's own fill, which stays because it is
 # what CLEARS the frame below the horizon - without it the canvas keeps the last frame's
 # pixels and the comparison reads a ghost. fill-tile-proof.py learned that expensively.
+#
+# ---- AND THE MASSIF GOES WITH THE WALL, WHICH IT IS -------------------------
+# `wall` is in this list and the massif is NOT a layer `layerOff` can reach: it has its
+# own switch, `massModel({off:1})`, and this check never threw it. So the first four
+# rounds of this hunt ran with a mountainside standing between the camera and the ground
+# in ALL THREE arms - tiled, full and bare alike - and anything missing from the ground
+# behind it cancelled out of every comparison. The engine's own note at the wall painter
+# says it plainly: "the mass is the wall now". A layer that paints over the thing being
+# measured has to come off in every arm, or the arms agree about a picture neither of
+# them shows. `--massif` puts it back for a run that wants the old reading.
 ALL_OFF = ('sky', 'haze', 'glass', 'sea', 'marsh', 'drop', 'rim', 'wall',
            'face', 'range', 'scenery', 'lamp', 'road', 'kerb', 'lanes',
            'edges', 'rail', 'truss', 'joint', 'sprites', 'beams', 'wash',
@@ -174,6 +184,10 @@ def main():
                     help='tries to let the frame go still before reading it')
     ap.add_argument('--quiet', type=int, default=120,
                     help='pixels of movement between two identical draws that counts as still')
+    ap.add_argument('--massif', action='store_true',
+                    help='leave the massif standing in all three arms, as every run before '
+                         '2026-09-26 did. It paints over the ground and hides what this '
+                         'check is looking for')
     ap.add_argument('--shots', default='',
                     help='where to write a picture of each stop that shows a hole')
     args = ap.parse_args()
@@ -291,8 +305,9 @@ def main():
                         # read the resulting animation as up to 29,194 pixels of hole.
                         off = {k: 1 for k in ALL_OFF}
                         off['ground'] = 1 if bare else 0
-                        pg.evaluate("([f, o]) => { const R = window.__probe.road;"
-                                    " R.groundFull(f); R.layerOff(o); }", [full, off])
+                        pg.evaluate("([f, o, m]) => { const R = window.__probe.road;"
+                                    " R.groundFull(f); R.layerOff(o); R.massModel({ off: m }); }",
+                                    [full, off, 0 if args.massif else 1])
                         # ---- THE HOUR AND THE PLACE ARE BOTH RE-PINNED AT EVERY
                         # SNAPSHOT. `setPhase` sets the clock, it does not stop it, and
                         # the ground's tone moves with the light. `setBiomePair` does not
