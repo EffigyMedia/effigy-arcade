@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.149';
+window.ROAD_BUILD = '0.14.150';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -420,6 +420,12 @@ const BORE_FAR    = ROAD_FAR + 3000;
    tunable with a committed default, and `API.skySwing` moves it, because how
    far a horizon should sweep is taste and only the device can judge it. */
 let SKY_SWING = 60;
+/* the values the debug row walks. ZERO IS IN THE LIST ON PURPOSE and it is the
+   most informative entry: this renderer's camera never yaws - the road bends
+   ACROSS the screen instead - so there may be no parallax to simulate at all,
+   and a horizon that looks RIGHT at zero says the whole term is wrong rather
+   than mistuned. The rest bracket the shipped 60 by fours either way. */
+const SKY_SWINGS = [0, 15, 30, 60, 120, 240];
 /* the closest anything has been placed this run, relative to the player. A
    harness reads it: if this ever drops under the draw distance, something is
    arriving in view again. */
@@ -34934,6 +34940,14 @@ function showDebug(){
         state(dbgPolice) + '</b></button>' +
       '<button class="go ghost" data-act="ds">START IN · <b>' +
         (dbgStart || 'ANYWHERE') + '</b></button>' +
+      /* ---- AND THE HORIZON'S SWEEP, LIVE (RLG-343) --------------------
+         The owner reported the parallax still wrong on 0.14.149 and could not
+         say more than that it seems weird. A number cannot be argued into
+         existence from a description, so the row hands them the dial: drive,
+         cycle, and say which one looks like distance. It takes effect on the
+         next frame - nothing has to restart. */
+      '<button class="go ghost" data-act="dw">HORIZON SWEEP · <b>' +
+        SKY_SWING + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
@@ -34944,6 +34958,11 @@ function showDebug(){
       ds:   () => {
         const at = dbgStart ? OPEN_KEYS.indexOf(dbgStart) : -1;
         dbgStart = at + 1 >= OPEN_KEYS.length ? null : OPEN_KEYS[at + 1];
+        showDebug();
+      },
+      dw:   () => {
+        const at = SKY_SWINGS.indexOf(SKY_SWING);
+        SKY_SWING = SKY_SWINGS[(at + 1) % SKY_SWINGS.length];
         showDebug();
       },
       back: () => showOptions() });

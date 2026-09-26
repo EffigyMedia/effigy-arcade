@@ -19,6 +19,16 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-150"></a>
+## [0.14.150] - 2026-09-25
+- Added: **OPTIONS > DEBUG carries a live HORIZON SWEEP dial.** The owner reported the parallax
+  still wrong on 0.14.149 and could not say more than that it seems weird, and a number cannot be
+  argued into existence from a description. The row walks 0, 15, 30, 60, 120, 240 and takes effect
+  on the next frame. ZERO IS ON IT DELIBERATELY: this renderer's camera never yaws - the road
+  bends across the screen instead - so there may be no parallax to simulate at all, and a horizon
+  that looks right at zero would say the whole term is wrong rather than mistuned.
+  [RLG-343](../fragments/RLG-343.md)
+
 <a id="v0-14-149"></a>
 ## [0.14.149] - 2026-09-24
 - Fixed: **the horizon swings with the car's heading instead of the road a mile ahead.** The owner
