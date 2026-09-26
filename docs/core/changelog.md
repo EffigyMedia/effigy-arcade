@@ -19,6 +19,18 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-153"></a>
+## [0.14.153] - 2026-09-26
+- Added: **a reading of how much of the frame below the horizon has no near ground on it.**
+  `tools/seethru-test.py` takes two frames differing only in the LAND and calls the pixels
+  that agree. At a MOUNTAIN crest that is a solid block on the drop side, rows 347-520 of
+  861, painted by the far field's fill and nothing nearer - and that fill is hazed to within
+  30 levels of the sky at midday and 19 at dusk, against 94-125 for the drawn ground below
+  it. A FOREST reads 116-136 from the sky at every depth and is the control. The ground's own
+  fill was measured at the call and is fully opaque, so nothing is drawn see-through; what
+  reads as see-through is the far fill owning too much of the frame.
+  [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-152"></a>
 ## [0.14.152] - 2026-09-26
 - Added: **a check that asks whether any pixel survives from the frame before it.**
