@@ -19,6 +19,19 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-152"></a>
+## [0.14.152] - 2026-09-26
+- Added: **a check that asks whether any pixel survives from the frame before it.**
+  `tools/carryover-test.py` stands the car still, photographs the frame, sends it far up the
+  road so a different picture is drawn, brings it back to the same spot and photographs
+  again: anything painted comes back identical, anything unpainted comes back carrying the
+  other picture. The answer is flat - nothing below the horizon carries over, worst 7 pixels
+  of 247,200 at a MOUNTAIN and a CANYON, crests included. ITS FALSIFIER IS WHAT TAUGHT THE
+  USEFUL PART: switching the ground off did NOT make it fail, because the far field's fill
+  clears the band before the ground runs. So see-through ground is not an absence - something
+  is painted there and it is wrong, which is a different hunt from every round so far.
+  [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-151"></a>
 ## [0.14.151] - 2026-09-26
 - Fixed: **the crest-hole check left a mountainside standing in front of the thing it measures.**
