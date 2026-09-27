@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.153';
+window.ROAD_BUILD = '0.14.154';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16355,6 +16355,7 @@ function massSlice(n, idx, p1, p2, y1, y2, fade, dB, dropSide){
         ctx.fillStyle = 'rgb(' + Math.round(r0 + (sky[0] - r0) * hz) + ','
                                + Math.round(g0 + (sky[1] - g0) * hz) + ','
                                + Math.round(b0 + (sky[2] - b0) * hz) + ')';
+        if(dbgSurf) ctx.fillStyle = SURF.mass;
         /* ---- LAPPED ALONG THE ROAD, NOT UP THE SCREEN ------------------
            Neighbouring slices share an edge and each antialiases against
            it on its own, so the sky shows through as a hairline - the
@@ -16506,6 +16507,37 @@ let waterFull = false;
    and here for the same reason: this road is generated fresh at every load, so
    two builds in two pages are two different roads. */
 let groundFull = false;
+/* ---- EVERY LAND SURFACE IN A COLOUR OF ITS OWN (RLG-337) ---------------
+   Owner, 2026-09-26, after five rounds of measurement each answered a question
+   they had not asked: "It's specifically on mountain only. When the road is
+   curving down." The ground is see-through there and every instrument here says
+   the ground is opaque - measured at the call, 2,386 paints at alpha 1 on that
+   exact bend.
+
+   SO THE PICTURE IS ASKED INSTEAD OF THE ENGINE. Each surface that makes up the
+   land paints in a flat colour nothing else uses, and the owner drives to the
+   spot they already know. Whichever colour is where the fault is names the
+   surface; and IF THE PATCH HAS NO COLOUR AT ALL, nothing painted there, which
+   is the more useful answer and the one no harness has been able to give.
+
+   THE CLIFF SIDE IS SPLIT FROM THE FLAT SIDE DELIBERATELY. They are one
+   `fillStyle` and two branches - a rectangle across the full width, or a
+   trapezoid cut at the rim, which is what RLG-278 asks for on a hazard side.
+   The report is mountain-only and the roll hazard is what a mountain has, so
+   telling those two apart is the whole point of the row.
+
+   It is debug only, it is off unless the DEBUG menu turns it on, and nothing in
+   the product reads it. */
+let dbgSurf = false;
+const SURF = {
+  flat:  '#ff00ff',   /* the ground, flat side: one rectangle, full width */
+  shelf: '#ff8800',   /* the ground, cliff side: the trapezoid cut at the rim */
+  floor: '#00ffff',   /* the valley floor below the drop */
+  face:  '#ff0033',   /* the cliff face falling from the rim */
+  rim:   '#ffff00',   /* the lit lip along the top of the fall */
+  far:   '#00ff66',   /* the far field's fill, from the horizon down */
+  mass:  '#3366ff'    /* the massif, which is the wall in this place */
+};
 /* debug: no wall, so a check can diff the two frames - this is how the drop was
    measured, because sampling a strip at a fixed row measures the SCENERY */
 let wallOff = false;
@@ -27661,6 +27693,7 @@ function drawRoad(){
         if(drawWatch) groundBands.push([n, +gTop.toFixed(2), +gBot.toFixed(2),
                                         +y2.toFixed(2), +y1.toFixed(2), gDrop ? 1 : 0]);
         if(!gDrop){
+          if(dbgSurf) ctx.fillStyle = SURF.flat;
           ctx.fillRect(0, gTop, W, gBot - gTop);
           if(groundBot === null || gBot > groundBot) groundBot = gBot;
           groundRimX = null;   /* no rim on this slice, so none to carry */
@@ -27698,6 +27731,8 @@ function drawRoad(){
           const rx1 = rimX(p1, idx, gDrop);
           const rx2 = rimX(p2, idx + 1, gDrop);
           const far = gDrop < 0 ? W : 0;
+          /* both fills below are this one surface, so the tint is set once */
+          if(dbgSurf) ctx.fillStyle = SURF.shelf;
           /* what this band did about the gap, for RLG-337: whether a crest opened one
              at all, whether there was a remembered rim to close it along, and where the
              rim stood at both ends. The band record above carries it. */
@@ -27832,6 +27867,7 @@ function drawRoad(){
           const vHaze = hexRGB(skyStops()[3]);
           ctx.fillStyle = mixRGB(mixRGB(groundTone(idx, dark), DROP_SHADE, DROP_DARK),
                                  DROP_HAZE * far, vHaze);
+          if(dbgSurf) ctx.fillStyle = SURF.floor;
           /* ---- TILED, AND THE HOLE THAT STOPPED IT LAST TIME (RLG-299) ---
              What stood here said this: "FILLED TO THE BOTTOM OF THE SCREEN, as
              the ground is. A slice the road pass skips - hidden behind a crest
@@ -27912,6 +27948,7 @@ function drawRoad(){
                                             clamp(WALL_SHADE + MASS_SHADE * 0.62 + facet, 0, 1),
                                             DROP_DARK),
                                      WALL_HAZE * cHz, cAir);
+              if(dbgSurf) ctx.fillStyle = SURF.face;
               /* ---- AND THE TOP STRIP TUCKS UNDER THE GROUND (RLG-329) ---
                  Owner, 2026-09-24: "The road/ground needs to perfectly meet
                  with the ribbon going down and not leave the little gaps
@@ -27957,6 +27994,7 @@ function drawRoad(){
            which is the hard line this ruling exists to remove. */
         if(!lOff('rim')){
         ctx.fillStyle = mixRGB(groundTone(idx, false), 0.52 * bGrow, RIM_LIT);
+        if(dbgSurf) ctx.fillStyle = SURF.rim;
         quad(dx1, y1, dx1 + dropSide * lipW, y1,
              dx2 + dropSide * lipW, y2, dx2, y2);
         if(drawWatch) layerSaw('front', 'rim');
@@ -30384,6 +30422,7 @@ function draw(){
   if(!lOff('farground')){
   ctx.fillStyle = gB.overWater ? waterFill(gB, horizon, H, H, horizon)
                                : groundBase(0.30);
+  if(dbgSurf) ctx.fillStyle = SURF.far;
   ctx.fillRect(0, horizon, W, H-horizon);
   }
   /* the boats go straight onto the water and under everything the road pass
@@ -34948,6 +34987,14 @@ function showDebug(){
          next frame - nothing has to restart. */
       '<button class="go ghost" data-act="dw">HORIZON SWEEP · <b>' +
         SKY_SWING + '</b></button>' +
+      /* ---- AND EVERY LAND SURFACE IN ITS OWN COLOUR (RLG-337) ---------
+         The owner reports the ground see-through on a MOUNTAIN where the
+         road curves down, and every measurement says the ground is opaque
+         there. This paints each surface flat so the picture answers: the
+         colour that is where the fault is names the surface, and NO colour
+         at all means nothing painted there. */
+      '<button class="go ghost" data-act="dsf">SURFACE FLAGS · <b>' +
+        state(dbgSurf) + '</b></button>' +
       '<button class="go" data-act="back">BACK</button>' +
     '</div>',
     { dr:   () => { dbgRacers  = !dbgRacers;  showDebug(); },
@@ -34965,6 +35012,9 @@ function showDebug(){
         SKY_SWING = SKY_SWINGS[(at + 1) % SKY_SWINGS.length];
         showDebug();
       },
+      /* takes effect on the next frame, so it can be turned on mid-drive and
+         off again without anything restarting */
+      dsf:  () => { dbgSurf = !dbgSurf; showDebug(); },
       back: () => showOptions() });
 }
 
@@ -37647,6 +37697,9 @@ requestAnimationFrame(frameLoop);
   API.skyStepMax = function(){ return SKY_STEP_MAX; };
   API.skyChaseFrames = function(on){ skyChaseFrames = !!on; return skyChaseFrames; };
   API.skySwing = function(v){ if(v !== undefined) SKY_SWING = +v; return SKY_SWING; };
+  /* debug: paint each land surface flat in a colour of its own (RLG-337) */
+  API.surfFlags = function(on){ if(on !== undefined) dbgSurf = !!on; return dbgSurf; };
+  API.surfCols = function(){ return Object.assign({}, SURF); };
   API.skyTrace = function(){
     return { pos:+pos.toFixed(2),
              want:+(-lookup(slopeCache, pos) * SKY_SWING).toFixed(4),

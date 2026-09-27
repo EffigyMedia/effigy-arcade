@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-154"></a>
+## [0.14.154] - 2026-09-26
+- Added: **OPTIONS > DEBUG carries SURFACE FLAGS.** Each piece of the land paints in a flat
+  colour nothing else uses - magenta the flat ground, orange the cliff side of it, cyan the
+  valley floor, red the cliff face, yellow the lit lip, green the far field's fill, blue the
+  massif. The owner drives to the spot where the ground reads see-through on a MOUNTAIN and
+  the colour there names the surface; NO colour at all means nothing painted there, which is
+  the answer five rounds of measurement have not been able to give. It takes effect on the
+  next frame, so it can go on and off mid-drive.
+  [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-153"></a>
 ## [0.14.153] - 2026-09-26
 - Added: **a reading of how much of the frame below the horizon has no near ground on it.**
