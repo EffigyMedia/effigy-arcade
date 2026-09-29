@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-155"></a>
+## [0.14.155] - 2026-09-28
+- Added: **the inverted-slice fix, behind `API.invLand`, shipping OFF.** The branch that
+  drops a slice whose road folds under itself was painting the massif and leaving, so the
+  ground, the cliff face, the rim and the valley floor went with it - on four slices in five
+  wherever the road falls away, which is RLG-337's see-through ground. Keeping the land and
+  skipping only the tarmac repairs 8 stops of 50 and breaks none, takes the valley floor from
+  missing on 9 stops to 1, and drops the far field's fill showing beyond the rim from 2,429
+  pixels to 713. IT IS OFF BECAUSE THE FRAME GETS WORSE: 21,038 pixels change over rows
+  298-665 and sixteen rows change across more than sixty per cent of their width, with the
+  cliff's lit rim replaced by flat ground. The bands are built from y1 and y2 raw and an
+  inverted slice has them the wrong way round - the paths still fill, malformed. Every gate
+  was green. [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-154"></a>
 ## [0.14.154] - 2026-09-26
 - Added: **OPTIONS > DEBUG carries SURFACE FLAGS.** Each piece of the land paints in a flat

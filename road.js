@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.154';
+window.ROAD_BUILD = '0.14.155';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16498,6 +16498,33 @@ let sceneryCount = { slices: 0, objects: 0, lit: 0, hidden: 0, clipped: 0,
                      w: [0, 0, 0, 0, 0, 0], a: [0, 0, 0, 0, 0, 0] };
 /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
 let floorFull = false;
+/* ---- WHETHER AN INVERTED SLICE KEEPS ITS LAND (RLG-337) -----------------
+   On is the fix; off is the behaviour that dropped the ground, the cliff face,
+   the rim and the valley floor on four slices in five wherever the road fell
+   away. It is a switch rather than a constant because THE ROAD IS GENERATED
+   FRESH AT EVERY LOAD, so two runs are two roads and neither is a control for
+   the other - the only honest comparison puts both arms on one road in one
+   page, and two earlier rounds of this hunt drew a wrong conclusion for want of
+   exactly that.
+
+   ▶ IT SHIPS **OFF**, BECAUSE THE FIRST BUILD OF IT BREAKS THE PICTURE. Measured
+   at the same 50 stops on two roads it repairs 8 and breaks none, the valley
+   floor goes from missing on 9 stops to missing on 1, and the far field's fill
+   showing beyond the rim falls from 2,429 pixels to 713. THEN LOOK AT THE FRAME:
+   21,038 pixels change over rows 298 to 665, and on 16 of those rows MORE THAN
+   SIXTY PER CENT OF THE WIDTH changes - full-width seams across the picture,
+   with the cliff's lit rim replaced by flat ground.
+
+   WHY: the bands are built from `y1` and `y2` raw, and on an inverted slice
+   those are the wrong way round. The flat ground survives it - `gBot` ends up
+   above `gTop` and `fillRect` draws nothing - but the drop, the face and the rim
+   are PATHS, and a path with its corners reversed still fills, as a malformed
+   quad. The next build has to sort the band's top and bottom for an inverted
+   slice rather than trusting the near/far names, in all four painters.
+
+   A GREEN HARNESS RUN IS NOT EVIDENCE, and this is the case that says so: every
+   number moved the right way and the frame got worse. */
+let invLand = false;
 /* debug: the water painted to the bottom of the frame, as it was before
    RLG-299 tiled it, so a check can put the two frames on ONE road */
 let waterFull = false;
@@ -27509,10 +27536,33 @@ function drawRoad(){
     const dark = ((idx/RUMBLE)|0) % 2 === 0;
     const fade = clamp(1 - n/DRAW, 0, 1);
     const y1 = p1.y, y2 = p2.y;
-    if(y1 < y2){
-      if(drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]);
-      /* a road inverted by under a pixel still has a mountain beside it, and it
-         is the whole far half of a hilly draw - see `massSlice` (RLG-306) */
+    /* ---- AN INVERTED SLICE STILL HAS LAND ON IT (RLG-337) ---------------
+       Owner, 2026-09-26, from the device on a MOUNTAIN where the road curves
+       down: the ground reads see-through. Measured slice by slice at the six
+       steepest stops of a run, the road ahead 337 to 395 pixels below the
+       horizon: the walk drew rims on 52 to 64 slices and painted ZERO valley
+       floor bands, and of the ~245 slices beyond the farthest rim EVERY ONE was
+       dropped here - `proj` 0, `below` 0, and none drawn without a rim.
+
+       THE BRANCH WAS WRITTEN FOR A HAIRLINE. Its own note says "a road inverted
+       by under a pixel still has a mountain beside it", and that is what every
+       earlier measurement found: 140 inverted slices in a draw with the worst at
+       0.12 of a pixel. THOSE RUNS HAD NO STEEP DESCENT. On a road that genuinely
+       falls away the inversion is real and large, and keeping the mountain while
+       dropping the ground, the cliff face, the rim and the valley floor leaves a
+       massif standing over the far field's fill - which is exactly the picture
+       the owner photographed.
+
+       SO THE LAND IS PAINTED AND ONLY THE ROAD QUAD IS NOT. The slice falls
+       through to the rest of the walk, which paints the ground, the drop and the
+       mass in their own places - `massSlice` is NOT called here any more,
+       because the fall-through reaches its own call and painting it twice is a
+       double-shaded mountain. The tarmac is skipped where it is drawn, because
+       an inverted quad is the road folding under itself and that is the one
+       piece of this slice the renderer genuinely cannot place. */
+    const inverted = y1 < y2;
+    if(inverted && drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]);
+    if(inverted && !invLand){
       const iB = bioAt(idx);
       massSlice(n, idx, p1, p2, y1, y2, fade, iB, (iB.hazard === 'roll' && !dropOff) ? hazardSide(iB) : 0);
       peakSlice(idx, p1, fade);
@@ -28516,7 +28566,9 @@ function drawRoad(){
        -------------------------------------------------------------------- */
     /* a span carries its running surface on a deck, and a deck is not asphalt */
     const onDeck = !!bioAt(idx).overWater;
-    if(!lOff('road')){
+    /* the tarmac is the one thing an inverted slice cannot place - see the
+       note at the inversion test above */
+    if(!lOff('road') && !inverted){
     ctx.fillStyle = tarmacTone(dark, fade, onDeck);
     quad(p1.x-p1.w, y1, p1.x+p1.w, y1, p2.x+p2.w, y2, p2.x-p2.w, y2);
     if(drawWatch) layerSaw('front', 'road');
@@ -36433,6 +36485,8 @@ requestAnimationFrame(frameLoop);
   API.waterFull = function(on){ waterFull = !!on; return waterFull; };
   /* debug: the cliff floor painted to the bottom of the frame, as before RLG-299 */
   API.floorFull = function(on){ floorFull = !!on; return floorFull; };
+  /* debug: RLG-337's fix, so both arms run on one road in one page */
+  API.invLand = function(on){ if(on !== undefined) invLand = !!on; return invLand; };
   /* debug: the two baked gradients built live again, so a check can put the two
      frames side by side on ONE road and call whatever differs (RLG-299) */
   API.bakedOff = function(on){ bakedOff = !!on; return bakedOff; };
