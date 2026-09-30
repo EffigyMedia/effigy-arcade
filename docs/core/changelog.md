@@ -19,6 +19,20 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-157"></a>
+## [0.14.157] - 2026-09-29
+- Fixed: **the ground stops going see-through where a mountain road falls away.** The branch
+  that drops a slice whose road folds under itself painted the massif and left, taking the
+  ground, the cliff face, the rim and the valley floor with it - four slices in five wherever
+  the road descends. The land is painted now and an inverted slice STAYS OUT OF THE CHAIN:
+  `groundBot`, `floorBot` and `groundRimX` all mean "the lowest row painted so far" and only
+  work while each slice paints lower than the last, which a falling road breaks. It paints its
+  own rows and neither reads nor writes them. At 50 stops with the switch thrown at each: the
+  valley floor goes from missing on 17 stops to 0, the far field fill showing beyond the rim
+  from 1,520 pixels to 0, and every surface already right moves by under one per cent. Two
+  earlier builds sorted the corners instead and put seams across the frame.
+  [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-156"></a>
 ## [0.14.156] - 2026-09-29
 - Fixed: **a single race shows where you finished before it shows the leaderboard.** The

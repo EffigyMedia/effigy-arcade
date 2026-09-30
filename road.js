@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.156';
+window.ROAD_BUILD = '0.14.157';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -16554,7 +16554,7 @@ let floorFull = false;
 
    A GREEN HARNESS RUN IS NOT EVIDENCE, and this is the case that says so: every
    number moved the right way and the frame got worse. */
-let invLand = false;
+let invLand = true;
 /* debug: the water painted to the bottom of the frame, as it was before
    RLG-299 tiled it, so a check can put the two frames on ONE road */
 let waterFull = false;
@@ -27595,6 +27595,27 @@ function drawRoad(){
        piece of this slice the renderer genuinely cannot place. */
     const inverted = y1 < y2;
     if(inverted && drawWatch) walkTrace.inv.push([n, +(y2-y1).toFixed(3)]);
+    /* ---- AN INVERTED SLICE OWNS A BAND AND OWNS NOTHING ELSE (RLG-337) ----
+       THE CHAIN IS WHAT BROKE THE FIRST TWO ATTEMPTS AT THIS, and the chain is
+       `groundBot`, `floorBot` and `groundRimX` - three running values carried
+       from one slice to the next, all of them meaning "the lowest row painted
+       so far". They work because the walk goes far to near and each slice
+       paints LOWER than the last. A falling road breaks that: the far slices
+       are the low ones, `groundBot` races to the bottom of the frame on the
+       first of them, and every nearer slice then takes `gTop = groundBot` -
+       below its own rows - and fills from there back up to its near edge.
+       Across the full width. That is the seam the first build put over sixteen
+       rows and the second over a hundred and twenty three.
+
+       SORTING THE CORNERS DOES NOT HELP, which the second build proved by
+       improving every measurement while wrecking the picture: the corners were
+       never the problem, the carried STATE was.
+
+       SO AN INVERTED SLICE PAINTS ITS OWN ROWS AND LEAVES THE CHAIN ALONE. It
+       does not read `groundBot` to close a crest gap - it is not behind a crest
+       - and it does not write it, so the monotonic run either side of it is
+       undisturbed. `ownTop` and `ownBot` are its two edges in screen order. */
+    const ownTop = inverted ? y1 : y2, ownBot = inverted ? y2 : y1;
     if(inverted && !invLand){
       const iB = bioAt(idx);
       massSlice(n, idx, p1, p2, y1, y2, fade, iB, (iB.hazard === 'roll' && !dropOff) ? hazardSide(iB) : 0);
@@ -27771,15 +27792,19 @@ function drawRoad(){
            reports no gap anywhere in it, and every row that read as see-through
            came out fully covered when the coverage was composited from the band
            list. Do not re-apply it without a measurement that moves. */
-        const gTop = groundFull || groundBot === null ? y2 : Math.min(y2, groundBot);
-        const gBot = groundFull ? H : Math.min(H, y1 + GROUND_LAP);
+        const gTop = inverted ? ownTop
+                   : groundFull || groundBot === null ? y2 : Math.min(y2, groundBot);
+        const gBot = inverted ? Math.min(H, ownBot + GROUND_LAP)
+                   : groundFull ? H : Math.min(H, y1 + GROUND_LAP);
         if(drawWatch) groundBands.push([n, +gTop.toFixed(2), +gBot.toFixed(2),
                                         +y2.toFixed(2), +y1.toFixed(2), gDrop ? 1 : 0]);
         if(!gDrop){
           if(dbgSurf) ctx.fillStyle = SURF.flat;
           ctx.fillRect(0, gTop, W, gBot - gTop);
-          if(groundBot === null || gBot > groundBot) groundBot = gBot;
-          groundRimX = null;   /* no rim on this slice, so none to carry */
+          if(!inverted){
+            if(groundBot === null || gBot > groundBot) groundBot = gBot;
+            groundRimX = null;   /* no rim on this slice, so none to carry */
+          }
         } else {
           /* ---- AND THE CLIFF SIDE IS TILED TOO, WHICH MOVES THE RIM ------
              Owner-decided 2026-09-23, after 0.14.132 put the other three fills
@@ -27838,8 +27863,10 @@ function drawRoad(){
           ctx.lineTo(far, gBot);
           ctx.closePath();
           ctx.fill();
-          if(groundBot === null || gBot > groundBot) groundBot = gBot;
-          groundRimX = rx1;   /* where the rim stands at the bottom of this band */
+          if(!inverted){
+            if(groundBot === null || gBot > groundBot) groundBot = gBot;
+            groundRimX = rx1;   /* where the rim stands at the bottom of this band */
+          }
         }
       }
       /* ---- AND THE SEA, IF THIS PLACE HAS ONE (RLG-059) ----------------
@@ -27936,7 +27963,7 @@ function drawRoad(){
         const kDFar = CAM_H * H / 2 * DROP_DEPTH * bGrowFar;
         const fy1 = p1.y + p1.scale * kD;
         const fy2 = n === DRAW ? horizon : p2.y + p2.scale * kDFar;
-        if(fy2 < H && !lOff('drop')){
+        if(Math.min(fy1, fy2) < H && !lOff('drop')){
           /* the place's own ground in its own bands, hazed for the distance it
              really is: much further than the slice above it */
           const far = clamp(1 - fade * 0.55, 0, 1);
@@ -27968,8 +27995,11 @@ function drawRoad(){
              so the band clamps to the bottom of the screen, which is where the
              floor already reached.
              ------------------------------------------------------------- */
-          const fTop = floorFull || floorBot === null ? fy2 : Math.min(fy2, floorBot);
-          const fBot = floorFull ? H : Math.min(H, fy1 + FLOOR_LAP);
+          const fOwnTop = Math.min(fy1, fy2), fOwnBot = Math.max(fy1, fy2);
+          const fTop = inverted ? fOwnTop
+                     : floorFull || floorBot === null ? fy2 : Math.min(fy2, floorBot);
+          const fBot = inverted ? Math.min(H, fOwnBot + FLOOR_LAP)
+                     : floorFull ? H : Math.min(H, fy1 + FLOOR_LAP);
           ctx.beginPath();
           ctx.moveTo(dx2, fTop);
           ctx.lineTo(edge, fTop);
@@ -27978,7 +28008,7 @@ function drawRoad(){
           ctx.lineTo(dx1, Math.min(fBot, fy1));
           ctx.closePath();
           ctx.fill();
-          if(floorBot === null || fBot > floorBot) floorBot = fBot;
+          if(!inverted && (floorBot === null || fBot > floorBot)) floorBot = fBot;
           dropTrace.floor.push([n, fy2, H]);
           if(drawWatch) layerSaw('front', 'drop');
         }
