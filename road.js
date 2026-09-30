@@ -291,7 +291,7 @@ const PLAYER_Z = CAM_H*CAM_D;
    worker serves scripts network-first with a cache fallback, so a device can end
    up with a fresh shell beside a cached engine, and the tag says MIXED when it
    does. Bumped with `Arcade.version`, in the same commit, every time. */
-window.ROAD_BUILD = '0.14.155';
+window.ROAD_BUILD = '0.14.156';
 
 const LANE_X = [-0.75,-0.25,0.25,0.75];
 /* ---- ONE LANE, and the unit every lateral move is written in ---------------
@@ -1134,6 +1134,36 @@ function boardOffer(mode, v, then, why){
   if(at < 0){ if(then) then(); return -1; }
   showInitials(M, key, { car: optBody, v: +v.toFixed(3) }, at, then, why);
   return at;
+}
+/* ---- A BOARD ENTRY WAITING FOR THE RESULT TO BE READ (RLG-345) ---------
+   Owner, 2026-09-29: "no matter what place I get in the single race and
+   possibly even the tournament races it shows I get first place."
+
+   THEY DID NOT. The place was right all along and they were reading the
+   LEADERBOARD. Crossing the line went straight to `boardOffer`, whose initials
+   card is headed `(at + 1) + ordinal(at + 1) + 'ON THE BOARD'` - the rank of the
+   run's TIME, which on a short or empty board is almost always first. So a
+   player who came twelfth of eleven was shown a large 1ST the instant they
+   crossed the line, and `FINISHED 12TH` arrived two taps later.
+
+   THE RESULT COMES FIRST NOW AND THE BOARD IS TAKEN ON THE WAY OUT. The card
+   the player wanted is the first thing they see; the entry is held here and
+   spent by whichever button they leave the end card by, so nothing about the
+   board itself is lost - the initials, the ten places and the BACK that returns
+   to the run's own card all behave exactly as they did.
+
+   `showInitials`'s note still holds where it applies: the board is shown after
+   the initials so a player sees where they landed. What it did not cover is the
+   case where the board's ordinal and the race's disagree, which is this one. */
+let boardPending = null;
+function boardThen(act){
+  return () => {
+    const b = boardPending;
+    boardPending = null;
+    if(!b) return act();
+    boardAsked = true;
+    boardOffer(b.m, b.v, () => { boardAsked = false; act(); });
+  };
 }
 /* the initials a player taps in, and the three letters they start from */
 let boardName = ['A', 'A', 'A'];
@@ -19891,18 +19921,21 @@ function stepRacers(dt){
            over it - left the finished tournament on disk to be resumed. */
         tourDone = true;
         tourClear(tourClass || classOf(optBody));
-        setTimeout(() => { const total = tourT;
-                           boardOffer('tour', total, () => showTrophy(st)); }, 700);
+        setTimeout(() => { boardPending = { m:'tour', v:tourT };
+                           showTrophy(st); }, 700);
       } else {
         tourRound++;
         setTimeout(() => showRound(place), 700);
       }
     } else {
-      /* a single race scores the time it took to finish it (RLG-292) */
+      /* a single race scores the time it took to finish it (RLG-292), and the
+         board is offered on the way OUT of the result card rather than over the
+         top of it - see `boardPending` (RLG-345) */
       setTimeout(() => {
         const reason = place === 1 ? 'WON' : 'FINISHED ' + place + ordinal(place);
-        boardAsked = true;
-        boardOffer('race', runT, () => { boardAsked = false; showEnd(reason); });
+        boardPending = { m:'race', v:runT };
+        boardAsked = false;
+        showEnd(reason);
       }, 700);
     }
   }
@@ -35515,14 +35548,24 @@ function showTrophy(st){
       '<button class="go' + (showCar ? ' ghost' : '') + '" data-act="again">NEW TOURNAMENT</button>' +
       '<button class="go ghost" data-act="menu">MAIN MENU</button>' +
     '</div>',
-    { again: () => { document.body.classList.remove('trophying');
+    /* ---- AND THE LADDER DOES THE SAME (RLG-345) ------------------------
+       Owner, 2026-09-29, told that the ordinal is the board's: "if that
+       placement is about the leaderboard, then it definitely is doing it in the
+       tournament as well not possibly. There needs to be a race results screen
+       specifically. Then we could handle the leaderboard once that screen is
+       exited." The trophy IS that screen for a ladder, so it comes first and the
+       board is spent on the way out of it.
+
+       SEE YOUR NEW CAR IS NOT A WAY OUT and deliberately does not spend it: the
+       trophy is still underneath, and the player comes back to it. */
+    { again: boardThen(() => { document.body.classList.remove('trophying');
                      /* `showGarage` retires the spent tournament through
                         `enforceModeRules`, which is the one place that does it
                         for every way out of this screen (RLG-232). */
-                     showGarage(); },
+                     showGarage(); }),
       unlock: () => { if(showCar) showUnlock(showCar); },
-      menu:  () => { document.body.classList.remove('trophying');
-                     tourOn = false; showTitle(); } });
+      menu:  boardThen(() => { document.body.classList.remove('trophying');
+                     tourOn = false; showTitle(); }) });
 }
 
 /* ---- LOSING A TOURNAMENT ROUND (owner, 2026-09-16, RLG-268) ---------------
@@ -35683,7 +35726,8 @@ function showEnd(reason){
       '<button class="go ghost" data-act="menu">MAIN MENU</button>'+
     '</div>'+
     '<div class="tip">ATTEMPT '+(runs+1)+'</div>',
-    { again: start, garage: showGarage, menu: showTitle });
+    { again: boardThen(start), garage: boardThen(showGarage),
+      menu: boardThen(showTitle) });
 }
 
 /* ---------- boot ---------- */

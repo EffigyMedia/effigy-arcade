@@ -121,6 +121,13 @@ def main():
             # A ROUND ENDS WHEN A SCREEN OPENS, NOT AFTER A FIXED WAIT. The finish is
             # handled 700ms after the line, and the trophy has an animation in front of
             # it; a flat sleep read "no trophy" on a build that was about to show one.
+            # ---- AND WHICH CAME FIRST, THE RESULT OR THE BOARD (RLG-345) ------
+            # This detector taps through the board when it meets one, so on its own it
+            # cannot tell whether the ladder showed the trophy first or the leaderboard.
+            # That ORDER is the owner's whole report - they read `1ST ON THE BOARD` as
+            # their placing - so it is recorded as the screens go past.
+            board_first = []
+
             def wait_screen(ms=8000):
                 step, spent = 120, 0
                 while spent < ms:
@@ -128,6 +135,7 @@ def main():
                     # trophy follows ENTER. This harness predates the board, so it waited for
                     # a trophy that was behind a screen it never answered (found RLG-322).
                     if pg.locator(VEIL + '.bname').count():
+                        board_first.append(True)
                         pg.click(VEIL + '[data-act="ok"]')
                         pg.wait_for_timeout(300)
                     # and ENTER shows the board, whose BACK is what opens the trophy
@@ -161,12 +169,33 @@ def main():
                 b.close()
                 raise SystemExit('[tour-exit] no trophy screen - nothing below can be judged')
 
+            # 1b. AND THE TROPHY CAME FIRST, NOT THE BOARD ----------------------
+            ok(not board_first,
+               'the ladder shows its result before it asks for the board',
+               ('the board was reached %d time(s) before a result screen'
+                % len(board_first)) if board_first
+               else 'no board screen stood in front of a result')
+
             won = pg.evaluate("() => window.__road.tourState()")
             print('      at the trophy: round %s, points %s' % (won['round'], won['pts']))
 
             # ---- AND OUT BY THE MENU, WHICH IS WHAT THE OWNER DID --------------
             pg.click(VEIL + '[data-act="menu"]')
             pg.wait_for_timeout(700)
+            # ---- THE BOARD NOW SITS BETWEEN THE TROPHY AND THE TITLE (RLG-345) -
+            # The ladder's time used to be asked for BEFORE the trophy, so a player who
+            # came third was shown `1ST ON THE BOARD` and read it as their placing. The
+            # result screen comes first now and the board is offered on the way out, so
+            # leaving by MAIN MENU passes through the initials and the board itself.
+            # Tapped through here rather than waited out: they are screens a player taps.
+            for _ in range(4):
+                acts = pg.evaluate("""() => Array.from(document.querySelectorAll(
+                    '#veil:not(.hidden) [data-act]')).map(b => b.getAttribute('data-act'))""")
+                nxt = next((a for a in ('ok', 'back') if a in acts), None)
+                if nxt is None:
+                    break
+                pg.click(VEIL + '[data-act="%s"]' % nxt)
+                pg.wait_for_timeout(700)
             if args.falsify:
                 # the defect, put back: the old build cleared `tourOn` on the way out and
                 # left the round and the points standing. Clearing the flag here is the

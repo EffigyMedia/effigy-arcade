@@ -19,6 +19,21 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-156"></a>
+## [0.14.156] - 2026-09-29
+- Fixed: **a single race shows where you finished before it shows the leaderboard.** The
+  owner reported coming first whatever they placed. They had not: the place was right, and
+  the card they were reading was the board's initials screen, headed with the rank of their
+  TIME - which on a short or empty board is almost always 1ST. A finish now writes the entry
+  aside and shows the run's own card, and whichever button the player leaves by offers the
+  board first and then does what it says. Nothing about the board changes. Proved by putting
+  the old order back and watching four of five checks fail. THE LADDER DOES THE SAME: told
+  what the ordinal was, the owner ruled the tournament in rather than "possibly", so the
+  trophy comes first and its board is spent leaving it. `tour-exit-test` could not see the
+  fault - its detector taps through a board when it meets one - so it now records which came
+  first, and was watched failing with the old order back.
+  [RLG-345](../fragments/RLG-345.md)
+
 <a id="v0-14-155"></a>
 ## [0.14.155] - 2026-09-28
 - Added: **the inverted-slice fix, behind `API.invLand`, shipping OFF.** The branch that
