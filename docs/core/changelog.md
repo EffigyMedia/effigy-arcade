@@ -19,6 +19,17 @@ barely started, and 0.9.x would have claimed otherwise.
 > same time; the ones that shipped from `main` keep them. The commit messages still name the
 > numbers they were written under, which is what those commits did.
 
+<a id="v0-14-158"></a>
+## [0.14.158] - 2026-09-30
+- Reverted: **the mountain land fix goes back off.** The owner corrected the reading it was
+  shipped on: the sawtooth beside the road is the craggy cliff face and is meant to be there,
+  and the clean line the fix produced is the glitch - "it's only rendering the road not the
+  ground so I think you have it backwards". The flags at a 271-pixel descent show it: the
+  ORANGE cliff-side ground that runs from the rail outward is gone, with the massif and the
+  far field's fill standing where it was. The averages said the opposite because they average
+  fifty stops and this fault lives at the steep ones. `invLand` is off, everything it guards
+  is inert, and the picture is what it was. [RLG-337](../fragments/RLG-337.md)
+
 <a id="v0-14-157"></a>
 ## [0.14.157] - 2026-09-29
 - Fixed: **the ground stops going see-through where a mountain road falls away.** The branch
